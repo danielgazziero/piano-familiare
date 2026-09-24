@@ -373,7 +373,11 @@ def carica_param(chiave: str, default: Any = None) -> Any:
                .eq('chiave', chiave)
                .execute())
         if res.data:
-            return json.loads(res.data[0]['valore'])
+            raw = res.data[0]['valore']
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return raw  # valore inserito manualmente senza encoding JSON
         return default
     except Exception:
         return default
