@@ -40,7 +40,7 @@ ASSET_TICKERS = {
 
 # Ticker di fallback se il primario non funziona
 FALLBACK_TICKERS = {
-    'LU2293888439': ['LU2293888439.PA', '0P00000XXX'],  # JPM Global Sust EQ
+    'LU2293888439': ['LU2293888439.PA'],  # JPM Global Sust EQ — solo ticker verificati
 }
 
 
@@ -113,18 +113,69 @@ def prezzo_corrente(isin: str) -> Optional[float]:
 def scarica_tutti_storici(isins: List[str], data_inizio: date,
                            data_fine: date = None) -> pd.DataFrame:
     """
-    Scarica storici per una lista di ISIN.
+    Scarica storici per una lista di ISIN con una singola chiamata batch yfinance.
+    Per ISIN senza dati nel batch, ritenta individualmente con i ticker di fallback.
     Restituisce DataFrame unificato con tutti i prezzi.
     """
+    if data_fine is None:
+        data_fine = date.today()
+
+    isin_to_ticker = {isin: ASSET_TICKERS[isin] for isin in isins if isin in ASSET_TICKERS}
+    if not isin_to_ticker:
+        return pd.DataFrame()
+
+    start_str = data_inizio.strftime('%Y-%m-%d')
+    end_str = (data_fine + timedelta(days=1)).strftime('%Y-%m-%d')
+    tickers_list = list(isin_to_ticker.values())
+
+    # Batch download — una sola chiamata HTTP per tutti gli ISIN
+    try:
+        raw = yf.download(tickers_list, start=start_str, end=end_str,
+                          auto_adjust=True, progress=False)
+    except Exception as e:
+        print(f"  [!] Errore batch yfinance: {e} — fallback a download singoli")
+        raw = pd.DataFrame()
+
     frames = []
-    for isin in isins:
+    missing_isins = []
+
+    for isin, ticker in isin_to_ticker.items():
+        try:
+            if raw.empty:
+                series = pd.Series(dtype=float)
+            elif len(tickers_list) == 1:
+                # Singolo ticker: colonne flat
+                series = raw.get('Close', pd.Series(dtype=float)).dropna()
+            else:
+                # Multi-ticker: MultiIndex (field, ticker)
+                close = raw.get('Close', pd.DataFrame())
+                series = (close.get(ticker, pd.Series(dtype=float)).dropna()
+                          if not isinstance(close, pd.Series) and not close.empty
+                          else pd.Series(dtype=float))
+
+            if series.empty:
+                missing_isins.append(isin)
+                continue
+
+            df_t = series.reset_index()
+            df_t.columns = ['data', 'prezzo']
+            df_t['data'] = pd.to_datetime(df_t['data']).dt.date
+            df_t['isin'] = isin
+            df_t['ticker'] = ticker
+            df_t['fonte'] = 'yahoo'
+            frames.append(df_t[['data', 'isin', 'ticker', 'prezzo', 'fonte']])
+            print(f"  [+] {isin}: {len(df_t)} giorni scaricati")
+        except Exception as e:
+            missing_isins.append(isin)
+            print(f"  [!] {isin}: errore in batch — {e}")
+
+    # Fallback individuale per ISIN con dati mancanti (usa fallback ticker se disponibili)
+    for isin in missing_isins:
         df = scarica_storico(isin, data_inizio, data_fine)
         if not df.empty:
             frames.append(df)
-            print(f"  [+] {isin}: {len(df)} giorni scaricati")
+            print(f"  [+] {isin}: {len(df)} giorni scaricati (fallback)")
         else:
             print(f"  [!] {isin}: nessun dato disponibile")
 
-    if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

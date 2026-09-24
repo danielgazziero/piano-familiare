@@ -168,7 +168,7 @@ def setup():
     }
     for k, v in params.items():
         salva_param(k, v)
-        print(f"  [+] {k}: {v}")
+        print(f"  [+] {k}: <salvato>")
 
     print("\n" + "=" * 50)
     print("Setup completato!")

@@ -233,12 +233,14 @@ def carica_ultime_quote_fondi() -> pd.DataFrame:
     """
     try:
         client = get_client()
-        # Ordina per data DESC e limita a 500 righe: per 7 fondi copre anni di storico
-        # senza scansionare l'intera tabella. Il groupby estrae poi l'ultima per ISIN.
+        # Filtra ultimi 365 giorni: garantisce di trovare ogni ISIN aggiornato
+        # nell'ultimo anno indipendentemente dal numero totale di righe in tabella.
+        data_dal = (date.today() - pd.Timedelta(days=365)).isoformat()
         res = (client.table('quote_fondi')
                .select('isin, nome, quota, valore, quantita, data, fonte')
+               .gte('data', data_dal)
                .order('data', desc=True)
-               .limit(500)
+               .limit(5000)
                .execute())
         if not res.data:
             return pd.DataFrame()
@@ -372,7 +374,8 @@ def carica_param(chiave: str, default: Any = None) -> Any:
             except (json.JSONDecodeError, TypeError):
                 return raw  # valore inserito manualmente senza encoding JSON
         return default
-    except Exception:
+    except Exception as e:
+        print(f"  [!] carica_param({chiave!r}): {type(e).__name__}: {e}")
         return default
 
 
@@ -391,7 +394,8 @@ def carica_tutti_params() -> dict:
             except (json.JSONDecodeError, TypeError):
                 result[r['chiave']] = raw
         return result
-    except Exception:
+    except Exception as e:
+        print(f"  [!] carica_tutti_params: {type(e).__name__}: {e}")
         return {}
 
 

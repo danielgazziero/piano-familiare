@@ -14,6 +14,15 @@ from database import get_client, salva_param, carica_param
 from prices import scarica_tutti_storici, ASSET_TICKERS
 
 
+def _build_quantita_arr(posizioni_parsed: list, dates_arr) -> np.ndarray:
+    """Vettorizzato: assegna la quantità attiva per ogni data senza loop Python per giorno."""
+    q = np.zeros(len(dates_arr), dtype=float)
+    for d_inizio, d_fine, quantita in posizioni_parsed:
+        mask = (dates_arr >= d_inizio) & (dates_arr <= d_fine)
+        q[mask] = quantita
+    return q
+
+
 # ─────────────────────────────────────────────────────────────
 # POSIZIONI INIZIALI (dal config — caricate una volta sola)
 # ─────────────────────────────────────────────────────────────
@@ -393,7 +402,6 @@ def calcola_valore_giornaliero(isin: str, data_inizio: date,
     # Interpola prezzi mancanti (forward fill per weekend/festivi)
     df['prezzo'] = df['prezzo_raw'].ffill().bfill()
 
-    # Pre-converti le date di ogni posizione una sola volta (evita parse ripetuto per ogni giorno)
     _posizioni_parsed = [
         (
             date.fromisoformat(pos['data_inizio']),
@@ -403,14 +411,7 @@ def calcola_valore_giornaliero(isin: str, data_inizio: date,
         for pos in posizioni_storico
     ]
 
-    def get_quantita(d: date) -> float:
-        q = 0.0
-        for d_inizio, d_fine, quantita in _posizioni_parsed:
-            if d_inizio <= d <= d_fine:
-                q = quantita
-        return q
-
-    df['quantita'] = df['data'].apply(get_quantita)
+    df['quantita'] = _build_quantita_arr(_posizioni_parsed, df['data'].values)
     df['valore'] = (df['quantita'] * df['prezzo']).round(2)
     df['isin'] = isin
 
@@ -436,14 +437,7 @@ def _computa_valore_isin(posizioni_storico: list, prezzi_df: pd.DataFrame,
         for pos in posizioni_storico
     ]
 
-    def get_quantita(d: date) -> float:
-        q = 0.0
-        for d_inizio, d_fine, quantita in posizioni_parsed:
-            if d_inizio <= d <= d_fine:
-                q = quantita
-        return q
-
-    df['quantita'] = df['data'].apply(get_quantita)
+    df['quantita'] = _build_quantita_arr(posizioni_parsed, df['data'].values)
     df['valore'] = (df['quantita'] * df['prezzo']).round(2)
     series = df.set_index('data')['valore'].dropna()
     return series if not series.empty else None

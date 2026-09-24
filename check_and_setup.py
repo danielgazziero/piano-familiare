@@ -69,7 +69,7 @@ def check_pip():
     sezione("pip")
     try:
         r = subprocess.run([sys.executable, '-m', 'pip', '--version'],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=30)
         if r.returncode == 0:
             ok(r.stdout.strip().split('\n')[0])
         else:
@@ -207,7 +207,7 @@ def installa_librerie(da_installare):
 
     print()
     cmd = [sys.executable, '-m', 'pip', 'install'] + da_installare
-    r = subprocess.run(cmd)
+    r = subprocess.run(cmd, timeout=300)
     if r.returncode == 0:
         ok("Installazione completata")
         return True
