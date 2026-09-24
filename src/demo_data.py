@@ -11,13 +11,13 @@ _RNG = np.random.default_rng(42)
 
 # ─── ISINs fondi (stessi del config.yaml, valori demo) ───────
 _FONDI_DEMO = [
-    {"isin": "IT0001033486", "nome": "ARCA AZ EUROPA CLIMA",    "quantita": 16.474,  "quota": 24.10},
-    {"isin": "IT0001033502", "nome": "ARCA AZ AMERICA CLIMA P", "quantita": 23.539,  "quota": 95.00},
-    {"isin": "IT0001031928", "nome": "EURIZON AZ EMERG P",      "quantita": 569.517, "quota": 16.40},
-    {"isin": "LU2293888439", "nome": "JPMF GLO SUST EQ ACC",    "quantita": 83.494,  "quota": 140.00},
-    {"isin": "IT0001050126", "nome": "EURIZON AZ AMER P",       "quantita": 401.49,  "quota": 58.50},
-    {"isin": "IT0001050225", "nome": "EURIZ AZ AREA EURO P",    "quantita": 358.67,  "quota": 69.20},
-    {"isin": "IT0001080446", "nome": "EURIZON AZ INT P",        "quantita": 1114.2,  "quota": 35.80},
+    {"isin": "IT0001033486", "nome": "ARCA AZ EUROPA CLIMA",    "quantita": 30.0,    "quota": 30.00},
+    {"isin": "IT0001033502", "nome": "ARCA AZ AMERICA CLIMA P", "quantita": 50.0,    "quota": 120.00},
+    {"isin": "IT0001031928", "nome": "EURIZON AZ EMERG P",      "quantita": 800.0,   "quota": 18.00},
+    {"isin": "LU2293888439", "nome": "JPMF GLO SUST EQ ACC",    "quantita": 100.0,   "quota": 160.00},
+    {"isin": "IT0001050126", "nome": "EURIZON AZ AMER P",       "quantita": 500.0,   "quota": 70.00},
+    {"isin": "IT0001050225", "nome": "EURIZ AZ AREA EURO P",    "quantita": 400.0,   "quota": 75.00},
+    {"isin": "IT0001080446", "nome": "EURIZON AZ INT P",        "quantita": 1500.0,  "quota": 40.00},
 ]
 
 
@@ -33,12 +33,12 @@ def is_demo_mode() -> bool:
 
 def demo_carica_params_persistenti(config: dict) -> dict:
     return {
-        "fondi_bancari":              88000,
-        "gestione_separata_generali": 47000,
-        "liquidita_daniel":           5200,
-        "liquidita_alessandra":       3100,
-        "conto_comune":               4800,
-        "affitto_accantonato":        1200,
+        "fondi_bancari":              140000,
+        "gestione_separata_generali": 30000,
+        "liquidita_daniel":           8000,
+        "liquidita_alessandra":       6000,
+        "conto_comune":               12000,
+        "affitto_accantonato":        2000,
     }
 
 
@@ -86,18 +86,14 @@ def demo_get_storico_patrimonio(giorni: int = 365) -> pd.DataFrame:
     days = [today - timedelta(days=i) for i in range(giorni - 1, -1, -1)]
     n = len(days)
 
-    trend = np.linspace(155_000, 189_000, n)
-    noise = _RNG.normal(0, 800, n)
-    totale = (trend + noise).cumsum() / np.arange(1, n + 1) * n
-    # Ricrea partendo da 155k
-    totale = np.linspace(155_000, 189_000, n) + _RNG.normal(0, 400, n).cumsum() * 0.3
+    totale = np.linspace(210_000, 260_000, n) + _RNG.normal(0, 600, n).cumsum() * 0.25
 
-    fondi   = totale * 0.46
-    generali= totale * 0.25
-    etf_dan = totale * 0.06 + _RNG.normal(0, 150, n).cumsum() * 0.1
+    fondi   = totale * 0.52
+    generali= totale * 0.12
+    etf_dan = totale * 0.10 + _RNG.normal(0, 200, n).cumsum() * 0.1
     etf_flo = np.zeros(n)
-    acn_usd = totale * 0.11 + _RNG.normal(0, 200, n).cumsum() * 0.1
-    liq     = totale * 0.07
+    acn_usd = totale * 0.14 + _RNG.normal(0, 300, n).cumsum() * 0.1
+    liq     = totale * 0.10
 
     return pd.DataFrame({
         "data":                 days,
