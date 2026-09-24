@@ -1,0 +1,10 @@
+streamlit>=1.35.0
+pandas>=2.0.0
+plotly>=5.18.0
+yfinance>=0.2.40
+openpyxl>=3.1.0
+xlrd==1.2.0
+pyyaml>=6.0.1
+python-dateutil>=2.8.2
+numpy>=1.26.0
+supabase>=2.4.0

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Net Worth Tracker - Guida al Deploy</title>
+<style>
+  :root { --primary: #1F5C8B; --accent: #1baf7a; --bg: #f7f9fb; --text: #1a1a2e; --border: #d0d7de; --code-bg: #f0f3f5; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.7; color: var(--text); background: var(--bg); display: flex; }
+  nav { width: 230px; min-width: 230px; background: #fff; border-right: 1px solid var(--border); padding: 28px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  nav .logo { font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 20px; display: block; }
+  nav ul { list-style: none; }
+  nav ul li a { display: block; color: var(--text); text-decoration: none; padding: 4px 8px; border-radius: 4px; font-size: 12.5px; }
+  nav ul li a:hover { background: var(--code-bg); color: var(--primary); }
+  main { flex: 1; max-width: 860px; padding: 48px 56px; }
+  h1 { font-size: 26px; color: var(--primary); border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 8px; }
+  h2 { font-size: 20px; color: var(--primary); border-left: 4px solid var(--accent); padding-left: 12px; margin: 40px 0 14px; }
+  h3 { font-size: 16px; color: var(--primary); margin: 26px 0 10px; }
+  h4 { font-size: 14px; margin: 18px 0 8px; color: #444; }
+  p { margin-bottom: 12px; }
+  a { color: var(--primary); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-family: "Consolas", "Courier New", monospace; font-size: 12.5px; }
+  pre { background: #1e1e2e; color: #cdd6f4; border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 12px 0 18px; font-size: 12.5px; line-height: 1.5; }
+  pre code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0 20px; font-size: 13px; }
+  th { background: var(--primary); color: #fff; padding: 8px 12px; text-align: left; font-weight: 600; }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+  tr:nth-child(even) td { background: #f2f5f8; }
+  blockquote { border-left: 4px solid var(--accent); background: #eef9f5; padding: 10px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; font-size: 13px; }
+  blockquote p { margin: 0; }
+  ul, ol { padding-left: 24px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  @media print { nav { display: none; } body { display: block; } main { max-width: 100%; padding: 20px; } pre { background: #f5f5f5; color: #000; border: 1px solid #ccc; } }
+  @media (max-width: 700px) { nav { display: none; } main { padding: 24px 18px; } }
+</style>
+</head>
+<body>
+<nav>
+  <span class="logo">Net Worth Tracker</span>
+  <ul><li><a href="#1-creare-gli-ambienti">1. Creare gli ambienti</a></li>
+  <li><a href="#come-creare-lambiente-di-sviluppo-locale">Come creare l'ambiente di sviluppo (locale)</a></li>
+  <li><a href="#come-creare-lambiente-di-produzione-streamlit-cloud">Come creare l'ambiente di produzione (Streamlit Cloud)</a></li>
+<li><a href="#2-usare-il-locale-come-anteprima-prima-del-deploy">2. Usare il locale come anteprima prima del deploy</a></li>
+  <li><a href="#avvia-lanteprima-locale">Avvia l'anteprima locale</a></li>
+  <li><a href="#checklist-prima-di-fare-push-in-produzione">Checklist prima di fare push in produzione</a></li>
+  <li><a href="#opzioni-utili-in-dev">Opzioni utili in dev</a></li>
+  <li><a href="#verifica-connessioni">Verifica connessioni</a></li>
+  <li><a href="#reset-completo-cache-e-stato">Reset completo (cache e stato)</a></li>
+<li><a href="#3-production-streamlit-community-cloud-consigliato">3. Production — Streamlit Community Cloud (consigliato)</a></li>
+  <li><a href="#prerequisiti">Prerequisiti</a></li>
+  <li><a href="#passo-1-crea-il-repository-github">Passo 1 — Crea il repository GitHub</a></li>
+  <li><a href="#passo-2-gestisci-i-secrets-su-streamlit-cloud">Passo 2 — Gestisci i secrets su Streamlit Cloud</a></li>
+  <li><a href="#passo-3-deploy-su-streamlit-cloud">Passo 3 — Deploy su Streamlit Cloud</a></li>
+  <li><a href="#aggiornare-la-versione-in-produzione">Aggiornare la versione in produzione</a></li>
+<li><a href="#4-production-vps-linux-auto-hosted">4. Production — VPS Linux (auto-hosted)</a></li>
+  <li><a href="#requisiti">Requisiti</a></li>
+  <li><a href="#passo-1-configura-il-server">Passo 1 — Configura il server</a></li>
+  <li><a href="#passo-2-carica-il-progetto">Passo 2 — Carica il progetto</a></li>
+  <li><a href="#passo-3-installa-le-dipendenze">Passo 3 — Installa le dipendenze</a></li>
+  <li><a href="#passo-4-configura-i-secrets">Passo 4 — Configura i secrets</a></li>
+  <li><a href="#passo-5-configura-streamlit-per-headless">Passo 5 — Configura Streamlit per headless</a></li>
+  <li><a href="#passo-6-avvia-come-servizio-systemd-avvio-automatico">Passo 6 — Avvia come servizio systemd (avvio automatico)</a></li>
+  <li><a href="#passo-7-esponi-con-nginx-accesso-via-browser-porta-80443">Passo 7 — Esponi con nginx (accesso via browser, porta 80/443)</a></li>
+  <li><a href="#aggiornare-la-versione-su-vps">Aggiornare la versione su VPS</a></li>
+<li><a href="#6-gestione-dei-dati-in-produzione">6. Gestione dei dati in produzione</a></li>
+  <li><a href="#file-xls-bancari">File XLS bancari</a></li>
+  <li><a href="#backup-supabase">Backup Supabase</a></li>
+  <li><a href="#aggiornare-configyaml-in-produzione">Aggiornare config.yaml in produzione</a></li>
+<li><a href="#5-aggiornamento-automatico-documentazione">5. Aggiornamento automatico documentazione</a></li>
+  <li><a href="#dev-locale-manuale">Dev locale — manuale</a></li>
+  <li><a href="#streamlit-community-cloud-github-actions-automatico">Streamlit Community Cloud — GitHub Actions (automatico)</a></li>
+  <li><a href="#git-hook-locale-alternativa-senza-ci">Git hook locale (alternativa senza CI)</a></li>
+<li><a href="#7-confronto-opzioni-deploy">7. Confronto opzioni deploy</a></li></ul>
+</nav>
+<main>
+<h1>Deploy — Guida ambienti Dev e Produzione</h1>
+<hr />
+<h2 id="1-creare-gli-ambienti">1. Creare gli ambienti</h2>
+<p>Il progetto usa <strong>due ambienti separati</strong>: uno locale per sviluppo e anteprima, uno remoto per la versione stabile accessibile da qualsiasi dispositivo.</p>
+<table>
+<thead>
+<tr>
+<th>Ambiente</th>
+<th>URL</th>
+<th>Scopo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Development (locale)</strong></td>
+<td><code>http://localhost:8501</code></td>
+<td>Anteprima modifiche prima di pubblicarle, test funzionalità, import XLS</td>
+</tr>
+<tr>
+<td><strong>Production (Cloud)</strong></td>
+<td>URL Streamlit Community Cloud</td>
+<td>Versione stabile, accessibile da browser e smartphone</td>
+</tr>
+<tr>
+<td><strong>Production (VPS)</strong></td>
+<td><code>http://tuo-server:8501</code></td>
+<td>Self-hosted su Linux, controllo totale (alternativa al Cloud)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="come-creare-lambiente-di-sviluppo-locale">Come creare l'ambiente di sviluppo (locale)</h3>
+<p><strong>Prerequisiti:</strong> Python 3.10+, pip, accesso a internet per Supabase.</p>
+<pre><code class="language-bash"># 1. Clona o decomprime il progetto
+cd C:\Progetti\piano-familiare
+
+# 2. Installa le dipendenze
+pip install -r requirements.txt
+
+# 3. Verifica che tutto sia configurato correttamente
+python check_and_setup.py
+</code></pre>
+<p>Se il check va a buon fine, l'ambiente di sviluppo è pronto.</p>
+<h3 id="come-creare-lambiente-di-produzione-streamlit-cloud">Come creare l'ambiente di produzione (Streamlit Cloud)</h3>
+<p>Vedi la sezione <strong>Production — Streamlit Community Cloud</strong> più avanti in questo documento. In sintesi:<br />
+1. Crea un repository GitHub con il codice<br />
+2. Collega il repo a <a href="https://share.streamlit.io">share.streamlit.io</a><br />
+3. Configura i secrets (credenziali Supabase) nell'interfaccia web di Streamlit Cloud</p>
+<hr />
+<h2 id="2-usare-il-locale-come-anteprima-prima-del-deploy">2. Usare il locale come anteprima prima del deploy</h2>
+<p>L'ambiente locale è la <strong>staging area</strong> prima di mandare in produzione qualsiasi modifica. Il flusso consigliato è:</p>
+<pre><code>modifica codice → testa in locale → verifica che tutto funzioni → push su main → produzione si aggiorna
+</code></pre>
+<h3 id="avvia-lanteprima-locale">Avvia l'anteprima locale</h3>
+<pre><code class="language-bash">cd C:\Progetti\piano-familiare
+python -m streamlit run app.py
+</code></pre>
+<p>L'app si apre su <strong>http://localhost:8501</strong> e si ricarica automaticamente a ogni modifica ai file <code>.py</code> o <code>config.yaml</code> — non serve riavviare.</p>
+<h3 id="checklist-prima-di-fare-push-in-produzione">Checklist prima di fare push in produzione</h3>
+<ul>
+<li>[ ] L'app si avvia senza errori in locale</li>
+<li>[ ] La sezione modificata funziona con dati reali</li>
+<li>[ ] Il pulsante "🔄 Aggiorna tutto" non genera eccezioni</li>
+<li>[ ] I grafici si caricano (nessun <code>None</code> o traccia vuota)</li>
+<li>[ ] <code>python check_and_setup.py</code> non segnala errori</li>
+<li>[ ] I nuovi HTML dei docs sono stati rigenerati (<code>python docs/build_html_docs.py</code>)</li>
+</ul>
+<h3 id="opzioni-utili-in-dev">Opzioni utili in dev</h3>
+<pre><code class="language-bash"># Porta alternativa (se 8501 è occupata)
+python -m streamlit run app.py --server.port 8502
+
+# Disabilita l'auto-reload (utile se i reload sono lenti)
+python -m streamlit run app.py --server.runOnSave false
+
+# Log dettagliati (per debug)
+python -m streamlit run app.py --logger.level debug
+</code></pre>
+<h3 id="verifica-connessioni">Verifica connessioni</h3>
+<pre><code class="language-bash"># Controlla dipendenze e connessione Supabase
+python check_and_setup.py
+
+# Testa solo connessione DB
+python src/database.py
+
+# Testa solo parser XLS
+python src/parser.py
+</code></pre>
+<h3 id="reset-completo-cache-e-stato">Reset completo (cache e stato)</h3>
+<p>Dalla sidebar dell'app: pulsante <strong>🔄 Aggiorna tutto</strong>.<br />
+Oppure da terminale: <code>Ctrl+C</code> per fermare, poi riavvia.</p>
+<hr />
+<h2 id="3-production-streamlit-community-cloud-consigliato">3. Production — Streamlit Community Cloud (consigliato)</h2>
+<p>La soluzione più semplice per un'app personale: gratuita, nessun server da gestire, accessibile da qualsiasi dispositivo.</p>
+<h3 id="prerequisiti">Prerequisiti</h3>
+<ul>
+<li>Account GitHub (gratuito)</li>
+<li>Account Streamlit Community Cloud: <strong>https://streamlit.io/cloud</strong></li>
+<li>Il progetto deve essere in un repository GitHub (pubblico o privato)</li>
+</ul>
+<h3 id="passo-1-crea-il-repository-github">Passo 1 — Crea il repository GitHub</h3>
+<pre><code class="language-bash"># Nella cartella del progetto
+git init
+git add .
+git commit -m &quot;first commit&quot;
+git remote add origin https://github.com/tuo-username/piano-familiare.git
+git push -u origin main
+</code></pre>
+<blockquote>
+<p>⚠️ Prima del push: aggiungi un <code>.gitignore</code> per escludere <code>data/input/</code> (contiene estratti bancari personali) e verifica che <code>src/database.py</code> non contenga credenziali che non vuoi rendere pubbliche se il repo è pubblico.</p>
+</blockquote>
+<p><strong><code>.gitignore</code> consigliato:</strong></p>
+<pre><code>data/input/*.xls
+data/input/*.xlsx
+data/processed/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+</code></pre>
+<h3 id="passo-2-gestisci-i-secrets-su-streamlit-cloud">Passo 2 — Gestisci i secrets su Streamlit Cloud</h3>
+<p>Invece di avere le credenziali hardcoded, usa i <strong>Secrets</strong> di Streamlit Cloud.</p>
+<p><strong>Modifica <code>src/database.py</code></strong> per leggere da <code>st.secrets</code>:</p>
+<pre><code class="language-python">import streamlit as st
+
+# Legge da .streamlit/secrets.toml in dev, da Streamlit Cloud in prod
+SUPABASE_URL    = st.secrets.get(&quot;SUPABASE_URL&quot;,    &quot;https://tuo-progetto.supabase.co&quot;)
+SUPABASE_KEY    = st.secrets.get(&quot;SUPABASE_KEY&quot;,    &quot;sb_publishable_...&quot;)
+SUPABASE_SECRET = st.secrets.get(&quot;SUPABASE_SECRET&quot;, &quot;sb_secret_...&quot;)
+</code></pre>
+<p><strong>Crea <code>.streamlit/secrets.toml</code></strong> (solo in locale, NON committare):</p>
+<pre><code class="language-toml">SUPABASE_URL    = &quot;https://tuo-progetto.supabase.co&quot;
+SUPABASE_KEY    = &quot;sb_publishable_...&quot;
+SUPABASE_SECRET = &quot;sb_secret_...&quot;
+</code></pre>
+<p><strong>Su Streamlit Cloud</strong> (dopo il deploy):<br />
+- App settings → <strong>Secrets</strong> → incolla le stesse variabili in formato TOML</p>
+<h3 id="passo-3-deploy-su-streamlit-cloud">Passo 3 — Deploy su Streamlit Cloud</h3>
+<ol>
+<li>Vai su <strong>https://share.streamlit.io</strong></li>
+<li>Clicca <strong>New app</strong></li>
+<li>Seleziona il repository GitHub</li>
+<li><strong>Main file path:</strong> <code>app.py</code></li>
+<li><strong>Branch:</strong> <code>main</code></li>
+<li>Clicca <strong>Deploy</strong></li>
+</ol>
+<p>L'app viene compilata automaticamente (installa <code>requirements.txt</code>) e diventa disponibile su un URL tipo <code>https://tuo-username-piano-familiare.streamlit.app</code>.</p>
+<h3 id="aggiornare-la-versione-in-produzione">Aggiornare la versione in produzione</h3>
+<pre><code class="language-bash"># Modifica i file in locale, testa in dev, poi:
+git add .
+git commit -m &quot;descrizione modifica&quot;
+git push origin main
+</code></pre>
+<p>Streamlit Cloud rileva il push e rideploya automaticamente in ~1 minuto.</p>
+<hr />
+<h2 id="4-production-vps-linux-auto-hosted">4. Production — VPS Linux (auto-hosted)</h2>
+<p>Per chi vuole controllo totale, nessun dipendenza da servizi terzi, o ha un server già disponibile.</p>
+<h3 id="requisiti">Requisiti</h3>
+<ul>
+<li>Server Linux (Ubuntu 22.04+ consigliato) con accesso SSH</li>
+<li>Python 3.10+</li>
+<li>Almeno 512MB RAM, 1GB disco</li>
+</ul>
+<h3 id="passo-1-configura-il-server">Passo 1 — Configura il server</h3>
+<pre><code class="language-bash"># Aggiorna i pacchetti
+sudo apt update &amp;&amp; sudo apt upgrade -y
+
+# Installa Python e pip
+sudo apt install python3 python3-pip python3-venv -y
+
+# Crea utente dedicato (buona pratica)
+sudo useradd -m -s /bin/bash appuser
+sudo su - appuser
+</code></pre>
+<h3 id="passo-2-carica-il-progetto">Passo 2 — Carica il progetto</h3>
+<pre><code class="language-bash"># Opzione A: clona da GitHub
+git clone https://github.com/tuo-username/piano-familiare.git
+cd piano-familiare
+
+# Opzione B: copia i file via SCP dalla macchina locale
+# (dalla tua macchina Windows/Mac)
+scp -r C:\Progetti\piano-familiare user@tuo-server:/home/appuser/
+</code></pre>
+<h3 id="passo-3-installa-le-dipendenze">Passo 3 — Installa le dipendenze</h3>
+<pre><code class="language-bash">cd piano-familiare
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+</code></pre>
+<h3 id="passo-4-configura-i-secrets">Passo 4 — Configura i secrets</h3>
+<pre><code class="language-bash">mkdir -p .streamlit
+nano .streamlit/secrets.toml
+</code></pre>
+<p>Incolla:</p>
+<pre><code class="language-toml">SUPABASE_URL    = &quot;https://tuo-progetto.supabase.co&quot;
+SUPABASE_KEY    = &quot;sb_publishable_...&quot;
+SUPABASE_SECRET = &quot;sb_secret_...&quot;
+</code></pre>
+<h3 id="passo-5-configura-streamlit-per-headless">Passo 5 — Configura Streamlit per headless</h3>
+<p>Crea <code>.streamlit/config.toml</code>:</p>
+<pre><code class="language-toml">[server]
+headless = true
+port = 8501
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+</code></pre>
+<h3 id="passo-6-avvia-come-servizio-systemd-avvio-automatico">Passo 6 — Avvia come servizio systemd (avvio automatico)</h3>
+<p>Crea il file di servizio:</p>
+<pre><code class="language-bash">sudo nano /etc/systemd/system/piano-familiare.service
+</code></pre>
+<pre><code class="language-ini">[Unit]
+Description=Net Worth Tracker — Streamlit App
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+WorkingDirectory=/home/appuser/piano-familiare
+ExecStart=/home/appuser/piano-familiare/venv/bin/python -m streamlit run app.py
+Restart=always
+RestartSec=10
+Environment=&quot;HOME=/home/appuser&quot;
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Attiva e avvia il servizio:</p>
+<pre><code class="language-bash">sudo systemctl daemon-reload
+sudo systemctl enable piano-familiare
+sudo systemctl start piano-familiare
+
+# Verifica stato
+sudo systemctl status piano-familiare
+
+# Vedi i log
+sudo journalctl -u piano-familiare -f
+</code></pre>
+<h3 id="passo-7-esponi-con-nginx-accesso-via-browser-porta-80443">Passo 7 — Esponi con nginx (accesso via browser, porta 80/443)</h3>
+<pre><code class="language-bash">sudo apt install nginx -y
+sudo nano /etc/nginx/sites-available/piano-familiare
+</code></pre>
+<pre><code class="language-nginx">server {
+    listen 80;
+    server_name tuo-dominio.com;  # o indirizzo IP del server
+
+    location / {
+        proxy_pass http://localhost:8501;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection &quot;upgrade&quot;;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
+}
+</code></pre>
+<pre><code class="language-bash">sudo ln -s /etc/nginx/sites-available/piano-familiare /etc/nginx/sites-enabled/
+sudo nginx -t        # verifica config
+sudo systemctl reload nginx
+</code></pre>
+<h3 id="aggiornare-la-versione-su-vps">Aggiornare la versione su VPS</h3>
+<pre><code class="language-bash"># Via GitHub
+ssh user@tuo-server
+cd /home/appuser/piano-familiare
+git pull origin main
+sudo systemctl restart piano-familiare
+
+# Verifica dopo il restart
+sudo systemctl status piano-familiare
+</code></pre>
+<hr />
+<h2 id="6-gestione-dei-dati-in-produzione">6. Gestione dei dati in produzione</h2>
+<h3 id="file-xls-bancari">File XLS bancari</h3>
+<p>Gli estratti bancari vanno copiati in <code>data/input/</code> <strong>sul server</strong> dove gira l'app — non si caricano dall'interfaccia web.</p>
+<pre><code class="language-bash"># Copia via SCP dalla macchina locale
+scp &quot;Lista_Movimenti_Dic2026.xls&quot; user@tuo-server:/home/appuser/piano-familiare/data/input/
+</code></pre>
+<p>Poi riavvia l'app (o premi 🔄 Aggiorna tutto nel browser) — l'import è automatico.</p>
+<h3 id="backup-supabase">Backup Supabase</h3>
+<p>Il database Supabase è cloud — Supabase fa backup automatici (7 giorni su piano gratuito).<br />
+Per un backup manuale: <strong>Supabase Dashboard → Database → Backups → Download</strong>.</p>
+<h3 id="aggiornare-configyaml-in-produzione">Aggiornare <code>config.yaml</code> in produzione</h3>
+<pre><code class="language-bash">ssh user@tuo-server
+nano /home/appuser/piano-familiare/config.yaml
+sudo systemctl restart piano-familiare
+</code></pre>
+<hr />
+<h2 id="5-aggiornamento-automatico-documentazione">5. Aggiornamento automatico documentazione</h2>
+<p>Il file <code>docs/build_html_docs.py</code> rigenera <code>MANUALE.html</code> e <code>DEPLOY.html</code> dai Markdown sorgente. Va eseguito ogni volta che si modificano i <code>.md</code> prima del deploy.</p>
+<h3 id="dev-locale-manuale">Dev locale — manuale</h3>
+<pre><code class="language-bash">python docs/build_html_docs.py
+</code></pre>
+<h3 id="streamlit-community-cloud-github-actions-automatico">Streamlit Community Cloud — GitHub Actions (automatico)</h3>
+<p>Crea <code>.github/workflows/build-docs.yml</code>:</p>
+<pre><code class="language-yaml">name: Build HTML docs
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/*.md'
+      - 'docs/build_html_docs.py'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install markdown
+      - run: python docs/build_html_docs.py
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: &quot;docs: rigenera HTML [skip ci]&quot;
+          file_pattern: &quot;docs/*.html&quot;
+</code></pre>
+<h3 id="git-hook-locale-alternativa-senza-ci">Git hook locale (alternativa senza CI)</h3>
+<pre><code class="language-bash"># Nella cartella del progetto
+echo 'python docs/build_html_docs.py' &gt;&gt; .git/hooks/pre-push
+# Su Windows (Git Bash):
+chmod +x .git/hooks/pre-push
+</code></pre>
+<hr />
+<h2 id="7-confronto-opzioni-deploy">7. Confronto opzioni deploy</h2>
+<table>
+<thead>
+<tr>
+<th>Criterio</th>
+<th>Dev locale</th>
+<th>Streamlit Cloud</th>
+<th>VPS Linux</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Setup</td>
+<td>Zero</td>
+<td>15 min</td>
+<td>1-2 ore</td>
+</tr>
+<tr>
+<td>Costo</td>
+<td>Gratuito</td>
+<td>Gratuito</td>
+<td>~5€/mese</td>
+</tr>
+<tr>
+<td>Accessibile da mobile</td>
+<td>No</td>
+<td>Sì</td>
+<td>Sì</td>
+</tr>
+<tr>
+<td>Auto-deploy da git</td>
+<td>—</td>
+<td>Sì</td>
+<td>No (manuale)</td>
+</tr>
+<tr>
+<td>Controllo totale</td>
+<td>Sì</td>
+<td>No</td>
+<td>Sì</td>
+</tr>
+<tr>
+<td>Uptime 24/7</td>
+<td>No</td>
+<td>Sì</td>
+<td>Sì</td>
+</tr>
+<tr>
+<td>Import XLS automatico</td>
+<td>Sì</td>
+<td>Solo via git</td>
+<td>Via SCP</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Raccomandazione:</strong> per uso personale, <strong>Streamlit Community Cloud</strong> è la scelta ottimale — gratuita, zero manutenzione, accessibile da smartphone.</p>
+</main>
+</body>
+</html>

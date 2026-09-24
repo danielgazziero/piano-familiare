@@ -1,0 +1,21 @@
+# Secrets — NON committare mai
+.streamlit/secrets.toml
+
+# Dati personali
+data/input/
+data/processed/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archivi
+*.zip

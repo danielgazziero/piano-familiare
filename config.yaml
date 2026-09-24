@@ -1,0 +1,240 @@
+# ============================================================
+# PIANO FINANZIARIO FAMILIARE — Configurazione
+# Aggiornare questo file ogni volta che cambiano i parametri
+# ============================================================
+
+famiglia:
+  aggiornato: "2026-09"
+
+entrate:
+  daniel_stipendio: 2600
+  alessandra_stipendio_ordinario: 1600
+  alessandra_stipendio_maternita: 1280
+  affitto_chiara: 300
+  mutuo_mensile: 1317
+
+date:
+  nascita_flor: "2026-10-01"
+  inizio_maternita: "2026-10-01"
+  fine_maternita: "2027-05-01"
+  inizio_asilo_nido: "2027-05-01"
+  scadenza_generali: "2028-09-01"
+
+allocazione:
+  spese_correnti_ora: 1200
+  spese_correnti_con_nido: 1800
+  vacanze_buffer: 300
+  pac_daniel_ora: 1000
+  pac_daniel_con_nido: 800
+  pac_flor: 200
+
+patrimonio:
+  fondi_bancari: 109000
+  fondi_plusvalenze: 52570
+  fondi_costo_fiscale: 56430
+  gestione_separata_generali: 56000
+  generali_versamento_mensile: 100
+  etf_cspx_directa: 10500
+  liquidita_daniel: 3400
+  liquidita_alessandra: 4000
+  conto_comune: 5000
+  affitto_accantonato: 1000
+
+migrazione_fondi:
+  aliquota_capital_gain: 0.26
+  piano_annuale:
+    - anno: 1
+      rimborso_lordo: 22000
+    - anno: 2
+      rimborso_lordo: 22000
+    - anno: 3
+      rimborso_lordo: 22000
+    - anno: 4
+      rimborso_lordo: 22000
+    - anno: 5
+      rimborso_lordo: 21000
+
+# ─── ETF IN PORTAFOGLIO / PAC ────────────────────────────────
+# ticker_yf: ticker usato da yfinance per scaricare i prezzi
+# ticker_bi: codice alfanumerico Borsa Italiana (per display)
+etf:
+  # ETF ATTIVI
+  - ticker_yf: "CSPX.L"
+    ticker_bi: "CSPX"
+    nome: "iShares Core S&P 500"
+    isin: "IE00B5BMR087"
+    valore_iniziale: 10500
+    proprietario: "daniel"
+    stato: "attivo"
+    note: "Su Directa — già in portafoglio"
+
+  # ETF DA AVVIARE — PAC
+  - ticker_yf: "ACWE.MI"
+    ticker_bi: "ACWE"
+    nome: "SPDR MSCI ACWI (Flor)"
+    isin: "IE00B44Z5B48"
+    valore_iniziale: 0
+    proprietario: "flor"
+    stato: "da_avviare"
+    note: "Conto minore Directa — avviare dopo CF Flor"
+
+  - ticker_yf: "IWDA.AS"
+    ticker_bi: "IWDA"
+    nome: "iShares Core MSCI World"
+    isin: "IE00B4L5Y983"
+    valore_iniziale: 0
+    proprietario: "daniel"
+    stato: "da_avviare"
+    note: "PAC Daniel €1.000/mese — avviare ottobre 2026"
+
+  - ticker_yf: "EMAE.MI"
+    ticker_bi: "EMAE"
+    nome: "SPDR MSCI EM Asia"
+    isin: "IE00B466KX20"
+    ter: 0.55
+    valore_iniziale: 0
+    proprietario: "daniel"
+    stato: "candidato"
+    note: "Emergenti Asia — valutare come complemento a IWDA. TER 0.55%, YTD +26.8%"
+
+  - ticker_yf: "MWRD.MI"
+    ticker_bi: "MWRD"
+    nome: "Amundi Core MSCI World"
+    isin: "IE000BI8OT95"
+    ter: 0.12
+    valore_iniziale: 0
+    proprietario: "daniel"
+    stato: "candidato"
+    note: "Alternativa low-cost a IWDA. TER 0.12% — stesso benchmark MSCI World. YTD +13.3%"
+
+# ─── FONDI BANCARI (con ISIN e quote) ────────────────────────
+fondi_bancari:
+  aliquota_capital_gain: 0.26
+  titoli:
+    - nome: "ARCA AZ EUROPA CLIMA"
+      isin: "IT0001033486"
+      quantita: 16.474
+      ticker_yf: null   # fondi italiani non su Yahoo — valorizzare manualmente
+      valore_quota_ref: 23.52    # ultimo valore noto (agosto 2026)
+      data_ref: "2026-08-31"
+
+    - nome: "ARCA AZ AMERICA CLIMA P"
+      isin: "IT0001033502"
+      quantita: 23.539
+      ticker_yf: null
+      valore_quota_ref: 93.184
+      data_ref: "2026-08-31"
+
+    - nome: "EURIZON AZ EMERG P"
+      isin: "IT0001031928"
+      quantita: 569.517
+      ticker_yf: null
+      valore_quota_ref: 16.048
+      data_ref: "2026-08-31"
+
+    - nome: "JPMF GLO SUST EQ ACC"
+      isin: "LU2293888439"
+      quantita: 83.494
+      ticker_yf: null
+      valore_quota_ref: 138.93
+      data_ref: "2026-08-31"
+
+    - nome: "EURIZON AZ AMER P"
+      isin: "IT0001050126"
+      quantita: 401.49
+      ticker_yf: null
+      valore_quota_ref: 57.876
+      data_ref: "2026-08-31"
+
+    - nome: "EURIZ AZ AREA EURO P"
+      isin: "IT0001050225"
+      quantita: 358.67
+      ticker_yf: null
+      valore_quota_ref: 68.064
+      data_ref: "2026-08-31"
+
+    - nome: "EURIZON AZ INT P"
+      isin: "IT0001080446"
+      quantita: 1114.2
+      ticker_yf: null
+      valore_quota_ref: 35.056
+      data_ref: "2026-08-31"
+
+# ─── AZIONI ACCENTURE (RSU/stock plan) ───────────────────────
+azioni:
+  - nome: "Accenture PLC"
+    ticker_yf: "ACN"
+    quantita: 71
+    isin: "IE00B4BNMY34"
+    tipo: "azioni_dipendente"
+    note: "RSU/stock plan Accenture — verificare lock-up e tassazione separata"
+
+# ─── COSTI FLOR PER ETÀ ──────────────────────────────────────
+costi_flor:
+  - eta_da: 0
+    eta_a: 1
+    voce: "Spese neonato"
+    mensile: 150
+  - eta_da: 1
+    eta_a: 3
+    voce: "Asilo nido"
+    mensile: 600
+  - eta_da: 3
+    eta_a: 6
+    voce: "Materna + attività"
+    mensile: 250
+  - eta_da: 6
+    eta_a: 11
+    voce: "Elementari + attività"
+    mensile: 300
+  - eta_da: 11
+    eta_a: 14
+    voce: "Medie + sport/hobby"
+    mensile: 400
+  - eta_da: 14
+    eta_a: 18
+    voce: "Liceo + patente + uscite"
+    mensile: 500
+  - eta_da: 18
+    eta_a: 23
+    voce: "Università (stima)"
+    mensile: 800
+
+# ─── ADAPTER BANCHE ──────────────────────────────────────────
+banche:
+  - id: "bper_daniel"
+    nome: "BPER Daniel"
+    intestatario: "daniel"
+    formato: "bper_xls"
+    pattern_file: "Lista_Movimenti_Daniel*"
+
+  - id: "bper_alessandra"
+    nome: "BPER Alessandra"
+    intestatario: "alessandra"
+    formato: "bper_xls_new"
+    pattern_file: "Lista_Movimenti_Alessandra*"
+
+# ─── DEBITI E SPESE STRAORDINARIE ────────────────────────────
+debiti:
+  - descrizione: "Prestito fratello Alessandra"
+    importo_totale: 15000
+    piano_rimborso:
+      - data: "2026-12-01"
+        importo: 5000
+        note: "Prima tranche — con tredicesima"
+      - data: "2027-05-01"
+        importo: 5000
+        note: "Seconda tranche — dopo fine maternità"
+      - data: "2027-12-01"
+        importo: 5000
+        note: "Terza tranche — fine anno"
+
+spese_straordinarie:
+  - descrizione: "Cantina vini"
+    importo: 2000
+    data: "2026-11-01"
+    tipo: "una_tantum"
+  - descrizione: "Bonus extra stimato"
+    importo: 2000
+    data: "2026-12-01"
+    tipo: "entrata_straordinaria"

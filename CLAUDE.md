@@ -1,0 +1,189 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Piano Finanziario Familiare
+
+App Streamlit per il monitoraggio del patrimonio familiare (Daniel & Alessandra).
+
+## Comandi principali
+
+```bash
+# Avvia app
+python -m streamlit run app.py
+
+# Testa connessione Supabase
+python src/database.py
+
+# Testa parser XLS bancari
+python src/parser.py
+
+# Controllo ambiente (dipendenze, config)
+python check_and_setup.py
+```
+
+App disponibile su http://localhost:8501 — si ricarica automaticamente ad ogni modifica.
+
+## Stack tecnico
+
+- **Frontend:** Streamlit — navigazione via `st.sidebar.radio`, un unico `app.py`
+- **Grafici:** Plotly (go.Figure / px)
+- **Database:** Supabase (Postgres hosted) — credenziali hardcoded in `src/database.py`
+- **Prezzi ETF/azioni:** yfinance — ticker in `config.yaml` e `src/prices.py`
+- **Prezzi fondi bancari:** manuali — nessun ticker Yahoo, valorizzati da `quote_fondi` su Supabase
+- **Parsing XLS banca:** xlrd 1.2.0 (BIFF8 per Daniel) + openpyxl (Alessandra)
+
+## Architettura e flusso dati
+
+### Layer
+
+```
+app.py
+  └─ src/app_state.py   # bridge Streamlit session_state ↔ Supabase
+       └─ src/database.py    # CRUD Supabase (tutte le tabelle)
+       └─ src/positions.py   # quantità asset nel tempo + backfill prezzi
+  └─ src/portfolio.py   # snapshot valori correnti (ETF via yfinance, fondi via quote_map)
+  └─ src/simulator.py   # simulazioni finanziarie pure (no DB, no yfinance)
+  └─ src/parser.py      # orchestratore parsing XLS bancari
+       └─ src/adapters.py    # parser specifici per banca
+  └─ src/prices.py      # download storico prezzi via yfinance
+  └─ config.yaml        # dati statici di riferimento e valori di fallback
+```
+
+### Sequenza di avvio (ogni sessione Streamlit)
+
+1. `load_config()` — carica `config.yaml` (@st.cache_data ttl=3600)
+2. `init_db_connection()` — verifica Supabase; l'app funziona anche offline
+3. Carica `params` da `config_params` (DB) o fallback da config.yaml
+4. Carica `quote_map` `{isin: quota}` da `quote_fondi` (DB) o fallback da config.yaml
+5. Auto-import XLS da `data/input/` → `salva_transazioni()` (deduplicato via MD5)
+6. Auto-save snapshot patrimonio odierno (upsert su `patrimonio_log`)
+7. Backfill silenzioso: scarica prezzi mancanti per tutti gli ISIN noti
+
+### Valorizzazione asset
+
+- **ETF / azioni ACN:** prezzi in tempo reale via yfinance — `src/prices.py` + `src/portfolio.py`
+- **Fondi bancari italiani:** `ticker_yf: null` in config — prezzi non disponibili su Yahoo. Il valore viene da `quote_map` (`quote_fondi` su Supabase, aggiornato manualmente via XLS o UI). Il fallback è `valore_quota_ref` in config.yaml.
+- **Portafoglio storico:** prezzi giornalieri in `prezzi_storici` (Supabase), quantità in `posizioni` con date di inizio/fine — `positions.py` ricostruisce `valore = quantità(giorno) × prezzo(giorno)` con forward-fill per weekend/festivi.
+
+### Parsing XLS bancari
+
+`src/parser.py` legge `config.yaml → banche[].formato` e delega a `src/adapters.py`:
+- `bper_xls` → xlrd 1.2.0 BIFF8 (estratti più vecchi di Daniel)
+- `bper_xls_new` → openpyxl (estratti Alessandra e nuovi Daniel)
+
+File XLS da mettere in `data/input/` — vengono importati automaticamente all'avvio.
+
+## Schema Supabase
+
+Tabelle principali (SQL completo in `src/database.py` e `src/positions.py`):
+
+| Tabella | Contenuto |
+|---|---|
+| `patrimonio_log` | Snapshot giornaliero patrimonio totale per componente (upsert per `data`) |
+| `quote_fondi` | Quote fondi bancari nel tempo (upsert per `data, isin`) |
+| `transazioni` | Movimenti bancari da XLS (deduplicati via `hash_tx` MD5) |
+| `config_params` | Key-value store per valori manuali (liquidità, conto comune, ecc.) |
+| `posizioni` | Quantità asset per intervallo date (`data_inizio`, `data_fine` NULL=attiva) |
+| `prezzi_storici` | Prezzi giornalieri ETF/azioni (upsert per `isin, data`) |
+| `backfill_stato` | Ultima data scaricata per ISIN (checkpoint backfill) |
+
+Schema da creare su Supabase SQL Editor: vedere `docs/setup_supabase_schema.sql`. Le tabelle `posizioni`, `prezzi_storici`, `backfill_stato` sono in `src/positions.py → POSITIONS_SCHEMA_SQL`.
+
+## Convenzioni di codice
+
+- Colori come costanti dict in cima ad `app.py`: `COLORS`, `SC_COLORS`, `SC_DASH`
+- Cache con `@st.cache_data(ttl=1800)` per chiamate yfinance; `ttl=3600` per config
+- `st.cache_data.clear()` + pulizia `st.session_state` nel pulsante "🔄 Aggiorna tutto"
+- Valori monetari in EUR (eccetto ACN in USD — `valore_attuale_usd`)
+- Date: formato italiano `DD/MM/YYYY` nell'UI, ISO `YYYY-MM-DD` internamente e in DB
+- Le funzioni in `src/simulator.py` sono pure (no side-effect, no DB, no yfinance)
+
+## Asset in portafoglio
+
+### Fondi bancari BPER (prezzi manuali)
+
+| Fondo | ISIN | Quote |
+|---|---|---|
+| ARCA AZ EUROPA CLIMA | IT0001033486 | 16.474 |
+| ARCA AZ AMERICA CLIMA P | IT0001033502 | 23.539 |
+| EURIZON AZ EMERG P | IT0001031928 | 569.517 |
+| JPMF GLO SUST EQ ACC | LU2293888439 | 83.494 |
+| EURIZON AZ AMER P | IT0001050126 | 401.49 |
+| EURIZ AZ AREA EURO P | IT0001050225 | 358.67 |
+| EURIZON AZ INT P | IT0001080446 | 1114.2 |
+
+### ETF (Directa SIM)
+
+| ETF | ISIN | Stato | PAC |
+|---|---|---|---|
+| CSPX | IE00B5BMR087 | Attivo | — |
+| ACWE | IE00B44Z5B48 | Da avviare | €200/mese — Flor |
+| IWDA | IE00B4L5Y983 | Da avviare | €1.000/mese — Daniel |
+
+### Azioni
+- **Accenture ACN** (IE00B4BNMY34) — 71 azioni RSU stock plan, valorizzate in USD
+
+## Contesto finanziario
+
+- **Patrimonio totale:** ~€189k
+- **Debito:** €15.000 fratello Alessandra — tranche dic 2026, mag 2027, dic 2027
+- **Mutuo:** €1.317/mese (già dedotto dagli stipendi netti)
+- **Entrate nette:** Daniel €2.600 + Alessandra €1.600 + affitto €300 = €4.500/mese
+- **Nascita Flor:** ottobre 2026 — Alessandra maternità all'80% fino maggio 2027
+- **Asilo nido:** da maggio 2027 — €600/mese
+
+## Roadmap — Feature da implementare
+
+Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 2026).
+
+### ✅ Fix tecnici completati (24/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| T1 | Credenziali Supabase → `st.secrets` + `.streamlit/secrets.toml` (non committato) | `src/database.py`, `.gitignore` |
+| T2 | N+1 INSERT → batch `insert(records, ignore_duplicates=True)` | `src/database.py:salva_transazioni()` |
+| T3 | `get_client()` → singleton `@st.cache_resource` | `src/database.py` |
+| T4 | Full table scan `quote_fondi` → query con `.limit(500)` | `src/database.py:carica_ultime_quote_fondi()` |
+| T5 | Date re-parsate per ogni giorno → pre-parse una sola volta in `_posizioni_parsed` | `src/positions.py:calcola_valore_giornaliero()` |
+| T6 | `NuovaBancaAdapter` stub rimosso da `ADAPTER_REGISTRY` | `src/adapters.py` |
+| — | `timedelta` aggiunto agli import mancanti | `app.py:11` |
+
+### 🔴 Alta priorità
+
+| # | Feature | Moduli coinvolti | Note |
+|---|---|---|---|
+| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE con barra avanzamento, anni mancanti proiettati e rendimento assunto | `app.py`, `simulator.py`, `config.yaml` | Attualmente assente. Il Coast FIRE è già vicino al target stimato. |
+| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi nella sezione "Stato di famiglia" | `app.py`, `app_state.py` | Facile: derivabile da `carica_transazioni_db()` già disponibile. |
+| 3 | **Rebalancing alert ETF** — tabella target/attuale/drift (pp) e importo € da comprare/vendere per rientrare in policy (es. 80/20 World/EM) | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
+| 4 | **Liabilities nel net worth** — dedurre debiti dal patrimonio totale e includerli nello storico `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
+| 5 | **Onboarding wizard + cloud storage** — procedura guidata al primo avvio (o da sidebar) per compilare tutti i parametri fondamentali (asset, PAC, redditi, debiti) tramite un template Excel multi-sheet o form in-app. I dati vengono salvati su storage cloud (Google Drive via API OAuth2 o Dropbox) anziché su file locale, così sono disponibili su qualsiasi dispositivo e la dashboard li carica automaticamente alle sessioni successive. | `app.py`, `app_state.py`, `config.yaml`, nuovo `src/cloud_storage.py` | Prerequisiti: credenziali OAuth Google Drive o Dropbox API token in `st.secrets`. Template Excel: un foglio per tab (Profilo, Asset, ETF, Fondi, Debiti, Spese). Opzione alternativa: salvare il `config.yaml` compilato direttamente su Supabase Storage (già nel progetto, zero nuove dipendenze). |
+| 6 ✅ | **Aggiornamento automatico docs al deploy** — `.github/workflows/build-docs.yml` per GitHub Actions (si attiva su push a main se cambiano `.md` o `build_html_docs.py`). Hook git locale tramite `scripts/install_hooks.bat` (Windows) o `scripts/install_hooks.sh` (Mac/Linux) — eseguire una volta dopo `git init`. | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml`, `scripts/install_hooks.*` | — |
+| 7 | **Demo data / dati campione** — set di dati fittizi e realistici (config, posizioni, transazioni, prezzi storici) che popolano interamente l'app senza dati reali. Serve per condividere l'app con altri utenti, fare screenshot, o fare onboarding senza esporre informazioni personali. I dummy data devono coprire ogni tab e ogni KPI della dashboard. | `app.py`, nuovo `src/demo_data.py`, `config_demo.yaml`, `docs/demo_seed.sql` | Implementazione: `config_demo.yaml` con nomi generici (es. "Utente A", banca "Banca Esempio"), `demo_seed.sql` con INSERT su tutte le tabelle Supabase, flag `DEMO_MODE=true` in `st.secrets` che carica i demo data invece del DB reale. I valori devono avere senso finanziario (es. PAC mensile coerente con il patrimonio simulato) per fungere da guida alla compilazione. |
+
+### 🟡 Media priorità
+
+| # | Feature | Moduli coinvolti | Note |
+|---|---|---|---|
+| 8 | **XIRR stimato** — rendimento annualizzato usando net cash flow come proxy dei flussi esterni al portafoglio | `simulator.py`, `app.py` | Richiede `scipy.optimize` o implementazione manuale XIRR. |
+| 9 | **Bollo threshold alert** — avviso se cash reserve > €5.000 (soglia imposta di bollo €34,20/anno) con azione suggerita | `app.py` | Soglia configurabile in `config.yaml`. |
+| 10 | **YoY cash flow** — colonna delta vs anno precedente per inflows, expenses, net CF | `app.py`, `app_state.py` | Estensione della sezione transazioni esistente. |
+| 11 | **Blocked Assets storico** — tabella aggiornabile per valorizzazioni periodiche di asset illiquidi (immobili, previdenza), separata dal portafoglio liquido | `database.py`, `app_state.py`, `app.py` | Nuova tabella Supabase `blocked_assets_log`. |
+
+### 🟢 Bassa priorità / nice to have
+
+| # | Feature | Moduli coinvolti | Note |
+|---|---|---|---|
+| 12 | **Geo/sector ETF** — breakdown geografico aggiornabile manualmente ogni trimestre dai factsheet | `app.py`, `config.yaml` | Dati statici, nessuna automazione possibile. |
+| 13 | **Data freshness indicator** — riepilogo allineamento dati (ultima data chiusa per ogni dataset) nella sidebar | `app.py`, `app_state.py` | UX improvement. |
+| 14 | **Month-end checklist** — pannello guidato 4 passi con stato Aperto/Chiuso per validare il mese | `app.py` | Migliora consistenza dati nel tempo. |
+
+---
+
+## Note critiche
+
+- **xlrd==1.2.0** — fissato a questa versione, NON aggiornare (rompe il parsing BIFF8)
+- **config.yaml** — non sovrascrivere quando si aggiorna il codice
+- **data/** — non sovrascrivere quando si aggiorna il codice
+- Le credenziali Supabase vanno in `.streamlit/secrets.toml` (gitignored) o variabili d'ambiente `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SECRET` — mai hardcodate nel codice
+- `inizializza_posizioni()` va chiamata solo una volta (inserisce le posizioni default nel DB se vuoto)

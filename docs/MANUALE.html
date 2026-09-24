@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Net Worth Tracker - Manuale utente</title>
+<style>
+  :root { --primary: #1F5C8B; --accent: #1baf7a; --bg: #f7f9fb; --text: #1a1a2e; --border: #d0d7de; --code-bg: #f0f3f5; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.7; color: var(--text); background: var(--bg); display: flex; }
+  nav { width: 230px; min-width: 230px; background: #fff; border-right: 1px solid var(--border); padding: 28px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  nav .logo { font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 20px; display: block; }
+  nav ul { list-style: none; }
+  nav ul li a { display: block; color: var(--text); text-decoration: none; padding: 4px 8px; border-radius: 4px; font-size: 12.5px; }
+  nav ul li a:hover { background: var(--code-bg); color: var(--primary); }
+  main { flex: 1; max-width: 860px; padding: 48px 56px; }
+  h1 { font-size: 26px; color: var(--primary); border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 8px; }
+  h2 { font-size: 20px; color: var(--primary); border-left: 4px solid var(--accent); padding-left: 12px; margin: 40px 0 14px; }
+  h3 { font-size: 16px; color: var(--primary); margin: 26px 0 10px; }
+  h4 { font-size: 14px; margin: 18px 0 8px; color: #444; }
+  p { margin-bottom: 12px; }
+  a { color: var(--primary); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-family: "Consolas", "Courier New", monospace; font-size: 12.5px; }
+  pre { background: #1e1e2e; color: #cdd6f4; border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 12px 0 18px; font-size: 12.5px; line-height: 1.5; }
+  pre code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0 20px; font-size: 13px; }
+  th { background: var(--primary); color: #fff; padding: 8px 12px; text-align: left; font-weight: 600; }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+  tr:nth-child(even) td { background: #f2f5f8; }
+  blockquote { border-left: 4px solid var(--accent); background: #eef9f5; padding: 10px 16px; margin: 14px 0; border-radius: 0 6px 6px 0; font-size: 13px; }
+  blockquote p { margin: 0; }
+  ul, ol { padding-left: 24px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  @media print { nav { display: none; } body { display: block; } main { max-width: 100%; padding: 20px; } pre { background: #f5f5f5; color: #000; border: 1px solid #ccc; } }
+  @media (max-width: 700px) { nav { display: none; } main { padding: 24px 18px; } }
+</style>
+</head>
+<body>
+<nav>
+  <span class="logo">Net Worth Tracker</span>
+  <ul><li><a href="#indice">Indice</a></li>
+<li><a href="#1-prima-installazione-windows">1. Prima installazione — Windows</a></li>
+  <li><a href="#passo-1-installa-python">Passo 1 — Installa Python</a></li>
+  <li><a href="#passo-2-esegui-il-check-automatico">Passo 2 — Esegui il check automatico</a></li>
+<li><a href="#2-prima-installazione-mac">2. Prima installazione — Mac</a></li>
+  <li><a href="#passo-1-installa-homebrew-se-non-ce-lhai">Passo 1 — Installa Homebrew (se non ce l'hai)</a></li>
+  <li><a href="#passo-2-installa-python">Passo 2 — Installa Python</a></li>
+  <li><a href="#passo-3-esegui-il-check-automatico">Passo 3 — Esegui il check automatico</a></li>
+<li><a href="#3-setup-database-supabase">3. Setup database Supabase</a></li>
+  <li><a href="#passo-1-crea-le-tabelle">Passo 1 — Crea le tabelle</a></li>
+  <li><a href="#passo-2-inizializza-i-dati">Passo 2 — Inizializza i dati</a></li>
+<li><a href="#4-avviare-lapp-ogni-giorno">4. Avviare l'app ogni giorno</a></li>
+  <li><a href="#windows">Windows</a></li>
+  <li><a href="#mac">Mac</a></li>
+<li><a href="#5-aggiornamento-mensile">5. Aggiornamento mensile</a></li>
+  <li><a href="#ogni-mese-10-minuti-in-tutto">Ogni mese (10 minuti in tutto)</a></li>
+<li><a href="#6-come-usare-la-dashboard">6. Come usare la dashboard</a></li>
+  <li><a href="#stato-di-famiglia">🏠 Stato di famiglia</a></li>
+  <li><a href="#portafoglio-storico">📉 Portafoglio storico</a></li>
+  <li><a href="#etf-amp-mercato">📈 ETF &amp; mercato</a></li>
+  <li><a href="#fondi-bancari">🏦 Fondi bancari</a></li>
+  <li><a href="#azioni-accenture">📊 Azioni Accenture</a></li>
+  <li><a href="#simulatore-strategie">🎯 Simulatore strategie</a></li>
+  <li><a href="#flor-timeline">👶 Flor timeline</a></li>
+  <li><a href="#sidebar-controlli-globali">⚙️ Sidebar — Controlli globali</a></li>
+<li><a href="#7-cosa-fa-lapp-allavvio">7. Cosa fa l'app all'avvio</a></li>
+<li><a href="#8-cambiare-banca">8. Cambiare banca</a></li>
+<li><a href="#9-registrare-acquisti-e-vendite-fondi">9. Registrare acquisti e vendite fondi</a></li>
+<li><a href="#10-modifica-parametri">10. Modifica parametri</a></li>
+  <li><a href="#aggiungere-un-etf">Aggiungere un ETF</a></li>
+  <li><a href="#aggiornare-importo-pac">Aggiornare importo PAC</a></li>
+  <li><a href="#aggiungere-un-rimborso-effettuato">Aggiungere un rimborso effettuato</a></li>
+<li><a href="#11-upgrade-futuro-database">11. Upgrade futuro database</a></li>
+<li><a href="#12-risoluzione-problemi">12. Risoluzione problemi</a></li>
+  <li><a href="#python-comando-non-trovato-windows">"python: comando non trovato" (Windows)</a></li>
+  <li><a href="#streamlit-comando-non-trovato">"streamlit: comando non trovato"</a></li>
+  <li><a href="#modulenotfounderror">"ModuleNotFoundError"</a></li>
+  <li><a href="#lapp-non-si-connette-a-supabase">L'app non si connette a Supabase</a></li>
+  <li><a href="#i-prezzi-non-si-aggiornano">I prezzi non si aggiornano</a></li>
+  <li><a href="#il-browser-non-si-apre">"Il browser non si apre"</a></li></ul>
+</nav>
+<main>
+<h1>Net Worth Tracker — Manuale utente</h1>
+<p><strong>Versione 2.1 · Settembre 2026</strong></p>
+<hr />
+<h2 id="indice">Indice</h2>
+<ol>
+<li><a href="#1-prima-installazione--windows">Prima installazione — Windows</a></li>
+<li><a href="#2-prima-installazione--mac">Prima installazione — Mac</a></li>
+<li><a href="#3-setup-database-supabase">Setup database Supabase</a></li>
+<li><a href="#4-avviare-lapp-ogni-giorno">Avviare l'app ogni giorno</a></li>
+<li><a href="#5-aggiornamento-mensile">Aggiornamento mensile</a></li>
+<li><a href="#6-come-usare-la-dashboard">Come usare la dashboard</a></li>
+<li><a href="#7-cosa-fa-lapp-allavvio">Cosa fa l'app all'avvio</a></li>
+<li><a href="#8-cambiare-banca">Cambiare banca</a></li>
+<li><a href="#9-registrare-acquisti-e-vendite-fondi">Registrare acquisti e vendite fondi</a></li>
+<li><a href="#10-modifica-parametri">Modifica parametri</a></li>
+<li><a href="#11-upgrade-futuro-database">Upgrade futuro database</a></li>
+<li><a href="#12-risoluzione-problemi">Risoluzione problemi</a></li>
+</ol>
+<hr />
+<h2 id="1-prima-installazione-windows">1. Prima installazione — Windows</h2>
+<h3 id="passo-1-installa-python">Passo 1 — Installa Python</h3>
+<ol>
+<li>Vai su <strong>https://www.python.org/downloads/</strong></li>
+<li>Clicca il pulsante "Download Python 3.x.x"</li>
+<li>Apri il file scaricato</li>
+<li>⚠️ <strong>IMPORTANTE:</strong> spunta <strong>"Add Python to PATH"</strong> prima di cliccare Install Now</li>
+<li>Clicca <strong>Install Now</strong> e attendi</li>
+</ol>
+<p><strong>Verifica:</strong> apri il Prompt dei comandi (tasto Windows → <code>cmd</code> → Invio):</p>
+<pre><code>python --version
+</code></pre>
+<p>Deve apparire <code>Python 3.x.x</code>.</p>
+<hr />
+<h3 id="passo-2-esegui-il-check-automatico">Passo 2 — Esegui il check automatico</h3>
+<ol>
+<li>Decomprimi la cartella del progetto dove preferisci (es. <code>C:\Progetti\piano-familiare</code>)</li>
+<li>Fai <strong>doppio click su <code>AVVIA_WINDOWS.bat</code></strong></li>
+</ol>
+<p>Lo script controlla tutto, installa le librerie mancanti e ti guida.</p>
+<p>Se il doppio click non funziona, apri il Prompt dei comandi:</p>
+<pre><code>cd C:\Progetti\piano-familiare
+python check_and_setup.py
+</code></pre>
+<hr />
+<h2 id="2-prima-installazione-mac">2. Prima installazione — Mac</h2>
+<h3 id="passo-1-installa-homebrew-se-non-ce-lhai">Passo 1 — Installa Homebrew (se non ce l'hai)</h3>
+<pre><code class="language-bash">/bin/bash -c &quot;$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)&quot;
+</code></pre>
+<h3 id="passo-2-installa-python">Passo 2 — Installa Python</h3>
+<pre><code class="language-bash">brew install python3
+</code></pre>
+<h3 id="passo-3-esegui-il-check-automatico">Passo 3 — Esegui il check automatico</h3>
+<pre><code class="language-bash">cd /percorso/piano-familiare
+bash avvia_mac.sh
+</code></pre>
+<hr />
+<h2 id="3-setup-database-supabase">3. Setup database Supabase</h2>
+<p><strong>Da fare una sola volta</strong> dopo il primo avvio.</p>
+<h3 id="passo-1-crea-le-tabelle">Passo 1 — Crea le tabelle</h3>
+<ol>
+<li>Vai su <strong>https://supabase.com</strong> e accedi al tuo progetto</li>
+<li>Menu a sinistra → <strong>SQL Editor</strong> → <strong>New query</strong></li>
+<li>Incolla tutto il contenuto di <code>docs/setup_supabase_schema.sql</code></li>
+<li>Clicca <strong>Run</strong> — deve apparire "Success"</li>
+</ol>
+<h3 id="passo-2-inizializza-i-dati">Passo 2 — Inizializza i dati</h3>
+<pre><code class="language-bash"># Windows
+python setup_supabase.py
+
+# Mac
+python3 setup_supabase.py
+</code></pre>
+<p>Questo carica le posizioni iniziali (fondi, ETF, azioni) nel database.</p>
+<hr />
+<h2 id="4-avviare-lapp-ogni-giorno">4. Avviare l'app ogni giorno</h2>
+<h3 id="windows">Windows</h3>
+<p>Doppio click su <strong><code>AVVIA_WINDOWS.bat</code></strong><br />
+oppure:</p>
+<pre><code>python -m streamlit run app.py
+</code></pre>
+<h3 id="mac">Mac</h3>
+<pre><code class="language-bash">python3 -m streamlit run app.py
+</code></pre>
+<p>Il browser si apre su <strong>http://localhost:8501</strong> — se non si apre automaticamente, digita quell'indirizzo.</p>
+<p>Per fermare: premi <code>Ctrl+C</code> nel Terminale/Prompt.</p>
+<hr />
+<h2 id="5-aggiornamento-mensile">5. Aggiornamento mensile</h2>
+<h3 id="ogni-mese-10-minuti-in-tutto">Ogni mese (10 minuti in tutto)</h3>
+<p><strong>Passo 1 — Scarica gli estratti dalla banca</strong><br />
+1. Accedi all'home banking<br />
+2. Vai su Movimenti → Esporta → formato XLS<br />
+3. Copia i file in: <code>data/input/</code></p>
+<p><strong>Passo 2 — Avvia l'app</strong><br />
+L'app importa automaticamente i nuovi XLS. Nella sidebar apparirà:<br />
+- <code>📥 N nuove transazioni importate</code><br />
+- <code>📡 N nuovi prezzi scaricati</code></p>
+<p><strong>Passo 3 — Aggiorna i valori manuali</strong><br />
+Sezione <strong>Stato di famiglia</strong> → pannello <strong>🔧 Aggiorna valori manuali</strong>:<br />
+- Liquidità conti<br />
+- Valore fondi bancari (dal rendiconto mensile banca)<br />
+- Valore Generali (dal rendiconto trimestrale)</p>
+<p>Clicca <strong>💾 Salva valori</strong> — vengono salvati su Supabase.</p>
+<p><strong>Passo 4 — Aggiorna le quote fondi</strong> (quando hai il rendiconto banca)<br />
+Sezione <strong>Fondi bancari</strong> → tabella editabile → aggiorna la colonna <strong>Quota €</strong>.</p>
+<hr />
+<h2 id="6-come-usare-la-dashboard">6. Come usare la dashboard</h2>
+<p>L'app si naviga dalla <strong>sidebar a sinistra</strong>. Ogni sezione è indipendente.</p>
+<hr />
+<h3 id="stato-di-famiglia">🏠 Stato di famiglia</h3>
+<p><strong>Cosa mostra:</strong> il patrimonio totale attuale, suddiviso per componente.</p>
+<p><strong>Pannello "Aggiorna valori manuali"</strong> (espandibile)<br />
+- Inserisci i saldi aggiornati di liquidità, fondi, conto comune<br />
+- Clicca <strong>💾 Salva valori</strong> per persistere i dati su Supabase<br />
+- I valori vengono ripristinati automaticamente alla prossima apertura</p>
+<p><strong>KPI principali</strong></p>
+<table>
+<thead>
+<tr>
+<th>KPI</th>
+<th>Significato</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Patrimonio totale</td>
+<td>Somma di tutti gli asset (fondi + ETF + azioni + liquidità + Generali)</td>
+</tr>
+<tr>
+<td>Netto fiscale</td>
+<td>Patrimonio al netto della tassa latente sul capital gain dei fondi (26%)</td>
+</tr>
+<tr>
+<td>Fondi bancari</td>
+<td>Valore attuale dei fondi BPER (quote × prezzo)</td>
+</tr>
+<tr>
+<td>ETF</td>
+<td>Valore portafoglio ETF a prezzi live Yahoo Finance</td>
+</tr>
+<tr>
+<td>Azioni ACN</td>
+<td>Valore Accenture in USD (non convertito)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Grafico torta:</strong> composizione del patrimonio per tipo di asset.</p>
+<p><strong>Grafico andamento:</strong> storico patrimonio giornaliero costruito automaticamente — si popola giorno dopo giorno aprendo l'app. Usa il selettore periodo per filtrare (1 mese → tutto).</p>
+<p><strong>Sezione transazioni bancarie:</strong> mostra entrate e uscite per mese, con grafico a barre per categoria e dettaglio transazioni espandibile.</p>
+<blockquote>
+<p><strong>Quando usarla:</strong> all'inizio di ogni mese dopo aver aggiornato i valori manuali. È il check generale sulla situazione finanziaria.</p>
+</blockquote>
+<hr />
+<h3 id="portafoglio-storico">📉 Portafoglio storico</h3>
+<p><strong>Cosa mostra:</strong> il valore giornaliero reale del portafoglio (quantità × prezzo giornaliero) con backfill automatico.</p>
+<p><strong>Vista Aggregato</strong><br />
+- KPI: valore attuale, valore a inizio periodo, variazione € e %<br />
+- Grafico valore totale con marcatori verticali per acquisti/vendite<br />
+- Grafico composizione a area stacked per ISIN</p>
+<p><strong>Vista Per asset</strong><br />
+- Seleziona un singolo fondo/ETF/azione<br />
+- Vedi prezzo quota e valore posizione su doppio asse Y<br />
+- Tabella storico variazioni quantità<br />
+- Form per registrare un nuovo acquisto o vendita parziale</p>
+<p><strong>Registrare un'operazione:</strong><br />
+1. Seleziona l'asset dalla lista<br />
+2. Scendi al form "Registra acquisto / vendita parziale"<br />
+3. Inserisci la <strong>quantità totale</strong> dopo l'operazione (non la variazione)<br />
+4. Inserisci la data reale dell'operazione<br />
+5. Clicca <strong>💾 Salva operazione</strong></p>
+<blockquote>
+<p><strong>Quando usarla:</strong> per verificare l'andamento storico reale e dopo ogni acquisto/rimborso fondi.</p>
+</blockquote>
+<hr />
+<h3 id="etf-amp-mercato">📈 ETF &amp; mercato</h3>
+<p><strong>Cosa mostra:</strong> performance degli ETF in portafoglio e simulatore PAC.</p>
+<p><strong>ETF attivi:</strong> KPI per ogni ETF (prezzo, YTD, 1 anno).</p>
+<p><strong>Grafico performance storica:</strong> confronto relativo (base 100) tra i titoli selezionati nel periodo scelto. Seleziona uno o più ticker dal multiselect.</p>
+<p><strong>Simulatore PAC — portafoglio ETF personalizzabile</strong><br />
+- Tabella editabile: aggiungi/rimuovi ETF, imposta importo mensile e valore iniziale<br />
+- Seleziona orizzonte (anni) e rendimento base<br />
+- Il grafico mostra scenario worst/base/best e, se attivo, i singoli ETF<br />
+- I KPI sotto il grafico mostrano il valore finale nei tre scenari</p>
+<p><strong>Confronto ETF candidati:</strong> grafico performance relativa di ETF alternativi (EMAE, MWRD, IWDA, CSPX) utile per valutare nuovi acquisti.</p>
+<blockquote>
+<p><strong>Quando usarla:</strong> per pianificare nuovi PAC, confrontare alternative, o verificare la performance degli ETF attivi.</p>
+</blockquote>
+<hr />
+<h3 id="fondi-bancari">🏦 Fondi bancari</h3>
+<p><strong>Cosa mostra:</strong> analisi e scenari di evoluzione per i fondi bancari.</p>
+<p><strong>Tabella editabile fondi</strong><br />
+- Modifica quote, percentuale da mantenere, TER stimato<br />
+- I KPI si aggiornano in tempo reale al variare della selezione</p>
+<p><strong>KPI snapshot</strong></p>
+<table>
+<thead>
+<tr>
+<th>KPI</th>
+<th>Significato</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Valore selezionato</td>
+<td>Valore attuale dei fondi inclusi, pesato per % da mantenere</td>
+</tr>
+<tr>
+<td>Plusvalenza stimata</td>
+<td>Valore - costo fiscale di acquisto</td>
+</tr>
+<tr>
+<td>Tassa latente 26%</td>
+<td>Capital gain × 0,26 se uscissi oggi</td>
+</tr>
+<tr>
+<td>Netto se esci oggi</td>
+<td>Ciò che incassi dopo le tasse</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Storico quote:</strong> grafico della quota del fondo selezionato negli ultimi 12 mesi (da Supabase).</p>
+<p><strong>Scenari per singolo fondo:</strong> evoluzione worst/base/best del valore lordo e netto su orizzonte configurabile.</p>
+<p><strong>Portafoglio fondi aggregato:</strong> stesso grafico scenari ma per tutti i fondi insieme.</p>
+<p><strong>Simulatore "se esco il giorno X":</strong> proietta il valore e la tassa al rimborso in una data futura.</p>
+<p><strong>Piano di uscita ottimale:</strong> distribuzione annuale consigliata dei rimborsi per minimizzare l'impatto fiscale e reinvestire in ETF.</p>
+<blockquote>
+<p><strong>Quando usarla:</strong> per decidere quando e quanto rimborsare dai fondi, in particolare nella pianificazione della migrazione verso ETF.</p>
+</blockquote>
+<hr />
+<h3 id="azioni-accenture">📊 Azioni Accenture</h3>
+<p><strong>Cosa mostra:</strong> valore attuale delle azioni RSU e simulatore vendita.</p>
+<ul>
+<li>KPI: quantità, prezzo live Yahoo Finance, valore USD, YTD</li>
+<li>Grafico storico prezzi ACN nel periodo selezionato</li>
+<li><strong>Simulatore vendita:</strong> scegli quante azioni vendere e tra quanti mesi, imposta rendimento worst/base/best annuale. Il grafico mostra il valore proiettato in USD.</li>
+</ul>
+<blockquote>
+<p>⚠️ Le RSU Accenture hanno una tassazione separata — verificare con CAF/commercialista prima di vendere.</p>
+<p><strong>Quando usarla:</strong> per pianificare eventuali vendite parziali e valutare scenari di prezzo.</p>
+</blockquote>
+<hr />
+<h3 id="simulatore-strategie">🎯 Simulatore strategie</h3>
+<p><strong>Tre tab:</strong></p>
+<p><strong>PAC semplice</strong><br />
+- Importo mensile, orizzonte in anni, rendimento base<br />
+- Opzione: simula riduzione PAC con asilo nido (variabile nel tempo)<br />
+- Grafico worst/base/best + linea "versato"<br />
+- KPI: valore finale nei tre scenari</p>
+<p><strong>Migrazione fondi → ETF</strong><br />
+- Simula il risultato di rimborsare i fondi gradualmente (rimborso annuale configurabile) e reinvestire in ETF<br />
+- Confronto diretto: "resto nei fondi" vs "migro in ETF"<br />
+- Parametri: rendimento ETF, rendimento lordo fondi, costo annuo fondi</p>
+<p><strong>Scenario patrimoniale completo</strong><br />
+- Simula l'evoluzione dell'intero patrimonio su un orizzonte pluriennale<br />
+- Imposta PAC, rendimento, orizzonte<br />
+- Opzione: mostra 3 scenari (3% / 7% / 10%) in un unico grafico<br />
+- Area chart stacked per componente (ETF, fondi, Generali)</p>
+<blockquote>
+<p><strong>Quando usarla:</strong> per prendere decisioni strategiche — quanto versare, quando migrare, cosa aspettarsi nei prossimi 10-20 anni.</p>
+</blockquote>
+<hr />
+<h3 id="flor-timeline">👶 Flor timeline</h3>
+<p><strong>Cosa mostra:</strong> proiezione del fondo dedicato a una figlia/figlio dalla nascita all'università.</p>
+<ul>
+<li>Slider PAC mensile e rendimento base</li>
+<li>Grafico worst/base/best con linee verticali per le fasi di vita (nido, elementari, medie, liceo, 18 anni)</li>
+<li>Grafico a barre costi annuali per fascia d'età</li>
+<li>Tabella: valore del fondo, versato totale, fase e costo annuale per ogni anno di età</li>
+</ul>
+<blockquote>
+<p><strong>Quando usarla:</strong> per dimensionare il PAC figlio/figlia in base ai costi attesi nelle diverse fasi scolastiche.</p>
+</blockquote>
+<hr />
+<h3 id="sidebar-controlli-globali">⚙️ Sidebar — Controlli globali</h3>
+<table>
+<thead>
+<tr>
+<th>Controllo</th>
+<th>Funzione</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔄 Aggiorna tutto</td>
+<td>Svuota la cache, forza il re-download di prezzi e dati dal DB</td>
+</tr>
+<tr>
+<td><code>☁️ Supabase connesso</code></td>
+<td>Indica che il DB è raggiungibile — se offline l'app funziona ma i dati non vengono salvati</td>
+</tr>
+<tr>
+<td><code>Config: YYYY-MM</code></td>
+<td>Data dell'ultimo aggiornamento del file <code>config.yaml</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-cosa-fa-lapp-allavvio">7. Cosa fa l'app all'avvio</h2>
+<p>Ad ogni avvio, in automatico:</p>
+<ol>
+<li><strong>Legge <code>config.yaml</code></strong> — parametri statici (ETF, fondi, allocazione)</li>
+<li><strong>Verifica Supabase</strong> — l'app funziona anche offline (dati non vengono salvati)</li>
+<li><strong>Carica valori persistenti</strong> — liquidità, quote fondi dall'ultima sessione</li>
+<li><strong>Importa XLS</strong> — i nuovi file in <code>data/input/</code> vengono letti e caricati nel DB</li>
+<li><strong>Salva snapshot patrimonio</strong> — un record al giorno su <code>patrimonio_log</code> (upsert)</li>
+<li><strong>Backfill prezzi</strong> — scarica tutti i prezzi mancanti dall'ultima apertura ad oggi per tutti gli ISIN</li>
+</ol>
+<p>Non devi fare nulla — lo storico si costruisce da solo.</p>
+<hr />
+<h2 id="8-cambiare-banca">8. Cambiare banca</h2>
+<p><strong>Passo 1</strong> — Scarica un estratto campione dalla nuova banca</p>
+<p><strong>Passo 2</strong> — Invialo con questa richiesta a Claude Code:</p>
+<blockquote>
+<p>"Ho cambiato banca, ecco un estratto campione. Aggiorna l'adapter."</p>
+</blockquote>
+<p><strong>Passo 3</strong> — Sostituisci <code>src/adapters.py</code> con la versione aggiornata</p>
+<p><strong>Passo 4</strong> — Aggiorna <code>config.yaml</code>:</p>
+<pre><code class="language-yaml">banche:
+  - id: &quot;nuova_banca&quot;
+    nome: &quot;NomeBanca&quot;
+    intestatario: &quot;intestatario&quot;
+    formato: &quot;nuova_banca_id&quot;
+    pattern_file: &quot;Estratto_*&quot;
+</code></pre>
+<hr />
+<h2 id="9-registrare-acquisti-e-vendite-fondi">9. Registrare acquisti e vendite fondi</h2>
+<p>Sezione <strong>Portafoglio storico</strong> → Vista <strong>Per asset</strong> → seleziona l'asset.</p>
+<p>Form in fondo alla pagina:<br />
+- <strong>Nuova quantità totale</strong> — inserisci il totale quote dopo l'operazione (non la variazione)<br />
+- <strong>Data operazione</strong> — il giorno reale<br />
+- <strong>Note</strong> — es. "Rimborso parziale primo anno"</p>
+<p>Clicca <strong>💾 Salva operazione</strong>. Da quel giorno il calcolo usa la nuova quantità; i giorni precedenti mantengono quella originale.</p>
+<hr />
+<h2 id="10-modifica-parametri">10. Modifica parametri</h2>
+<p>Tutto in <code>config.yaml</code> — aprilo con qualsiasi editor di testo.</p>
+<h3 id="aggiungere-un-etf">Aggiungere un ETF</h3>
+<pre><code class="language-yaml">etf:
+  - ticker_yf: &quot;IWDA.AS&quot;
+    ticker_bi: &quot;IWDA&quot;
+    nome: &quot;iShares Core MSCI World&quot;
+    isin: &quot;IE00B4L5Y983&quot;
+    valore_iniziale: 19368
+    proprietario: &quot;intestatario&quot;
+    stato: &quot;attivo&quot;
+</code></pre>
+<h3 id="aggiornare-importo-pac">Aggiornare importo PAC</h3>
+<pre><code class="language-yaml">allocazione:
+  pac_daniel_ora: 1200
+</code></pre>
+<h3 id="aggiungere-un-rimborso-effettuato">Aggiungere un rimborso effettuato</h3>
+<pre><code class="language-yaml">debiti:
+  - piano_rimborso:
+      - data: &quot;2026-12-01&quot;
+        importo: 5000
+        effettuato: true
+</code></pre>
+<hr />
+<h2 id="11-upgrade-futuro-database">11. Upgrade futuro database</h2>
+<p><strong>Migrazione a un altro cloud (Railway, Neon, Render):</strong></p>
+<pre><code class="language-bash"># Esporta da Supabase Dashboard → Database → Backups
+psql postgres://nuovo_host/db &lt; backup.sql
+</code></pre>
+<p>Poi aggiorna <code>SUPABASE_URL</code> e <code>SUPABASE_SECRET</code> in <code>src/database.py</code>.</p>
+<hr />
+<h2 id="12-risoluzione-problemi">12. Risoluzione problemi</h2>
+<h3 id="python-comando-non-trovato-windows">"python: comando non trovato" (Windows)</h3>
+<p>Reinstalla Python spuntando "Add Python to PATH". Alternativa: usa <code>py</code> invece di <code>python</code>.</p>
+<h3 id="streamlit-comando-non-trovato">"streamlit: comando non trovato"</h3>
+<pre><code class="language-bash">python -m streamlit run app.py
+</code></pre>
+<h3 id="modulenotfounderror">"ModuleNotFoundError"</h3>
+<pre><code class="language-bash">pip install -r requirements.txt
+</code></pre>
+<h3 id="lapp-non-si-connette-a-supabase">L'app non si connette a Supabase</h3>
+<ul>
+<li>Verifica connessione internet</li>
+<li>Controlla le credenziali in <code>src/database.py</code></li>
+<li>Esegui <code>python setup_supabase.py</code> se è il primo avvio</li>
+</ul>
+<h3 id="i-prezzi-non-si-aggiornano">I prezzi non si aggiornano</h3>
+<p>Yahoo Finance ha interruzioni temporanee — attendi e premi 🔄. Se un fondo non carica mai, verifica il ticker in <code>src/prices.py</code>.</p>
+<h3 id="il-browser-non-si-apre">"Il browser non si apre"</h3>
+<p>Vai manualmente su: <strong>http://localhost:8501</strong></p>
+</main>
+</body>
+</html>

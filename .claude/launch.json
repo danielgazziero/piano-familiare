@@ -1,0 +1,9 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "piano-familiare",
+      "url": "http://localhost:8501"
+    }
+  ]
+}

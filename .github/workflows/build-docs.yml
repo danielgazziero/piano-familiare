@@ -1,0 +1,30 @@
+name: Build HTML docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/*.md'
+      - 'docs/build_html_docs.py'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa dipendenze
+        run: pip install markdown
+
+      - name: Rigenera HTML docs
+        run: python docs/build_html_docs.py
+
+      - name: Commit HTML aggiornati
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: rigenera HTML [skip ci]"
+          file_pattern: "docs/*.html"
