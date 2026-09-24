@@ -10,7 +10,8 @@ from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from dateutil.relativedelta import relativedelta
 
-from database import get_client, salva_param, carica_param
+from database import (get_client, salva_param, carica_param,
+                       carica_asset_catalog, carica_asset_tickers)
 from prices import scarica_tutti_storici, ASSET_TICKERS
 
 
@@ -22,60 +23,6 @@ def _build_quantita_arr(posizioni_parsed: list, dates_arr) -> np.ndarray:
         q[mask] = quantita
     return q
 
-
-# ─────────────────────────────────────────────────────────────
-# POSIZIONI INIZIALI (derivate da config.yaml)
-# ─────────────────────────────────────────────────────────────
-
-def _build_posizioni_default() -> list:
-    try:
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).parent))
-        from parser import load_config
-        cfg = load_config()
-    except Exception:
-        return []
-
-    posizioni = []
-
-    for f in cfg.get('fondi_bancari', {}).get('titoli', []):
-        if not f.get('isin'):
-            continue
-        posizioni.append({
-            'isin': f['isin'],
-            'nome': f['nome'],
-            'quantita': f.get('quantita', 0),
-            'data_acquisto': f.get('data_acquisto', '2020-01-01'),
-            'tipo': 'fondo',
-        })
-
-    for etf in cfg.get('etf', []):
-        if not etf.get('in_portafoglio') or not etf.get('isin'):
-            continue
-        posizioni.append({
-            'isin': etf['isin'],
-            'nome': etf['nome'],
-            'quantita': etf.get('quantita', 0),
-            'data_acquisto': etf.get('data_acquisto', '2024-01-01'),
-            'tipo': 'etf',
-        })
-
-    for az in cfg.get('azioni', []):
-        if not az.get('isin'):
-            continue
-        posizioni.append({
-            'isin': az['isin'],
-            'nome': az['nome'],
-            'quantita': az.get('quantita', 0),
-            'data_acquisto': az.get('data_acquisto', '2022-01-01'),
-            'tipo': 'azione',
-        })
-
-    return posizioni
-
-
-POSIZIONI_DEFAULT = _build_posizioni_default()
 
 # Schema SQL per le tabelle posizioni e prezzi_storici
 POSITIONS_SCHEMA_SQL = """
@@ -146,7 +93,10 @@ def carica_posizioni() -> pd.DataFrame:
 
 
 def inizializza_posizioni():
-    """Inserisce le posizioni default se il DB è vuoto."""
+    """
+    Inserisce le posizioni iniziali se la tabella è vuota.
+    Legge da asset_catalog (DB) — non da config.yaml né da valori hardcoded.
+    """
     try:
         client = get_client()
         existing = client.table('posizioni').select('id').limit(1).execute()
@@ -154,18 +104,48 @@ def inizializza_posizioni():
             print("  [i] Posizioni già inizializzate")
             return
 
-        records = [{
-            'isin': p['isin'],
-            'nome': p['nome'],
-            'tipo': p['tipo'],
-            'quantita': p['quantita'],
-            'data_inizio': p['data_acquisto'],
-            'data_fine': None,
-            'note': 'Posizione iniziale'
-        } for p in POSIZIONI_DEFAULT]
+        catalog = carica_asset_catalog()
+        if catalog.empty:
+            print("  [!] asset_catalog vuoto — impossibile inizializzare posizioni")
+            return
+
+        # Legge le quantità di avvio da config.yaml (solo per la prima inizializzazione)
+        quantita_cfg: dict = {}
+        data_acquisto_cfg: dict = {}
+        try:
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent))
+            from parser import load_config
+            cfg = load_config()
+            for f in cfg.get('fondi_bancari', {}).get('titoli', []):
+                if f.get('isin'):
+                    quantita_cfg[f['isin']] = f.get('quantita', 0)
+                    data_acquisto_cfg[f['isin']] = f.get('data_acquisto', '2020-01-01')
+            for etf in cfg.get('etf', []):
+                if etf.get('isin') and etf.get('in_portafoglio'):
+                    quantita_cfg[etf['isin']] = etf.get('quantita', 0)
+                    data_acquisto_cfg[etf['isin']] = etf.get('data_acquisto', '2024-01-01')
+            for az in cfg.get('azioni', []):
+                if az.get('isin'):
+                    quantita_cfg[az['isin']] = az.get('quantita', 0)
+                    data_acquisto_cfg[az['isin']] = az.get('data_acquisto', '2022-01-01')
+        except Exception:
+            pass
+
+        records = []
+        for _, row in catalog.iterrows():
+            isin = row['isin']
+            q = quantita_cfg.get(isin, 0)
+            d = data_acquisto_cfg.get(isin, '2020-01-01')
+            records.append({
+                'isin': isin, 'nome': row['nome'], 'tipo': row['tipo'],
+                'quantita': q, 'data_inizio': d, 'data_fine': None,
+                'note': 'Posizione iniziale',
+            })
 
         client.table('posizioni').insert(records).execute()
-        print(f"  [+] {len(records)} posizioni inizializzate")
+        print(f"  [+] {len(records)} posizioni inizializzate da asset_catalog")
     except Exception as e:
         print(f"  [!] Errore inizializzazione posizioni: {e}")
 
@@ -179,24 +159,18 @@ def aggiorna_quantita(isin: str, nuova_quantita: float,
     try:
         client = get_client()
 
-        # Recupera nome/tipo dalla posizione attiva prima di chiuderla
+        # Recupera nome/tipo dalla posizione attiva nel DB
         nome = ''
         tipo = 'fondo'
-        for p in POSIZIONI_DEFAULT:
-            if p['isin'] == isin:
-                nome = p['nome']
-                tipo = p['tipo']
-                break
-        if not nome:
-            res_meta = (client.table('posizioni')
-                        .select('nome, tipo')
-                        .eq('isin', isin)
-                        .is_('data_fine', 'null')
-                        .limit(1)
-                        .execute())
-            if res_meta.data:
-                nome = res_meta.data[0]['nome']
-                tipo = res_meta.data[0]['tipo']
+        res_meta = (client.table('posizioni')
+                    .select('nome, tipo')
+                    .eq('isin', isin)
+                    .is_('data_fine', 'null')
+                    .limit(1)
+                    .execute())
+        if res_meta.data:
+            nome = res_meta.data[0]['nome']
+            tipo = res_meta.data[0]['tipo']
 
         data_fine_chiusura = (data_modifica - timedelta(days=1)).isoformat()
 
@@ -429,15 +403,18 @@ def calcola_valore_giornaliero(isin: str, data_inizio: date,
         posizioni_storico = []
 
     if not posizioni_storico:
-        # Fallback: usa posizione default
-        for p in POSIZIONI_DEFAULT:
-            if p['isin'] == isin:
+        # Fallback: cerca nell'asset_catalog l'eventuale quantità registrata
+        try:
+            catalog = carica_asset_catalog()
+            row = catalog[catalog['isin'] == isin]
+            if not row.empty:
                 posizioni_storico = [{
-                    'quantita': p['quantita'],
-                    'data_inizio': p['data_acquisto'],
+                    'quantita': 0,
+                    'data_inizio': '2020-01-01',
                     'data_fine': None
                 }]
-                break
+        except Exception:
+            pass
 
     # Carica prezzi dal DB
     prezzi_df = carica_prezzi_db(isin, data_inizio, data_fine)
@@ -505,7 +482,12 @@ def calcola_portafoglio_storico(isins: List[str] = None,
     Restituisce DataFrame con: data, valore_totale, e colonne per ogni asset.
     """
     if isins is None:
-        isins = list(ASSET_TICKERS.keys())
+        # Usa gli ISIN dal catalog DB (fonte di verità)
+        try:
+            t, _ = carica_asset_tickers()
+            isins = list(t.keys())
+        except Exception:
+            isins = list(ASSET_TICKERS.keys())
     if data_inizio is None:
         try:
             from parser import load_config
@@ -563,12 +545,7 @@ def calcola_portafoglio_storico(isins: List[str] = None,
     for isin in isins:
         posizioni_storico = posizioni_per_isin.get(isin, [])
         if not posizioni_storico:
-            for p in POSIZIONI_DEFAULT:
-                if p['isin'] == isin:
-                    posizioni_storico = [{'quantita': p['quantita'],
-                                           'data_inizio': p['data_acquisto'],
-                                           'data_fine': None}]
-                    break
+            pass  # Se il DB non ha posizioni, saltiamo questo ISIN
 
         prezzi_isin = prezzi_per_isin.get(isin, pd.DataFrame())
         series = _computa_valore_isin(posizioni_storico, prezzi_isin, df_dates)

@@ -28,7 +28,8 @@ from app_state import (init_db_connection, carica_params_persistenti,
                         get_storico_fondo, aggiorna_quote_fondi,
                         esegui_backfill_avvio, get_storico_portafoglio,
                         get_storico_asset, aggiorna_quantita_asset,
-                        get_eventi_portafoglio)
+                        get_eventi_portafoglio, get_asset_catalog,
+                        salva_asset, rimuovi_asset)
 
 st.set_page_config(page_title="Piano Finanziario Familiare",
                    page_icon="📊", layout="wide",
@@ -100,14 +101,6 @@ SC_DASH   = {'base':'solid','worst':'dash','best':'dot'}
 def get_config():
     return load_config(BASE_DIR / 'config.yaml')
 
-@st.cache_data(ttl=1800)
-def get_etf_perf():
-    return get_portfolio_performance(get_config())
-
-@st.cache_data(ttl=1800)
-def get_azioni():
-    return get_azioni_snapshot(get_config())
-
 config = get_config()
 
 # Connessione DB (una volta per sessione)
@@ -121,16 +114,45 @@ _N1 = st.session_state['params'].get('nome_persona1', 'Persona 1')
 _N2 = st.session_state['params'].get('nome_persona2', 'Persona 2')
 _NF = st.session_state['params'].get('nome_figlio',   'Figlio/a')
 
+# Carica catalogo asset dal DB (fonte di verità per fondi/ETF/azioni)
+if 'asset_catalog' not in st.session_state:
+    st.session_state['asset_catalog'] = get_asset_catalog() if db_ok else pd.DataFrame()
+
+_catalog = st.session_state.get('asset_catalog', pd.DataFrame())
+
 # Carica quote fondi persistenti
 if 'quote_map' not in st.session_state:
     st.session_state['quote_map'] = carica_quote_fondi_persistenti(config)
 
-# Carica fondi con quote aggiornate dal DB — non cacheata (dipende da quote_map in session_state)
+# Carica fondi con quote aggiornate dal DB — non cacheata (dipende da quote_map/catalog in session_state)
 def get_fondi():
     if _DEMO:
         from demo_data import demo_get_fondi_snapshot
         return demo_get_fondi_snapshot()
-    return get_fondi_snapshot(get_config(), st.session_state.get('quote_map', {}))
+    cat = st.session_state.get('asset_catalog', pd.DataFrame())
+    fondi_data = None
+    if not cat.empty and 'tipo' in cat.columns:
+        # Costruisce la lista fondi unendo catalog + quote correnti
+        fondi_cat = cat[cat['tipo'] == 'fondo'].to_dict('records')
+        qm = st.session_state.get('quote_map', {})
+        # Aggiunge quota corrente ai metadati del catalog
+        for f in fondi_cat:
+            if f['isin'] in qm:
+                f['quota_aggiornata'] = qm[f['isin']]
+        if fondi_cat:
+            fondi_data = fondi_cat
+    return get_fondi_snapshot(get_config(), st.session_state.get('quote_map', {}),
+                               fondi_data=fondi_data)
+
+
+def get_etf_perf():
+    cat = st.session_state.get('asset_catalog', pd.DataFrame())
+    return get_portfolio_performance(get_config(), catalog_df=cat if not cat.empty else None)
+
+
+def get_azioni():
+    cat = st.session_state.get('asset_catalog', pd.DataFrame())
+    return get_azioni_snapshot(get_config(), catalog_df=cat if not cat.empty else None)
 
 # Importa automaticamente eventuali nuovi XLS in data/input/
 if 'xls_importati' not in st.session_state:
@@ -169,6 +191,10 @@ if db_ok and 'backfill_done' not in st.session_state:
         st.session_state['backfill_done'] = True
         if res['n_prezzi_scaricati'] > 0:
             st.session_state['backfill_nuovi'] = res['n_prezzi_scaricati']
+        # Ricarica il catalog dopo il seeding iniziale (prima esecuzione)
+        if 'asset_catalog' not in st.session_state or st.session_state['asset_catalog'].empty:
+            st.session_state['asset_catalog'] = get_asset_catalog()
+            _catalog = st.session_state['asset_catalog']
     except Exception:
         st.session_state['backfill_done'] = True
 
@@ -194,6 +220,7 @@ with st.sidebar:
         "📊 Azioni Accenture",
         "🎯 Simulatore strategie",
         _SEZIONE_FIGLIO,
+        "⚙️ Gestione Asset",
     ])
     with st.expander("✏️ Nomi"):
         n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1")
@@ -230,7 +257,7 @@ with st.sidebar:
     if st.button("🔄 Aggiorna tutto"):
         st.cache_data.clear()
         for k in ['params','quote_map','xls_importati','saved_today',
-                  'backfill_done','backfill_nuovi','nuove_tx']:
+                  'backfill_done','backfill_nuovi','nuove_tx','asset_catalog']:
             st.session_state.pop(k, None)
         st.rerun()
     if st.session_state.get('nuove_tx'):
@@ -597,25 +624,42 @@ elif sezione == "📈 ETF & mercato":
     st.caption("Aggiungi, rimuovi o modifica gli ETF e l'importo mensile per ciascuno. "
                "Il grafico mostra il portafoglio aggregato con scenari worst/base/best.")
 
-    # Tabella editabile ETF PAC — seeded from config
+    # Tabella editabile ETF PAC — seeded dal catalog DB (fonte di verità)
     _alloc = config.get('allocazione', {})
     _pat = config.get('patrimonio', {})
-    _etf_map = {e['ticker_bi']: e for e in config.get('etf', [])}
+    _cat_now = st.session_state.get('asset_catalog', pd.DataFrame())
+    if not _cat_now.empty and 'tipo' in _cat_now.columns:
+        _etf_cat = _cat_now[_cat_now['tipo'] == 'etf']
+        _etf_map = {str(r.get('ticker_bi', '')): r for _, r in _etf_cat.iterrows()
+                    if r.get('ticker_bi')}
+        _etf_attivi = [r for _, r in _etf_cat.iterrows()
+                       if str(r.get('stato','')) in ('attivo','da_avviare')]
+        _etf_candidati = [r for _, r in _etf_cat.iterrows()
+                          if str(r.get('stato','')) == 'candidato']
+    else:
+        _etf_map = {e['ticker_bi']: e for e in config.get('etf', []) if e.get('ticker_bi')}
+        _etf_attivi = [e for e in config.get('etf', [])
+                       if e.get('stato') in ('attivo','da_avviare')]
+        _etf_candidati = [e for e in config.get('etf', []) if e.get('stato') == 'candidato']
+
+    _iwda = _etf_map.get('IWDA', {})
+    _acwe = _etf_map.get('ACWE', {})
     etf_default = [
-        {'ETF': 'IWDA',
-         'Descrizione': _etf_map.get('IWDA', {}).get('nome', 'iShares Core MSCI World'),
+        {'ETF': _iwda.get('ticker_bi', 'IWDA'),
+         'Descrizione': _iwda.get('nome', 'iShares Core MSCI World'),
          'Importo €/mese': _alloc.get('pac_persona1_con_nido', 800),
-         'Valore iniziale €': _pat.get('etf_cspx_directa', 0),
+         'Valore iniziale €': float(_iwda.get('valore_iniziale') or _pat.get('etf_cspx_directa', 0)),
          'Includi': True},
         {'ETF': f"ACWE ({st.session_state.get('params', {}).get('nome_figlio', 'Figlio/a')})",
-         'Descrizione': _etf_map.get('ACWE', {}).get('nome', 'SPDR MSCI ACWI'),
+         'Descrizione': _acwe.get('nome', 'SPDR MSCI ACWI'),
          'Importo €/mese': _alloc.get('pac_flor', 200),
          'Valore iniziale €': 0,
          'Includi': True},
     ] + [
-        {'ETF': e['ticker_bi'], 'Descrizione': e['nome'],
+        {'ETF': str(e.get('ticker_bi', e.get('isin',''))),
+         'Descrizione': str(e.get('nome','')),
          'Importo €/mese': 0, 'Valore iniziale €': 0, 'Includi': False}
-        for e in config.get('etf', []) if e.get('stato') == 'candidato'
+        for e in _etf_candidati
     ]
     df_etf_edit = st.data_editor(
         pd.DataFrame(etf_default),
@@ -706,8 +750,14 @@ elif sezione == "📈 ETF & mercato":
         st.subheader("Confronto ETF candidati")
         fig_c = go.Figure()
         per_c = st.select_slider("Periodo confronto", ["6mo","ytd","1y","2y"], value="1y", key="pc")
-        confronto = {e['ticker_bi']: e['ticker_yf']
-                     for e in config.get('etf', []) if e.get('ticker_yf')}
+        _cat_confronto = st.session_state.get('asset_catalog', pd.DataFrame())
+        if not _cat_confronto.empty and 'tipo' in _cat_confronto.columns:
+            confronto = {str(r.get('ticker_bi', r['isin'])): str(r['ticker_yf'])
+                         for _, r in _cat_confronto[_cat_confronto['tipo'] == 'etf'].iterrows()
+                         if r.get('ticker_yf')}
+        else:
+            confronto = {e['ticker_bi']: e['ticker_yf']
+                         for e in config.get('etf', []) if e.get('ticker_yf')}
         pal_c = [COLORS['rosso'],COLORS['verde'],COLORS['blu'],COLORS['arancio']]
         for i,(nome,tick) in enumerate(confronto.items()):
             h = get_etf_history_chart(tick, per_c)
@@ -735,8 +785,13 @@ elif sezione == "🏦 Fondi bancari":
                "Il grafico e il piano di uscita si aggiornano in tempo reale.")
 
     fondi_df = get_fondi()
-    costi_map = {f['nome']: f.get('ter', 0.02) * 100
-                 for f in config['fondi_bancari']['titoli']}
+    _cat_fondi = st.session_state.get('asset_catalog', pd.DataFrame())
+    if not _cat_fondi.empty and 'tipo' in _cat_fondi.columns:
+        costi_map = {str(r['nome']): float(r.get('ter') or 0.02) * 100
+                     for _, r in _cat_fondi[_cat_fondi['tipo'] == 'fondo'].iterrows()}
+    else:
+        costi_map = {f['nome']: f.get('ter', 0.02) * 100
+                     for f in config.get('fondi_bancari', {}).get('titoli', [])}
     df_edit_default = pd.DataFrame([{
         'Fondo': r['nome'],
         'ISIN': r['isin'],
@@ -1169,3 +1224,219 @@ elif sezione == _SEZIONE_FIGLIO:
     for c in ['Fondo base (€)','Versato (€)','Costo annuale (€)']:
         show[c] = show[c].map(lambda x: f"€ {x:,.0f}")
     st.dataframe(show,use_container_width=True,hide_index=True)
+
+
+# ─────────────────────────────────────────────────────────────
+# SEZIONE: GESTIONE ASSET
+# ─────────────────────────────────────────────────────────────
+elif sezione == "⚙️ Gestione Asset":
+    st.title("Gestione Asset")
+    st.caption("Aggiungi, modifica o rimuovi ETF, fondi e azioni. Le modifiche si riflettono subito in tutte le sezioni dell'app.")
+
+    if not db_ok:
+        st.error("DB non disponibile — impossibile gestire gli asset.")
+        st.stop()
+
+    # Ricarica sempre dal DB in questa sezione
+    cat_df = get_asset_catalog()
+    if cat_df.empty:
+        st.info("Nessun asset nel catalogo. Aggiungi il primo qui sotto.")
+        cat_df = pd.DataFrame(columns=['isin','nome','tipo','ticker_yf','ticker_bi',
+                                        'fallback_tickers','ter','proprietario',
+                                        'stato','valore_quota_ref','data_ref',
+                                        'valore_iniziale','note'])
+
+    tab_fondi, tab_etf, tab_azioni, tab_aggiungi = st.tabs(
+        ["🏦 Fondi", "📈 ETF", "📊 Azioni", "➕ Aggiungi"])
+
+    # ── TAB FONDI ──────────────────────────────────────────────
+    with tab_fondi:
+        fondi_df = cat_df[cat_df['tipo'] == 'fondo'] if not cat_df.empty else pd.DataFrame()
+        if fondi_df.empty:
+            st.info("Nessun fondo nel catalogo.")
+        else:
+            disp_cols = ['isin','nome','ter','valore_quota_ref','data_ref','note']
+            disp_cols = [c for c in disp_cols if c in fondi_df.columns]
+            st.dataframe(fondi_df[disp_cols], use_container_width=True, hide_index=True)
+
+        st.subheader("Modifica / elimina fondo")
+        isin_sel = st.selectbox("Seleziona fondo",
+                                 options=fondi_df['isin'].tolist() if not fondi_df.empty else [],
+                                 key="sel_fondo")
+        if isin_sel and not fondi_df.empty:
+            row = fondi_df[fondi_df['isin'] == isin_sel].iloc[0]
+            with st.form("edit_fondo"):
+                c1, c2 = st.columns(2)
+                nome_f  = c1.text_input("Nome", value=str(row.get('nome','')))
+                ter_f   = c2.number_input("TER %", value=float(row.get('ter') or 0.02),
+                                           min_value=0.0, max_value=5.0, step=0.001, format="%.3f")
+                vqr     = c1.number_input("Quota ref (€)", value=float(row.get('valore_quota_ref') or 0),
+                                           min_value=0.0, step=0.01)
+                dr      = c2.text_input("Data ref (YYYY-MM-DD)", value=str(row.get('data_ref') or ''))
+                note_f  = st.text_input("Note", value=str(row.get('note') or ''))
+                col_s, col_d = st.columns(2)
+                salva_btn = col_s.form_submit_button("💾 Salva modifiche")
+                elim_btn  = col_d.form_submit_button("🗑️ Elimina asset", type="secondary")
+            if salva_btn:
+                ok = salva_asset({
+                    'isin': isin_sel, 'nome': nome_f, 'tipo': 'fondo',
+                    'ter': ter_f, 'valore_quota_ref': vqr, 'data_ref': dr or None,
+                    'note': note_f or None,
+                    'ticker_yf': row.get('ticker_yf'),
+                    'fallback_tickers': row.get('fallback_tickers', []),
+                    'proprietario': row.get('proprietario','persona1'),
+                    'stato': row.get('stato','attivo'),
+                })
+                if ok:
+                    st.success("Fondo aggiornato.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+                else:
+                    st.error("Errore salvataggio.")
+            if elim_btn:
+                if rimuovi_asset(isin_sel):
+                    st.success(f"{isin_sel} rimosso dal catalogo.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+                else:
+                    st.error("Errore eliminazione.")
+
+    # ── TAB ETF ────────────────────────────────────────────────
+    with tab_etf:
+        etf_df = cat_df[cat_df['tipo'] == 'etf'] if not cat_df.empty else pd.DataFrame()
+        if etf_df.empty:
+            st.info("Nessun ETF nel catalogo.")
+        else:
+            disp = ['isin','nome','ticker_yf','ticker_bi','ter','proprietario','stato','note']
+            disp = [c for c in disp if c in etf_df.columns]
+            st.dataframe(etf_df[disp], use_container_width=True, hide_index=True)
+
+        st.subheader("Modifica / elimina ETF")
+        isin_etf = st.selectbox("Seleziona ETF",
+                                  options=etf_df['isin'].tolist() if not etf_df.empty else [],
+                                  key="sel_etf")
+        if isin_etf and not etf_df.empty:
+            row = etf_df[etf_df['isin'] == isin_etf].iloc[0]
+            with st.form("edit_etf"):
+                c1, c2, c3 = st.columns(3)
+                nome_e  = c1.text_input("Nome", value=str(row.get('nome','')))
+                tyk_e   = c2.text_input("Ticker YF", value=str(row.get('ticker_yf') or ''))
+                tbi_e   = c3.text_input("Ticker BI", value=str(row.get('ticker_bi') or ''))
+                ter_e   = c1.number_input("TER %", value=float(row.get('ter') or 0.20),
+                                           min_value=0.0, max_value=5.0, step=0.01, format="%.2f")
+                prop_e  = c2.selectbox("Proprietario",['persona1','persona2','flor'],
+                                        index=['persona1','persona2','flor'].index(
+                                            str(row.get('proprietario','persona1'))))
+                stato_e = c3.selectbox("Stato",['attivo','da_avviare','candidato','dismisso'],
+                                        index=['attivo','da_avviare','candidato','dismisso'].index(
+                                            str(row.get('stato','candidato'))) if str(row.get('stato','candidato')) in ['attivo','da_avviare','candidato','dismisso'] else 0)
+                vi_e    = c1.number_input("Valore iniziale (€)", value=float(row.get('valore_iniziale') or 0),
+                                           min_value=0.0, step=100.0)
+                note_e  = st.text_input("Note", value=str(row.get('note') or ''))
+                col_s, col_d = st.columns(2)
+                salva_e = col_s.form_submit_button("💾 Salva modifiche")
+                elim_e  = col_d.form_submit_button("🗑️ Elimina asset", type="secondary")
+            if salva_e:
+                ok = salva_asset({
+                    'isin': isin_etf, 'nome': nome_e, 'tipo': 'etf',
+                    'ticker_yf': tyk_e or None, 'ticker_bi': tbi_e or None,
+                    'ter': ter_e, 'proprietario': prop_e, 'stato': stato_e,
+                    'valore_iniziale': vi_e, 'note': note_e or None,
+                    'fallback_tickers': row.get('fallback_tickers', []),
+                })
+                if ok:
+                    st.success("ETF aggiornato.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+                else:
+                    st.error("Errore salvataggio.")
+            if elim_e:
+                if rimuovi_asset(isin_etf):
+                    st.success(f"{isin_etf} rimosso dal catalogo.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+
+    # ── TAB AZIONI ─────────────────────────────────────────────
+    with tab_azioni:
+        az_df = cat_df[cat_df['tipo'] == 'azione'] if not cat_df.empty else pd.DataFrame()
+        if az_df.empty:
+            st.info("Nessuna azione nel catalogo.")
+        else:
+            disp = ['isin','nome','ticker_yf','proprietario','stato','note']
+            disp = [c for c in disp if c in az_df.columns]
+            st.dataframe(az_df[disp], use_container_width=True, hide_index=True)
+
+        st.subheader("Modifica / elimina azione")
+        isin_az = st.selectbox("Seleziona azione",
+                                 options=az_df['isin'].tolist() if not az_df.empty else [],
+                                 key="sel_azione")
+        if isin_az and not az_df.empty:
+            row = az_df[az_df['isin'] == isin_az].iloc[0]
+            with st.form("edit_azione"):
+                c1, c2 = st.columns(2)
+                nome_a = c1.text_input("Nome", value=str(row.get('nome','')))
+                tyk_a  = c2.text_input("Ticker YF", value=str(row.get('ticker_yf') or ''))
+                prop_a = c1.selectbox("Proprietario",['persona1','persona2','flor'],
+                                       index=['persona1','persona2','flor'].index(
+                                           str(row.get('proprietario','persona1'))))
+                note_a = st.text_input("Note", value=str(row.get('note') or ''))
+                col_s, col_d = st.columns(2)
+                salva_a = col_s.form_submit_button("💾 Salva modifiche")
+                elim_a  = col_d.form_submit_button("🗑️ Elimina asset", type="secondary")
+            if salva_a:
+                ok = salva_asset({
+                    'isin': isin_az, 'nome': nome_a, 'tipo': 'azione',
+                    'ticker_yf': tyk_a or None, 'proprietario': prop_a,
+                    'stato': str(row.get('stato','attivo')),
+                    'note': note_a or None, 'fallback_tickers': [],
+                })
+                if ok:
+                    st.success("Azione aggiornata.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+            if elim_a:
+                if rimuovi_asset(isin_az):
+                    st.success(f"{isin_az} rimosso dal catalogo.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+
+    # ── TAB AGGIUNGI ───────────────────────────────────────────
+    with tab_aggiungi:
+        st.subheader("Aggiungi nuovo asset")
+        with st.form("nuovo_asset"):
+            c1, c2, c3 = st.columns(3)
+            tipo_n   = c1.selectbox("Tipo", ['etf','fondo','azione'])
+            isin_n   = c2.text_input("ISIN *")
+            nome_n   = c3.text_input("Nome *")
+            tyk_n    = c1.text_input("Ticker Yahoo Finance")
+            tbi_n    = c2.text_input("Ticker BI (solo ETF)")
+            ter_n    = c3.number_input("TER %", min_value=0.0, max_value=5.0,
+                                        value=0.20, step=0.01, format="%.2f")
+            prop_n   = c1.selectbox("Proprietario", ['persona1','persona2','flor'])
+            stato_n  = c2.selectbox("Stato", ['attivo','da_avviare','candidato'])
+            vqr_n    = c3.number_input("Quota ref € (fondi)", min_value=0.0, step=0.01)
+            note_n   = st.text_input("Note")
+            submit_n = st.form_submit_button("➕ Aggiungi al catalogo")
+
+        if submit_n:
+            if not isin_n or not nome_n:
+                st.error("ISIN e Nome sono obbligatori.")
+            else:
+                asset_dict = {
+                    'isin': isin_n.strip().upper(), 'nome': nome_n.strip(),
+                    'tipo': tipo_n, 'ticker_yf': tyk_n.strip() or None,
+                    'ticker_bi': tbi_n.strip() or None,
+                    'ter': ter_n, 'proprietario': prop_n, 'stato': stato_n,
+                    'valore_quota_ref': vqr_n if vqr_n > 0 else None,
+                    'note': note_n.strip() or None, 'fallback_tickers': [],
+                }
+                if salva_asset(asset_dict):
+                    st.success(f"Asset {isin_n} aggiunto al catalogo.")
+                    st.session_state.pop('asset_catalog', None)
+                    st.rerun()
+                else:
+                    st.error("Errore durante il salvataggio.")
+
+        st.divider()
+        st.caption("Dopo aver aggiunto un asset, vai su '🔄 Aggiorna tutto' per scaricare i prezzi storici.")
+        st.info("Il catalogo asset è la fonte di verità dell'app. Aggiungi qui qualsiasi ETF, fondo o azione che vuoi tracciare.")

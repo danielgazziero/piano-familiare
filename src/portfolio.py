@@ -65,9 +65,13 @@ def get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
     return hist
 
 
-def get_portfolio_performance(config: dict) -> pd.DataFrame:
+def get_portfolio_performance(config: dict,
+                               catalog_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
     results = []
-    etf_list = config.get('etf', [])
+    if catalog_df is not None and not catalog_df.empty and 'tipo' in catalog_df.columns:
+        etf_list = catalog_df[catalog_df['tipo'] == 'etf'].to_dict('records')
+    else:
+        etf_list = config.get('etf', [])
     tickers = tuple(etf['ticker_yf'] for etf in etf_list if etf.get('ticker_yf'))
     if not tickers:
         return pd.DataFrame()
@@ -127,10 +131,19 @@ def get_portfolio_performance(config: dict) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None) -> pd.DataFrame:
-    fondi = config.get('fondi_bancari', {}).get('titoli', [])
-    aliquota = config['fondi_bancari']['aliquota_capital_gain']
-    tot_valore_ref = sum(f['quantita'] * f['valore_quota_ref'] for f in fondi)
+def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
+                        fondi_data: list = None) -> pd.DataFrame:
+    """
+    fondi_data: lista opzionale di dict con isin, nome, quantita, valore_quota_ref, ter, data_ref.
+                Se fornita, viene usata al posto di config (fonte DB).
+    """
+    if fondi_data is not None:
+        fondi = fondi_data
+        aliquota = config.get('parametri', {}).get('aliquota_capital_gain', 0.26)
+    else:
+        fondi = config.get('fondi_bancari', {}).get('titoli', [])
+        aliquota = config.get('fondi_bancari', {}).get('aliquota_capital_gain', 0.26)
+    tot_valore_ref = sum(f.get('quantita', 0) * f.get('valore_quota_ref', 0) for f in fondi)
     costo_fiscale_tot = config['patrimonio']['fondi_costo_fiscale']
     rows = []
 
@@ -234,8 +247,12 @@ def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = Non
     return pd.DataFrame(piano_rows)
 
 
-def get_azioni_snapshot(config: dict) -> pd.DataFrame:
-    azioni = config.get('azioni', [])
+def get_azioni_snapshot(config: dict,
+                         catalog_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
+    if catalog_df is not None and not catalog_df.empty and 'tipo' in catalog_df.columns:
+        azioni = catalog_df[catalog_df['tipo'] == 'azione'].to_dict('records')
+    else:
+        azioni = config.get('azioni', [])
     rows = []
     for az in azioni:
         ticker = az['ticker_yf']

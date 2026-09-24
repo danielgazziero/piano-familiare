@@ -11,12 +11,18 @@ import yfinance as yf
 
 
 # ─────────────────────────────────────────────────────────────
-# MAPPA ASSET → TICKER YAHOO FINANCE  (derivata da config.yaml)
+# MAPPA ASSET → TICKER YAHOO FINANCE  (fonte: Supabase asset_catalog)
 # ─────────────────────────────────────────────────────────────
-# Fondi italiani con ticker_yf: null → ticker costruito come {isin}.MI
-# ETF e azioni → usano ticker_yf dal config
+# Dicts aggiornati in-place così i caller che li importano direttamente
+# ricevono sempre i valori aggiornati senza re-import.
 
-def _build_tickers_from_config():
+ASSET_TICKERS: dict = {}
+FALLBACK_TICKERS: dict = {}
+_tickers_loaded: bool = False
+
+
+def _build_tickers_from_config() -> tuple:
+    """Fallback: costruisce la mappa ticker da config.yaml se il DB non è disponibile."""
     try:
         import sys
         from pathlib import Path
@@ -52,11 +58,39 @@ def _build_tickers_from_config():
     return tickers, fallbacks
 
 
-ASSET_TICKERS, FALLBACK_TICKERS = _build_tickers_from_config()
+def reload_asset_tickers() -> None:
+    """
+    Ricarica la mappa ISIN→ticker dal DB (Supabase asset_catalog).
+    Fallback su config.yaml se il DB non è disponibile.
+    Aggiorna i dict in-place — tutti i caller ricevono i nuovi valori.
+    """
+    global _tickers_loaded
+    new_t: dict = {}
+    new_f: dict = {}
+    try:
+        from database import carica_asset_tickers as _cat
+        new_t, new_f = _cat()
+    except Exception:
+        pass
+
+    if not new_t:
+        new_t, new_f = _build_tickers_from_config()
+
+    ASSET_TICKERS.clear()
+    ASSET_TICKERS.update(new_t)
+    FALLBACK_TICKERS.clear()
+    FALLBACK_TICKERS.update(new_f)
+    _tickers_loaded = True
+
+
+def _ensure_tickers_loaded() -> None:
+    if not _tickers_loaded:
+        reload_asset_tickers()
 
 
 def get_ticker(isin: str) -> Optional[str]:
     """Restituisce il ticker Yahoo per un ISIN dato."""
+    _ensure_tickers_loaded()
     return ASSET_TICKERS.get(isin)
 
 
@@ -65,6 +99,7 @@ def scarica_storico(isin: str, data_inizio: date, data_fine: date = None) -> pd.
     Scarica prezzi storici giornalieri per un ISIN.
     Restituisce DataFrame con colonne: data, prezzo_chiusura, fonte.
     """
+    _ensure_tickers_loaded()
     if data_fine is None:
         data_fine = date.today()
 
@@ -109,6 +144,7 @@ def scarica_storico(isin: str, data_inizio: date, data_fine: date = None) -> pd.
 
 def prezzo_corrente(isin: str) -> Optional[float]:
     """Prezzo di chiusura più recente disponibile."""
+    _ensure_tickers_loaded()
     ticker_str = ASSET_TICKERS.get(isin)
     if not ticker_str:
         return None
@@ -128,6 +164,7 @@ def scarica_tutti_storici(isins: List[str], data_inizio: date,
     Per ISIN senza dati nel batch, ritenta individualmente con i ticker di fallback.
     Restituisce DataFrame unificato con tutti i prezzi.
     """
+    _ensure_tickers_loaded()
     if data_fine is None:
         data_fine = date.today()
 

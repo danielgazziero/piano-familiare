@@ -59,6 +59,30 @@ def get_client() -> Client:
 # SCHEMA SQL — eseguire una volta su Supabase SQL Editor
 # ─────────────────────────────────────────────────────────────
 
+ASSET_CATALOG_SCHEMA_SQL = """
+-- Catalogo master di tutti gli asset (fonte di verità per l'app)
+CREATE TABLE IF NOT EXISTS asset_catalog (
+    isin             TEXT PRIMARY KEY,
+    nome             TEXT NOT NULL,
+    tipo             TEXT NOT NULL CHECK (tipo IN ('fondo','etf','azione')),
+    ticker_yf        TEXT,
+    ticker_bi        TEXT,
+    fallback_tickers JSONB DEFAULT '[]',
+    ter              NUMERIC,
+    proprietario     TEXT DEFAULT 'persona1',
+    stato            TEXT DEFAULT 'attivo',
+    valore_quota_ref NUMERIC,
+    data_ref         TEXT,
+    valore_iniziale  NUMERIC DEFAULT 0,
+    note             TEXT,
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE asset_catalog ENABLE ROW LEVEL SECURITY;
+CREATE POLICY IF NOT EXISTS "service_only" ON asset_catalog
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+"""
+
 SCHEMA_SQL = """
 -- Snapshot giornaliero patrimonio
 CREATE TABLE IF NOT EXISTS patrimonio_log (
@@ -459,6 +483,141 @@ def carica_param_o_errore(chiave: str) -> Any:
         except (json.JSONDecodeError, TypeError):
             return raw
     return None
+
+
+# ─────────────────────────────────────────────────────────────
+# ASSET CATALOG — catalogo centralizzato degli asset
+# ─────────────────────────────────────────────────────────────
+
+def carica_asset_catalog() -> pd.DataFrame:
+    """Carica tutti gli asset dal catalogo DB."""
+    try:
+        client = get_client()
+        res = (client.table('asset_catalog')
+               .select('*')
+               .order('tipo')
+               .order('nome')
+               .execute())
+        if not res.data:
+            return pd.DataFrame()
+        df = pd.DataFrame(res.data)
+        if 'fallback_tickers' in df.columns:
+            df['fallback_tickers'] = df['fallback_tickers'].apply(
+                lambda x: x if isinstance(x, list) else (json.loads(x) if x else []))
+        return df
+    except Exception as e:
+        print(f"  [!] Errore caricamento asset_catalog: {e}")
+        return pd.DataFrame()
+
+
+def upsert_asset(asset: dict) -> bool:
+    """Inserisce o aggiorna un asset nel catalogo."""
+    try:
+        client = get_client()
+        record = {k: v for k, v in asset.items()}
+        fb = record.get('fallback_tickers', [])
+        record['fallback_tickers'] = json.dumps(fb if isinstance(fb, list) else [])
+        record['updated_at'] = datetime.now().isoformat()
+        client.table('asset_catalog').upsert(record, on_conflict='isin').execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore upsert asset {asset.get('isin')}: {e}")
+        return False
+
+
+def elimina_asset(isin: str) -> bool:
+    """Rimuove un asset dal catalogo."""
+    try:
+        client = get_client()
+        client.table('asset_catalog').delete().eq('isin', isin).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore eliminazione asset {isin}: {e}")
+        return False
+
+
+def carica_asset_tickers() -> tuple:
+    """
+    Restituisce (tickers_dict, fallbacks_dict) da asset_catalog.
+    Fondi senza ticker_yf ottengono {isin}.MI come fallback.
+    """
+    df = carica_asset_catalog()
+    if df.empty:
+        return {}, {}
+    tickers: dict = {}
+    fallbacks: dict = {}
+    for _, row in df.iterrows():
+        isin = row.get('isin')
+        if not isin:
+            continue
+        ticker = row.get('ticker_yf')
+        if ticker:
+            tickers[isin] = ticker
+        elif row.get('tipo') == 'fondo':
+            tickers[isin] = f'{isin}.MI'
+        fb = row.get('fallback_tickers', [])
+        if fb:
+            fallbacks[isin] = fb
+    return tickers, fallbacks
+
+
+def inizializza_asset_catalog_da_config() -> bool:
+    """Semina asset_catalog da config.yaml se la tabella è vuota (bootstrap una tantum)."""
+    try:
+        client = get_client()
+        existing = client.table('asset_catalog').select('isin').limit(1).execute()
+        if existing.data:
+            return True
+
+        import sys
+        from pathlib import Path as _Path
+        sys.path.insert(0, str(_Path(__file__).parent))
+        from parser import load_config
+        cfg = load_config()
+        records = []
+
+        for f in cfg.get('fondi_bancari', {}).get('titoli', []):
+            if not f.get('isin'):
+                continue
+            records.append({
+                'isin': f['isin'], 'nome': f['nome'], 'tipo': 'fondo',
+                'ticker_yf': f.get('ticker_yf'),
+                'fallback_tickers': json.dumps(f.get('fallback_tickers', [])),
+                'ter': f.get('ter'), 'proprietario': 'persona1', 'stato': 'attivo',
+                'valore_quota_ref': f.get('valore_quota_ref'),
+                'data_ref': f.get('data_ref'), 'note': None,
+            })
+
+        for etf in cfg.get('etf', []):
+            if not etf.get('isin'):
+                continue
+            records.append({
+                'isin': etf['isin'], 'nome': etf['nome'], 'tipo': 'etf',
+                'ticker_yf': etf.get('ticker_yf'), 'ticker_bi': etf.get('ticker_bi'),
+                'fallback_tickers': '[]', 'ter': etf.get('ter'),
+                'proprietario': etf.get('proprietario', 'persona1'),
+                'stato': etf.get('stato', 'candidato'),
+                'valore_iniziale': etf.get('valore_iniziale', 0),
+                'note': etf.get('note'),
+            })
+
+        for az in cfg.get('azioni', []):
+            if not az.get('isin'):
+                continue
+            records.append({
+                'isin': az['isin'], 'nome': az['nome'], 'tipo': 'azione',
+                'ticker_yf': az.get('ticker_yf'), 'fallback_tickers': '[]',
+                'proprietario': 'persona1', 'stato': 'attivo',
+                'note': az.get('note'),
+            })
+
+        if records:
+            client.table('asset_catalog').insert(records).execute()
+            print(f"  [+] asset_catalog: {len(records)} asset inizializzati da config.yaml")
+        return True
+    except Exception as e:
+        print(f"  [!] Errore inizializzazione asset_catalog: {e}")
+        return False
 
 
 # ─────────────────────────────────────────────────────────────

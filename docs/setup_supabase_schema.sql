@@ -4,6 +4,31 @@
 -- Una sola volta, al primo avvio
 -- ══════════════════════════════════════════════════════════
 
+-- 0. Catalogo asset (fonte di verità — sostituisce le liste hardcoded)
+CREATE TABLE IF NOT EXISTS asset_catalog (
+    isin             TEXT PRIMARY KEY,
+    nome             TEXT NOT NULL,
+    tipo             TEXT NOT NULL CHECK (tipo IN ('fondo','etf','azione')),
+    ticker_yf        TEXT,
+    ticker_bi        TEXT,
+    fallback_tickers JSONB DEFAULT '[]',
+    ter              NUMERIC,
+    proprietario     TEXT DEFAULT 'persona1',
+    stato            TEXT DEFAULT 'attivo',
+    valore_quota_ref NUMERIC,
+    data_ref         TEXT,
+    valore_iniziale  NUMERIC DEFAULT 0,
+    note             TEXT,
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE asset_catalog ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+    CREATE POLICY "service_only" ON asset_catalog
+        FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_asset_catalog_tipo ON asset_catalog(tipo);
+
 -- 1. Snapshot giornaliero patrimonio
 CREATE TABLE IF NOT EXISTS patrimonio_log (
     id                   BIGSERIAL PRIMARY KEY,

@@ -17,7 +17,9 @@ from database import (
     salva_quote_fondi, carica_ultime_quote_fondi, storico_quote_fondo,
     salva_transazioni, carica_transazioni,
     salva_param, carica_param, carica_tutti_params,
-    salva_params_batch, test_connessione
+    salva_params_batch, test_connessione,
+    carica_asset_catalog, upsert_asset, elimina_asset,
+    inizializza_asset_catalog_da_config,
 )
 
 
@@ -67,17 +69,24 @@ def carica_quote_fondi_persistenti(config: dict) -> dict:
     """
     Carica le ultime quote fondi dal DB.
     Restituisce dict {isin: quota} da usare come override.
+    Fallback su asset_catalog (o config.yaml) se quote_fondi è vuota.
     """
     df = carica_ultime_quote_fondi()
-    if df.empty:
-        # Fallback: usa le quote dal config.yaml
-        return {f['isin']: f['valore_quota_ref']
-                for f in config['fondi_bancari']['titoli']}
+    if not df.empty:
+        return {row['isin']: float(row['quota']) for _, row in df.iterrows()}
 
-    result = {}
-    for _, row in df.iterrows():
-        result[row['isin']] = float(row['quota'])
-    return result
+    # Fallback: usa le quote ref dall'asset_catalog
+    catalog = carica_asset_catalog()
+    if not catalog.empty and 'tipo' in catalog.columns:
+        fondi = catalog[catalog['tipo'] == 'fondo']
+        if not fondi.empty:
+            return {str(r['isin']): float(r.get('valore_quota_ref') or 0)
+                    for _, r in fondi.iterrows() if r.get('valore_quota_ref')}
+
+    # Ultimo fallback: config.yaml
+    return {f['isin']: f['valore_quota_ref']
+            for f in config.get('fondi_bancari', {}).get('titoli', [])
+            if f.get('valore_quota_ref')}
 
 
 def auto_save_snapshot(snapshot: dict, params: dict) -> bool:
@@ -114,19 +123,28 @@ def get_storico_fondo(isin: str, giorni: int = 180) -> pd.DataFrame:
     return storico_quote_fondo(isin, giorni)
 
 
-def aggiorna_quote_fondi(quote_map: dict, config: dict) -> bool:
+def aggiorna_quote_fondi(quote_map: dict, config: dict,
+                          catalog_df: 'pd.DataFrame | None' = None) -> bool:
     """
     Salva le quote aggiornate manualmente nell'app.
     quote_map: {isin: quota_nuova}
+    Usa catalog_df (DB) se disponibile, altrimenti fallback su config.
     """
-    fondi_cfg = {f['isin']: f for f in config['fondi_bancari']['titoli']}
+    if catalog_df is not None and not catalog_df.empty:
+        fondi_meta = {
+            row['isin']: row
+            for _, row in catalog_df[catalog_df['tipo'] == 'fondo'].iterrows()
+        }
+    else:
+        fondi_meta = {f['isin']: f for f in config.get('fondi_bancari', {}).get('titoli', [])}
+
     righe = []
     for isin, quota in quote_map.items():
-        fondo = fondi_cfg.get(isin, {})
-        quantita = fondo.get('quantita', 0)
+        meta = fondi_meta.get(isin, {})
+        quantita = meta.get('quantita', 0)
         righe.append({
             'isin': isin,
-            'nome': fondo.get('nome', isin),
+            'nome': meta.get('nome', isin),
             'quota': quota,
             'quantita': quantita,
             'valore': round(quantita * quota, 2)
@@ -143,18 +161,38 @@ def esegui_backfill_avvio(config: dict, verbose: bool = False) -> dict:
     Chiamato silenziosamente all'avvio dell'app.
     Scarica tutti i prezzi mancanti dall'ultima apertura ad oggi.
     """
-    from positions import backfill_prezzi, inizializza_posizioni, ASSET_TICKERS
+    from positions import backfill_prezzi, inizializza_posizioni
+    from prices import reload_asset_tickers, ASSET_TICKERS
 
-    # Inizializza posizioni se è la prima volta
+    # 1. Semina asset_catalog da config.yaml se è la prima volta
+    inizializza_asset_catalog_da_config()
+
+    # 2. Ricarica la mappa ISIN→ticker dal DB (ora popolata)
+    reload_asset_tickers()
+
+    # 3. Inizializza le posizioni attive se la tabella è vuota
     inizializza_posizioni()
 
-    # Lista ISIN da aggiornare: fondi + ETF attivi + azioni
+    # 4. Backfill prezzi per tutti gli ISIN noti
     isins_da_aggiornare = list(ASSET_TICKERS.keys())
-
-    # Esegui backfill
     risultati = backfill_prezzi(isins_da_aggiornare, verbose=verbose)
     n_totale = sum(v for v in risultati.values() if v)
     return {'n_prezzi_scaricati': n_totale, 'dettaglio': risultati}
+
+
+def get_asset_catalog() -> 'pd.DataFrame':
+    """Carica il catalogo asset dal DB."""
+    return carica_asset_catalog()
+
+
+def salva_asset(asset: dict) -> bool:
+    """Upsert di un asset nel catalogo DB."""
+    return upsert_asset(asset)
+
+
+def rimuovi_asset(isin: str) -> bool:
+    """Rimuove un asset dal catalogo DB."""
+    return elimina_asset(isin)
 
 
 def get_storico_portafoglio(data_inizio=None, data_fine=None) -> "pd.DataFrame":
