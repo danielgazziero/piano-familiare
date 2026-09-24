@@ -190,7 +190,10 @@ def simula_migrazione_fondi(config, rimborso_annuale=22000, rendimento_etf=0.07,
 
 
 def simula_costi_figlio(config, eta_max=23):
-    nascita = datetime.strptime(config['date']['nascita_figlio'], '%Y-%m-%d').date()
+    nascita_str = config.get('date', {}).get('nascita_figlio', '')
+    if not nascita_str:
+        return pd.DataFrame(columns=['eta', 'anno', 'voce', 'costo_mensile', 'costo_annuale'])
+    nascita = datetime.strptime(nascita_str, '%Y-%m-%d').date()
     rows = []
     for eta in range(eta_max + 1):
         data = nascita + relativedelta(years=eta)

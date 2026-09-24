@@ -1204,7 +1204,7 @@ elif sezione == "🎯 Simulatore strategie":
 elif sezione == _SEZIONE_FIGLIO:
     st.title(f"{_NF} timeline")
     c1,c2 = st.columns(2)
-    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",100,500,config['allocazione'].get('pac_figlio',0),step=50)
+    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",0,500,config['allocazione'].get('pac_figlio',0),step=50)
     with c2: rf    = st.slider("Rendimento base (%)",4.0,10.0,7.0,step=0.5)
 
     _p6 = config.get('parametri', {})
@@ -1212,6 +1212,9 @@ elif sezione == _SEZIONE_FIGLIO:
                                     rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
                                     rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
     df_costi = simula_costi_figlio(config, eta_max=22)
+
+    if df_costi.empty:
+        st.info("Imposta la data di nascita in Supabase (`config_params` → chiave `nascita_figlio`, valore `\"YYYY-MM-DD\"`) per visualizzare la timeline dei costi.")
 
     fig_f = go.Figure()
     anni_arr = sc_figlio['base']['anno'].tolist()
@@ -1242,19 +1245,20 @@ elif sezione == _SEZIONE_FIGLIO:
     c2.metric("Base (18 anni)",  f"€ {sc_figlio['base']['valore'].iloc[-1]:,.0f}")
     c3.metric("Best (18 anni)",  f"€ {sc_figlio['best']['valore'].iloc[-1]:,.0f}")
 
-    st.subheader("Costi per fascia d'età")
-    fig_c = px.bar(df_costi,x='eta',y='costo_annuale',color='voce',
-                    labels={'eta':'Età','costo_annuale':'€/anno','voce':'Fase'},height=300)
-    st.plotly_chart(fig_c, use_container_width=True)
+    if not df_costi.empty:
+        st.subheader("Costi per fascia d'età")
+        fig_c = px.bar(df_costi,x='eta',y='costo_annuale',color='voce',
+                        labels={'eta':'Età','costo_annuale':'€/anno','voce':'Fase'},height=300)
+        st.plotly_chart(fig_c, use_container_width=True)
 
-    df_tab = sc_figlio['base'][sc_figlio['base']['anno'].apply(lambda x: x==int(x))].copy()
-    df_tab['eta'] = df_tab['anno'].astype(int)
-    df_tab = df_tab.merge(df_costi[['eta','voce','costo_annuale']],on='eta',how='left')
-    show = df_tab[['eta','valore','versato','voce','costo_annuale']].copy()
-    show.columns = ['Età','Fondo base (€)','Versato (€)','Fase','Costo annuale (€)']
-    for c in ['Fondo base (€)','Versato (€)','Costo annuale (€)']:
-        show[c] = show[c].map(lambda x: f"€ {x:,.0f}")
-    st.dataframe(show,use_container_width=True,hide_index=True)
+        df_tab = sc_figlio['base'][sc_figlio['base']['anno'].apply(lambda x: x==int(x))].copy()
+        df_tab['eta'] = df_tab['anno'].astype(int)
+        df_tab = df_tab.merge(df_costi[['eta','voce','costo_annuale']],on='eta',how='left')
+        show = df_tab[['eta','valore','versato','voce','costo_annuale']].copy()
+        show.columns = ['Età','Fondo base (€)','Versato (€)','Fase','Costo annuale (€)']
+        for c in ['Fondo base (€)','Versato (€)','Costo annuale (€)']:
+            show[c] = show[c].map(lambda x: f"€ {x:,.0f}")
+        st.dataframe(show,use_container_width=True,hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1271,19 +1275,6 @@ elif sezione == "⚙️ Gestione Asset":
     # Ricarica sempre dal DB in questa sezione
     cat_df = get_asset_catalog()
 
-    # Se il catalogo è vuoto, offre seeding manuale da config.yaml
-    if cat_df.empty:
-        st.warning("Il catalogo è vuoto. Clicca il pulsante per caricarlo da config.yaml.")
-        if st.button("🌱 Inizializza catalogo da config.yaml"):
-            from database import inizializza_asset_catalog_da_config as _seed
-            try:
-                _seed()
-                st.session_state.pop('asset_catalog', None)
-                st.session_state.pop('catalog_seeded', None)
-                st.success("Catalogo inizializzato.")
-                st.rerun()
-            except Exception as _e:
-                st.error(f"Errore: {_e}")
     if cat_df.empty:
         st.info("Nessun asset nel catalogo. Aggiungi il primo qui sotto.")
         cat_df = pd.DataFrame(columns=['isin','nome','tipo','ticker_yf','ticker_bi',

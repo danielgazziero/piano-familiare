@@ -217,6 +217,7 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | 12 | **Geo/sector ETF** — breakdown geografico aggiornabile manualmente ogni trimestre dai factsheet | `app.py`, `config.yaml` | Dati statici, nessuna automazione possibile. |
 | 13 | **Data freshness indicator** — riepilogo allineamento dati (ultima data chiusa per ogni dataset) nella sidebar | `app.py`, `app_state.py` | UX improvement. |
 | 14 | **Month-end checklist** — pannello guidato 4 passi con stato Aperto/Chiuso per validare il mese | `app.py` | Migliora consistenza dati nel tempo. |
+| 15 | **Gestione Asset — elimina per nome** — il form di eliminazione asset usa attualmente l'ISIN come selettore; sostituire con selectbox che mostra `nome (ISIN)` per maggiore usabilità | `app.py` sezione "⚙️ Gestione Asset" | UX improvement segnalato dall'utente. |
 
 ---
 
