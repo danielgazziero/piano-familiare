@@ -119,11 +119,14 @@ Il codice è completamente agnostico rispetto alle persone. I valori specifici v
 
 | Chiave Supabase (`config_params`) | Contenuto | Usato in |
 |---|---|---|
-| `pattern_file_bper_persona1` | Pattern glob per i file XLS del conto Persona 1 (es. `"Lista_Movimenti_*"`) | `src/parser.py` |
-| `pattern_file_bper_persona2` | Pattern glob per i file XLS del conto Persona 2 | `src/parser.py` |
-| `transfer_keywords` | JSON array di stringhe per escludere bonifici interni (es. `["COGNOME NOME", ...]`) | `src/parser.py` → `src/adapters.py` |
+| `nome_persona1` | Nome dell'intestatario conto Persona 1 | `src/parser.py` → pattern file XLS |
+| `nome_persona2` | Nome dell'intestatario conto Persona 2 | `src/parser.py` → pattern file XLS |
+| `transfer_keywords` | JSON array di stringhe per escludere bonifici interni tra conti di famiglia | `src/parser.py` → `src/adapters.py` |
 
-`src/parser.py` li carica via `_carica_da_db()` prima di ogni parsing. Se la chiave non è presente in Supabase, usa il fallback di `config.yaml` (`pattern_file: null` → skip con warning). `TRANSFER_KEYWORDS` in `adapters.py` è `[]` di default e viene popolata a runtime.
+**Come funziona la riconciliazione file XLS:**
+`config.yaml` contiene `pattern_template: "Lista_Movimenti_{nome}*"` per ogni banca. A runtime, `parser.py` legge `nome_<account>` da Supabase e costruisce il pattern reale (`_risolvi_pattern()`). Il codice non conosce mai i nomi delle persone.
+
+`TRANSFER_KEYWORDS` in `adapters.py` è `[]` di default e viene popolata a runtime da `transfer_keywords` in Supabase.
 
 ### Altre convenzioni
 
@@ -225,6 +228,6 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 - **data/** — non sovrascrivere quando si aggiorna il codice
 - Le credenziali Supabase vanno in `.streamlit/secrets.toml` (gitignored) o variabili d'ambiente `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SECRET` — mai hardcodate nel codice
 - `inizializza_posizioni()` va chiamata solo una volta (inserisce le posizioni default nel DB se vuoto)
-- **Non usare nomi personali** (`daniel`, `alessandra`) nel codice, config.yaml o DB — usare `persona1`/`persona2`. I valori sensibili (keyword bonifici, pattern file XLS) vanno in Supabase `config_params`
+- **Non usare nomi personali** nel codice, config.yaml o DB — usare `persona1`/`persona2`. I valori sensibili (keyword bonifici, pattern file XLS) vanno in Supabase `config_params`
 - **Non aggiungere `APP_PASSWORD`** a Streamlit Cloud secrets — la password app viene esclusivamente da Supabase `config_params.app_password`
 - **Non bypassare auth in DEMO mode** — `_DEMO` controlla i dati mostrati, non l'autenticazione

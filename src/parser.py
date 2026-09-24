@@ -21,6 +21,39 @@ def _carica_da_db(chiave: str):
         return None
 
 
+def _risolvi_pattern(banca: dict, account: str) -> str | None:
+    """
+    Risolve il pattern glob per trovare i file XLS della banca.
+    Priorità:
+      1. pattern_file fisso in config.yaml (se presente)
+      2. pattern_template in config.yaml + nome_<account> da Supabase
+      3. pattern_file_<banca_id> da Supabase (chiave esplicita, fallback legacy)
+    Ritorna None con warning se non è possibile determinare il pattern.
+    """
+    # 1. Pattern fisso esplicito
+    if banca.get('pattern_file'):
+        return banca['pattern_file']
+
+    # 2. Template + nome persona da Supabase
+    tmpl = banca.get('pattern_template')
+    if tmpl and '{nome}' in tmpl:
+        nome = _carica_da_db(f"nome_{account}")
+        if nome:
+            return tmpl.replace('{nome}', str(nome))
+        print(f"  [!] Nome non configurato per '{account}'.")
+        print(f"      → Aggiungi 'nome_{account}' in Supabase config_params.")
+        return None
+
+    # 3. Chiave esplicita legacy
+    pattern = _carica_da_db(f"pattern_file_{banca['id']}")
+    if pattern:
+        return str(pattern)
+
+    print(f"  [!] Pattern non configurato per {banca['nome']}.")
+    print(f"      → Aggiungi 'nome_{account}' in Supabase config_params.")
+    return None
+
+
 def load_config(config_path: Path = None) -> dict:
     if config_path is None:
         config_path = Path(__file__).parent.parent / 'config.yaml'
@@ -48,13 +81,11 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
 
     for banca in banche:
         bank_id = banca['formato']
-        account = banca['intestatario']
+        account = banca['intestatario']   # "persona1" | "persona2" | "comune"
 
-        # Pattern: prima Supabase (pattern_file_<banca_id>), poi config.yaml, poi skip
-        pattern = _carica_da_db(f"pattern_file_{banca['id']}") or banca.get('pattern_file')
+        # Risolvi il pattern: template in config + nome da Supabase
+        pattern = _risolvi_pattern(banca, account)
         if not pattern:
-            print(f"  [!] Pattern non configurato per {banca['nome']}.")
-            print(f"      → Aggiungi 'pattern_file_{banca['id']}' in Supabase config_params.")
             continue
 
         files = list(input_dir.glob(pattern))

@@ -206,13 +206,13 @@ banche:
     nome: "BPER Persona 1"
     intestatario: "persona1"
     formato: "bper_xls"
-    pattern_file: null  # override in Supabase: config_params → pattern_file_bper_persona1
+    pattern_template: "Lista_Movimenti_{nome}*"
 
   - id: "bper_persona2"
     nome: "BPER Persona 2"
     intestatario: "persona2"
     formato: "bper_xls_new"
-    pattern_file: null  # override in Supabase: config_params → pattern_file_bper_persona2
+    pattern_template: "Lista_Movimenti_{nome}*"
 
 # ─── DEBITI E SPESE STRAORDINARIE ────────────────────────────
 debiti:
