@@ -34,9 +34,20 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
                    page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
-# ── AUTENTICAZIONE — disabilitata in dev (DEMO_MODE=True) ─────
-_APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
+# ── AUTENTICAZIONE ────────────────────────────────────────────
+_APP_PASSWORD_SECRET = st.secrets.get("APP_PASSWORD", "")
 _IS_DEV = False
+
+# Password sovrascrivibile da Supabase (senza toccare Streamlit Cloud)
+_APP_PASSWORD = _APP_PASSWORD_SECRET
+try:
+    from database import carica_param as _carica_param_raw
+    _db_pwd = _carica_param_raw("app_password")
+    if _db_pwd:
+        _APP_PASSWORD = _db_pwd
+except Exception:
+    pass
+
 if _APP_PASSWORD and not _IS_DEV:
     if not st.session_state.get("_auth_ok"):
         st.title("🔒 Accesso protetto")
@@ -191,6 +202,19 @@ with st.sidebar:
                                       'nome_persona2': n2_inp,
                                       'nome_figlio':   nf_inp})
             st.rerun()
+    if not _DEMO and _APP_PASSWORD:
+        with st.expander("🔑 Password"):
+            new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1")
+            new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2")
+            if st.button("💾 Cambia password"):
+                if not new_pwd1:
+                    st.error("Inserisci una password.")
+                elif new_pwd1 != new_pwd2:
+                    st.error("Le password non corrispondono.")
+                else:
+                    from database import salva_param as _salva_param_raw
+                    _salva_param_raw("app_password", new_pwd1)
+                    st.success("Password aggiornata! Al prossimo login usa la nuova.")
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")
