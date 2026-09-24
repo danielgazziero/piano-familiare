@@ -103,7 +103,7 @@ def demo_get_storico_patrimonio(giorni: int = 365) -> pd.DataFrame:
         "fondi_bancari":        fondi.round(0),
         "generali":             generali.round(0),
         "etf_persona1":         etf_dan.round(0),
-        "etf_flor":             etf_flo,
+        "etf_figlio":           etf_flo,
         "azioni_acn_usd":       acn_usd.round(0),
         "liquidita":            liq.round(0),
         "totale_eur":           totale.round(0),

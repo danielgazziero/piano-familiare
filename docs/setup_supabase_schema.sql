@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS patrimonio_log (
     fondi_bancari        NUMERIC,
     generali             NUMERIC,
     etf_persona1         NUMERIC,
-    etf_flor             NUMERIC,
+    etf_figlio           NUMERIC,
     azioni_acn_usd       NUMERIC,
     liquidita            NUMERIC,
     totale_eur           NUMERIC,

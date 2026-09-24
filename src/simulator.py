@@ -1,5 +1,5 @@
 """
-Simulatore: PAC, migrazione fondi, scenari famiglia, Flor, best/worst case.
+Simulatore: PAC, migrazione fondi, scenari famiglia, figlio/a, best/worst case.
 """
 
 import numpy as np
@@ -189,13 +189,13 @@ def simula_migrazione_fondi(config, rimborso_annuale=22000, rendimento_etf=0.07,
     return df
 
 
-def simula_costi_flor(config, eta_max=23):
-    nascita = datetime.strptime(config['date']['nascita_flor'], '%Y-%m-%d').date()
+def simula_costi_figlio(config, eta_max=23):
+    nascita = datetime.strptime(config['date']['nascita_figlio'], '%Y-%m-%d').date()
     rows = []
     for eta in range(eta_max + 1):
         data = nascita + relativedelta(years=eta)
         voce, costo = 'Nessun costo specifico', 0
-        for fascia in config.get('costi_flor', []):
+        for fascia in config.get('costi_figlio', []):
             if fascia['eta_da'] <= eta < fascia['eta_a']:
                 voce, costo = fascia['voce'], fascia['mensile']
                 break
@@ -204,25 +204,25 @@ def simula_costi_flor(config, eta_max=23):
     return pd.DataFrame(rows)
 
 
-def simula_scenario_completo(config, pac_persona1=None, pac_flor=None,
+def simula_scenario_completo(config, pac_persona1=None, pac_figlio=None,
                                rendimento=0.07, anni=20):
     if pac_persona1 is None:
         pac_persona1 = config['allocazione']['pac_persona1_ora']
-    if pac_flor is None:
-        pac_flor = config['allocazione']['pac_flor']
+    if pac_figlio is None:
+        pac_figlio = config['allocazione']['pac_figlio']
     p = config['patrimonio']
     p_cfg = config.get('parametri', {})
     aliquota = p_cfg.get('aliquota_capital_gain', 0.26)
     rend_fondi = p_cfg.get('rendimento_fondi_base', 0.04)
     ter_fondi = p_cfg.get('ter_default', 0.02)
     rend_gen = p_cfg.get('rendimento_generali', 0.03)
-    nascita_flor = datetime.strptime(config['date']['nascita_flor'], '%Y-%m-%d').date()
+    nascita_figlio = datetime.strptime(config['date']['nascita_figlio'], '%Y-%m-%d').date()
     inizio_nido = datetime.strptime(config['date']['inizio_asilo_nido'], '%Y-%m-%d').date()
     tasso = rendimento / 12
     data_inizio = date.today().replace(day=1)
     liquidita = (p['liquidita_persona1'] + p['liquidita_persona2'] +
                  p['conto_comune'] + p['affitto_accantonato'])
-    etf_persona1, etf_flor = p['etf_cspx_directa'], 0
+    etf_persona1, etf_figlio = p['etf_cspx_directa'], 0
     fondi, generali = p['fondi_bancari'], p['gestione_separata_generali']
     generali_attivo = True
     rows = []
@@ -230,15 +230,15 @@ def simula_scenario_completo(config, pac_persona1=None, pac_flor=None,
         dc = data_inizio + relativedelta(months=mese)
         pac_d = (config['allocazione']['pac_persona1_con_nido']
                  if dc >= inizio_nido else pac_persona1)
-        eta_anni = (dc - nascita_flor).days / 365.25
-        costo_flor = 0
-        for f in config.get('costi_flor', []):
+        eta_anni = (dc - nascita_figlio).days / 365.25
+        costo_figlio = 0
+        for f in config.get('costi_figlio', []):
             if f['eta_da'] <= eta_anni < f['eta_a']:
-                costo_flor = f['mensile']
+                costo_figlio = f['mensile']
                 break
         if mese > 0:
             etf_persona1 = (etf_persona1 + pac_d) * (1 + tasso)
-            etf_flor = (etf_flor + pac_flor) * (1 + tasso)
+            etf_figlio = (etf_figlio + pac_figlio) * (1 + tasso)
             fondi *= (1 + rend_fondi / 12 - ter_fondi / 12)
             if generali_attivo:
                 generali = generali * (1 + rend_gen / 12) + p['generali_versamento_mensile']
@@ -247,12 +247,12 @@ def simula_scenario_completo(config, pac_persona1=None, pac_flor=None,
                 etf_persona1 += generali * (1 - aliquota)
                 generali = 0
                 generali_attivo = False
-        totale = etf_persona1 + etf_flor + fondi + generali + liquidita
+        totale = etf_persona1 + etf_figlio + fondi + generali + liquidita
         rows.append({'data': dc, 'anno': round(mese/12, 2),
-                     'etf_persona1': round(etf_persona1, 0), 'etf_flor': round(etf_flor, 0),
+                     'etf_persona1': round(etf_persona1, 0), 'etf_figlio': round(etf_figlio, 0),
                      'fondi': round(fondi, 0), 'generali': round(generali, 0),
                      'liquidita': round(liquidita, 0), 'totale': round(totale, 0),
-                     'costo_flor_mese': costo_flor, 'pac_persona1_mese': pac_d if mese > 0 else 0})
+                     'costo_figlio_mese': costo_figlio, 'pac_persona1_mese': pac_d if mese > 0 else 0})
     return pd.DataFrame(rows)
 
 

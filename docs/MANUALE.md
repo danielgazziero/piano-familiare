@@ -292,7 +292,7 @@ L'app si naviga dalla **sidebar a sinistra**. Ogni sezione è indipendente.
 
 ---
 
-### 👶 Flor timeline
+### 👶 Figlio/a timeline
 
 **Cosa mostra:** proiezione del fondo dedicato a una figlia/figlio dalla nascita all'università.
 

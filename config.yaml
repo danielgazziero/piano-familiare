@@ -35,7 +35,7 @@ entrate:
   mutuo_mensile: 0
 
 date:
-  nascita_flor: "2026-10-01"
+  nascita_figlio: "2026-10-01"
   inizio_maternita: "2026-10-01"
   fine_maternita: "2027-05-01"
   inizio_asilo_nido: "2027-05-01"
@@ -47,7 +47,7 @@ allocazione:
   vacanze_buffer: 0
   pac_persona1_ora: 0
   pac_persona1_con_nido: 0
-  pac_flor: 0
+  pac_figlio: 0
 
 patrimonio:
   fondi_bancari: 0
@@ -95,7 +95,7 @@ etf:
     nome: "SPDR MSCI ACWI (Figlio/a)"
     isin: "IE00B44Z5B48"
     valore_iniziale: 0
-    proprietario: "flor"
+    proprietario: "figlio"
     stato: "da_avviare"
     note: "Conto minore Directa — avviare dopo CF figlio/a"
 
@@ -208,8 +208,8 @@ azioni:
     data_acquisto: "2022-01-01"
     note: "RSU/stock plan — verificare lock-up e tassazione separata"
 
-# ─── COSTI FLOR PER ETÀ ──────────────────────────────────────
-costi_flor:
+# ─── COSTI FIGLIO/A PER ETÀ ──────────────────────────────────
+costi_figlio:
   - eta_da: 0
     eta_a: 1
     voce: "Spese neonato"

@@ -286,11 +286,11 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
         p.update(aggiornamenti_manuali)
 
     etf_persona1 = p.get('etf_cspx_directa', 0)
-    etf_flor = 0
+    etf_figlio = 0
     if etf_df is not None and not etf_df.empty:
         etf_persona1 = etf_df[(etf_df['proprietario'] == 'persona1') &
                                (etf_df['stato'] == 'attivo')]['valore_attuale'].sum()
-        etf_flor = etf_df[etf_df['proprietario'] == 'flor']['valore_attuale'].sum()
+        etf_figlio = etf_df[etf_df['proprietario'] == 'figlio']['valore_attuale'].sum()
 
     fondi_tot = p.get('fondi_bancari', 0)
     if fondi_df is not None and not fondi_df.empty:
@@ -304,13 +304,13 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
         'fondi_bancari': round(fondi_tot, 0),
         'generali': p.get('gestione_separata_generali', 0),
         'etf_persona1': round(etf_persona1, 0),
-        'etf_flor': round(etf_flor, 0),
+        'etf_figlio': round(etf_figlio, 0),
         'azioni_acn_usd': round(azioni_usd, 0),
         'liquidita': (p.get('liquidita_persona1', 0) + p.get('liquidita_persona2', 0) +
                       p.get('conto_comune', 0) + p.get('affitto_accantonato', 0)),
     }
     snap['totale_eur'] = (snap['fondi_bancari'] + snap['generali'] +
-                          snap['etf_persona1'] + snap['etf_flor'] + snap['liquidita'])
+                          snap['etf_persona1'] + snap['etf_figlio'] + snap['liquidita'])
     aliquota = config.get('parametri', {}).get(
         'aliquota_capital_gain',
         config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))

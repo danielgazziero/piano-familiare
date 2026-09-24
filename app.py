@@ -20,7 +20,7 @@ from portfolio import (get_portfolio_performance, get_etf_history_chart, get_etf
 from simulator import (simula_pac, simula_pac_variabile, simula_pac_scenari,
                         simula_fondo_scenari, simula_portafoglio_fondi_scenari,
                         simula_portafoglio_etf_scenari, simula_migrazione_fondi,
-                        simula_costi_flor, simula_scenario_completo, confronta_scenari)
+                        simula_costi_figlio, simula_scenario_completo, confronta_scenari)
 from app_state import (init_db_connection, carica_params_persistenti,
                         salva_params_persistenti, carica_quote_fondi_persistenti,
                         auto_save_snapshot, importa_transazioni_xls,
@@ -348,13 +348,13 @@ if sezione == "🏠 Stato di famiglia":
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
     c2.metric("Netto fiscale",     f"€ {snap['totale_netto_fiscale']:,.0f}", delta=f"-€ {snap['tassa_latente_fondi']:,.0f} latenti")
     c3.metric("Fondi bancari",     f"€ {snap['fondi_bancari']:,.0f}")
-    c4.metric("ETF totale",   f"€ {snap['etf_persona1']+snap['etf_flor']:,.0f}")
+    c4.metric("ETF totale",   f"€ {snap['etf_persona1']+snap['etf_figlio']:,.0f}")
     c5.metric("Azioni ACN (USD)",  f"$ {snap['azioni_acn_usd']:,.0f}")
 
     fig_pat = go.Figure(go.Pie(
         labels=['Fondi bancari','Generali',f'ETF {_N1}',f'ETF {_NF}','Azioni ACN','Liquidità'],
         values=[snap['fondi_bancari'],snap['generali'],snap['etf_persona1'],
-                snap['etf_flor'],snap['azioni_acn_usd'],snap['liquidita']],
+                snap['etf_figlio'],snap['azioni_acn_usd'],snap['liquidita']],
         hole=0.45, marker_colors=list(COLORS.values())[:6]
     ))
     fig_pat.update_layout(title="Composizione patrimonio", height=340, margin=dict(t=40,b=0,l=0,r=0))
@@ -683,7 +683,7 @@ elif sezione == "📈 ETF & mercato":
          'Includi': True},
         {'ETF': f"ACWE ({st.session_state.get('params', {}).get('nome_figlio', 'Figlio/a')})",
          'Descrizione': _acwe.get('nome', 'SPDR MSCI ACWI'),
-         'Importo €/mese': _alloc.get('pac_flor', 200),
+         'Importo €/mese': _alloc.get('pac_figlio', 0),
          'Valore iniziale €': 0,
          'Includi': True},
     ] + [
@@ -1170,7 +1170,7 @@ elif sezione == "🎯 Simulatore strategie":
         st.subheader("Scenario patrimoniale completo")
         c1,c2,c3 = st.columns(3)
         with c1: pd_s = st.slider(f"PAC {_N1} (€)",500,2000,config['allocazione']['pac_persona1_ora'],step=100)
-        with c2: pf_s = st.slider(f"PAC {_NF} (€)",100,500,config['allocazione']['pac_flor'],step=50)
+        with c2: pf_s = st.slider(f"PAC {_NF} (€)",100,500,config['allocazione'].get('pac_figlio',0),step=50)
         with c3: rs   = st.slider("Rendimento (%)",4.0,10.0,7.0,step=0.5)
         anni_s  = st.slider("Orizzonte (anni)",5,25,18)
         tutti_sc= st.checkbox("Mostra 3 scenari (3%/7%/10%)")
@@ -1188,7 +1188,7 @@ elif sezione == "🎯 Simulatore strategie":
             df_sc = simula_scenario_completo(config,pd_s,pf_s,rs/100,anni_s)
             fig_sc = go.Figure()
             for col,nome,col_c in [('etf_persona1',f'ETF {_N1}',COLORS['blu']),
-                                     ('etf_flor',f'ETF {_NF}',COLORS['azzurro']),
+                                     ('etf_figlio',f'ETF {_NF}',COLORS['azzurro']),
                                      ('fondi','Fondi bancari',COLORS['arancio']),
                                      ('generali','Generali',COLORS['rosso'])]:
                 fig_sc.add_trace(go.Scatter(x=df_sc['anno'],y=df_sc[col],
@@ -1204,33 +1204,33 @@ elif sezione == "🎯 Simulatore strategie":
 elif sezione == _SEZIONE_FIGLIO:
     st.title(f"{_NF} timeline")
     c1,c2 = st.columns(2)
-    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",100,500,config['allocazione']['pac_flor'],step=50)
+    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",100,500,config['allocazione'].get('pac_figlio',0),step=50)
     with c2: rf    = st.slider("Rendimento base (%)",4.0,10.0,7.0,step=0.5)
 
     _p6 = config.get('parametri', {})
-    sc_flor = simula_pac_scenari(pac_f, 18, rend_base=rf/100,
-                                  rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
-                                  rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
-    df_costi = simula_costi_flor(config, eta_max=22)
+    sc_figlio = simula_pac_scenari(pac_f, 18, rend_base=rf/100,
+                                    rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
+                                    rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
+    df_costi = simula_costi_figlio(config, eta_max=22)
 
     fig_f = go.Figure()
-    anni_arr = sc_flor['base']['anno'].tolist()
+    anni_arr = sc_figlio['base']['anno'].tolist()
     fig_f.add_trace(go.Scatter(
         x=anni_arr+anni_arr[::-1],
-        y=sc_flor['best']['valore'].tolist()+sc_flor['worst']['valore'].tolist()[::-1],
+        y=sc_figlio['best']['valore'].tolist()+sc_figlio['worst']['valore'].tolist()[::-1],
         fill='toself', fillcolor='rgba(27,175,122,0.08)',
         line=dict(color='rgba(0,0,0,0)'), name='Range worst-best'
     ))
     for sc_key,label in [('base','Base'),('worst','Worst'),('best','Best')]:
         fig_f.add_trace(go.Scatter(
-            x=sc_flor[sc_key]['anno'], y=sc_flor[sc_key]['valore'],
+            x=sc_figlio[sc_key]['anno'], y=sc_figlio[sc_key]['valore'],
             name=label, line=dict(color=SC_COLORS[sc_key],width=2,dash=SC_DASH[sc_key])
         ))
-    fig_f.add_trace(go.Scatter(x=sc_flor['base']['anno'], y=sc_flor['base']['versato'],
+    fig_f.add_trace(go.Scatter(x=sc_figlio['base']['anno'], y=sc_figlio['base']['versato'],
                                 name='Versato', line=dict(color=COLORS['grigio'],width=1,dash='longdash')))
     for eta, lbl in {3:"Nido",6:"Elementari",11:"Medie",14:"Liceo",18:"18 anni"}.items():
         fig_f.add_vline(x=eta,line_dash="dot",line_color="#ccc",opacity=0.6)
-        fig_f.add_annotation(x=eta,y=sc_flor['best']['valore'].iloc[-1]*0.85,
+        fig_f.add_annotation(x=eta,y=sc_figlio['best']['valore'].iloc[-1]*0.85,
                                text=lbl,showarrow=False,font=dict(size=10,color="#888"))
     fig_f.update_layout(title=f"Fondo {_NF} — €{pac_f}/mese · 18 anni",
                          xaxis_title=f"Età {_NF}",yaxis_title="€",height=420,
@@ -1238,16 +1238,16 @@ elif sezione == _SEZIONE_FIGLIO:
     st.plotly_chart(fig_f, use_container_width=True)
 
     c1,c2,c3 = st.columns(3)
-    c1.metric("Worst (18 anni)", f"€ {sc_flor['worst']['valore'].iloc[-1]:,.0f}")
-    c2.metric("Base (18 anni)",  f"€ {sc_flor['base']['valore'].iloc[-1]:,.0f}")
-    c3.metric("Best (18 anni)",  f"€ {sc_flor['best']['valore'].iloc[-1]:,.0f}")
+    c1.metric("Worst (18 anni)", f"€ {sc_figlio['worst']['valore'].iloc[-1]:,.0f}")
+    c2.metric("Base (18 anni)",  f"€ {sc_figlio['base']['valore'].iloc[-1]:,.0f}")
+    c3.metric("Best (18 anni)",  f"€ {sc_figlio['best']['valore'].iloc[-1]:,.0f}")
 
     st.subheader("Costi per fascia d'età")
     fig_c = px.bar(df_costi,x='eta',y='costo_annuale',color='voce',
                     labels={'eta':'Età','costo_annuale':'€/anno','voce':'Fase'},height=300)
     st.plotly_chart(fig_c, use_container_width=True)
 
-    df_tab = sc_flor['base'][sc_flor['base']['anno'].apply(lambda x: x==int(x))].copy()
+    df_tab = sc_figlio['base'][sc_figlio['base']['anno'].apply(lambda x: x==int(x))].copy()
     df_tab['eta'] = df_tab['anno'].astype(int)
     df_tab = df_tab.merge(df_costi[['eta','voce','costo_annuale']],on='eta',how='left')
     show = df_tab[['eta','valore','versato','voce','costo_annuale']].copy()
@@ -1369,9 +1369,9 @@ elif sezione == "⚙️ Gestione Asset":
                 tbi_e   = c3.text_input("Ticker BI", value=str(row.get('ticker_bi') or ''))
                 ter_e   = c1.number_input("TER %", value=float(row.get('ter') or 0.20),
                                            min_value=0.0, max_value=5.0, step=0.01, format="%.2f")
-                prop_e  = c2.selectbox("Proprietario",['persona1','persona2','flor'],
-                                        index=['persona1','persona2','flor'].index(
-                                            str(row.get('proprietario','persona1'))))
+                prop_e  = c2.selectbox("Proprietario",['persona1','persona2','figlio'],
+                                        index=['persona1','persona2','figlio'].index(
+                                            str(row.get('proprietario','persona1'))) if str(row.get('proprietario','persona1')) in ['persona1','persona2','figlio'] else 0)
                 stato_e = c3.selectbox("Stato",['attivo','da_avviare','candidato','dismisso'],
                                         index=['attivo','da_avviare','candidato','dismisso'].index(
                                             str(row.get('stato','candidato'))) if str(row.get('stato','candidato')) in ['attivo','da_avviare','candidato','dismisso'] else 0)
@@ -1421,9 +1421,9 @@ elif sezione == "⚙️ Gestione Asset":
                 c1, c2 = st.columns(2)
                 nome_a = c1.text_input("Nome", value=str(row.get('nome','')))
                 tyk_a  = c2.text_input("Ticker YF", value=str(row.get('ticker_yf') or ''))
-                prop_a = c1.selectbox("Proprietario",['persona1','persona2','flor'],
-                                       index=['persona1','persona2','flor'].index(
-                                           str(row.get('proprietario','persona1'))))
+                prop_a = c1.selectbox("Proprietario",['persona1','persona2','figlio'],
+                                       index=['persona1','persona2','figlio'].index(
+                                           str(row.get('proprietario','persona1'))) if str(row.get('proprietario','persona1')) in ['persona1','persona2','figlio'] else 0)
                 note_a = st.text_input("Note", value=str(row.get('note') or ''))
                 col_s, col_d = st.columns(2)
                 salva_a = col_s.form_submit_button("💾 Salva modifiche")
@@ -1457,7 +1457,7 @@ elif sezione == "⚙️ Gestione Asset":
             tbi_n    = c2.text_input("Ticker BI (solo ETF)")
             ter_n    = c3.number_input("TER %", min_value=0.0, max_value=5.0,
                                         value=0.20, step=0.01, format="%.2f")
-            prop_n   = c1.selectbox("Proprietario", ['persona1','persona2','flor'])
+            prop_n   = c1.selectbox("Proprietario", ['persona1','persona2','figlio'])
             stato_n  = c2.selectbox("Stato", ['attivo','da_avviare','candidato'])
             vqr_n    = c3.number_input("Quota ref € (fondi)", min_value=0.0, step=0.01)
             note_n   = st.text_input("Note")

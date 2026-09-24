@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS patrimonio_log (
     fondi_bancari       NUMERIC,
     generali            NUMERIC,
     etf_persona1        NUMERIC,
-    etf_flor            NUMERIC,
+    etf_figlio          NUMERIC,
     azioni_acn_usd      NUMERIC,
     liquidita           NUMERIC,
     totale_eur          NUMERIC,
@@ -181,7 +181,7 @@ def salva_snapshot_patrimonio(snapshot: dict, note: str = None) -> bool:
             'fondi_bancari': float(snapshot.get('fondi_bancari', 0)),
             'generali': float(snapshot.get('generali', 0)),
             'etf_persona1': float(snapshot.get('etf_persona1', 0)),
-            'etf_flor': float(snapshot.get('etf_flor', 0)),
+            'etf_figlio': float(snapshot.get('etf_figlio', 0)),
             'azioni_acn_usd': float(snapshot.get('azioni_acn_usd', 0)),
             'liquidita': float(snapshot.get('liquidita', 0)),
             'totale_eur': float(snapshot.get('totale_eur', 0)),
@@ -211,7 +211,7 @@ def carica_patrimonio_log(giorni: int = 365) -> pd.DataFrame:
         df = pd.DataFrame(res.data)
         df['data'] = pd.to_datetime(df['data'])
         df = df.set_index('data')
-        cols_num = ['fondi_bancari','generali','etf_persona1','etf_flor',
+        cols_num = ['fondi_bancari','generali','etf_persona1','etf_figlio',
                     'azioni_acn_usd','liquidita','totale_eur',
                     'totale_netto_fiscale','tassa_latente_fondi']
         for c in cols_num:
