@@ -101,6 +101,10 @@ db_ok = init_db_connection()
 if 'params' not in st.session_state:
     st.session_state['params'] = carica_params_persistenti(config)
 
+_N1 = st.session_state['params'].get('nome_persona1', 'Persona 1')
+_N2 = st.session_state['params'].get('nome_persona2', 'Persona 2')
+_NF = st.session_state['params'].get('nome_figlio',   'Figlio/a')
+
 # Carica quote fondi persistenti
 if 'quote_map' not in st.session_state:
     st.session_state['quote_map'] = carica_quote_fondi_persistenti(config)
@@ -159,12 +163,13 @@ with st.sidebar:
         st.warning("⚠️ DEMO MODE — dati fittizi")
         st.caption("Nessun dato reale viene letto o scritto.")
     else:
-        st.caption("Daniel & Alessandra")
+        st.caption(f"{_N1} & {_N2}")
     if db_ok:
         st.success("☁️ Supabase connesso", icon="✅")
     else:
         st.warning("⚠️ DB offline — dati non salvati")
     st.divider()
+    _SEZIONE_FIGLIO = f"👶 {_NF} timeline"
     sezione = st.radio("Sezione", [
         "🏠 Stato di famiglia",
         "📉 Portafoglio storico",
@@ -172,8 +177,20 @@ with st.sidebar:
         "🏦 Fondi bancari",
         "📊 Azioni Accenture",
         "🎯 Simulatore strategie",
-        "👶 Figlio/a timeline"
+        _SEZIONE_FIGLIO,
     ])
+    with st.expander("✏️ Nomi"):
+        n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1")
+        n2_inp = st.text_input("Persona 2", value=_N2, key="edit_n2")
+        nf_inp = st.text_input("Figlio/a",  value=_NF, key="edit_nf")
+        if st.button("💾 Salva nomi"):
+            st.session_state['params']['nome_persona1'] = n1_inp
+            st.session_state['params']['nome_persona2'] = n2_inp
+            st.session_state['params']['nome_figlio']   = nf_inp
+            salva_params_persistenti({'nome_persona1': n1_inp,
+                                      'nome_persona2': n2_inp,
+                                      'nome_figlio':   nf_inp})
+            st.rerun()
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")
@@ -204,8 +221,8 @@ if sezione == "🏠 Stato di famiglia":
             fondi_man    = st.number_input("Fondi bancari (€)", value=int(p_saved.get('fondi_bancari', config['patrimonio']['fondi_bancari'])), step=500)
             generali_man = st.number_input("Generali (€)", value=int(p_saved.get('gestione_separata_generali', config['patrimonio']['gestione_separata_generali'])), step=500)
         with c2:
-            liq_dan = st.number_input("Liquidità Persona 1 (€)", value=int(p_saved.get('liquidita_daniel', config['patrimonio']['liquidita_daniel'])), step=100)
-            liq_ale = st.number_input("Liquidità Persona 2 (€)", value=int(p_saved.get('liquidita_alessandra', config['patrimonio']['liquidita_alessandra'])), step=100)
+            liq_dan = st.number_input(f"Liquidità {_N1} (€)", value=int(p_saved.get('liquidita_daniel', config['patrimonio']['liquidita_daniel'])), step=100)
+            liq_ale = st.number_input(f"Liquidità {_N2} (€)", value=int(p_saved.get('liquidita_alessandra', config['patrimonio']['liquidita_alessandra'])), step=100)
         with c3:
             conto_com = st.number_input("Conto comune (€)", value=int(p_saved.get('conto_comune', config['patrimonio']['conto_comune'])), step=100)
 
@@ -244,7 +261,7 @@ if sezione == "🏠 Stato di famiglia":
     c5.metric("Azioni ACN (USD)",  f"$ {snap['azioni_acn_usd']:,.0f}")
 
     fig_pat = go.Figure(go.Pie(
-        labels=['Fondi bancari','Generali','ETF Pers.1','ETF Figlio/a','Azioni ACN','Liquidità'],
+        labels=['Fondi bancari','Generali',f'ETF {_N1}',f'ETF {_NF}','Azioni ACN','Liquidità'],
         values=[snap['fondi_bancari'],snap['generali'],snap['etf_daniel'],
                 snap['etf_flor'],snap['azioni_acn_usd'],snap['liquidita']],
         hole=0.45, marker_colors=list(COLORS.values())[:6]
@@ -1011,8 +1028,8 @@ elif sezione == "🎯 Simulatore strategie":
     with tab3:
         st.subheader("Scenario patrimoniale completo")
         c1,c2,c3 = st.columns(3)
-        with c1: pd_s = st.slider("PAC Persona 1 (€)",500,2000,config['allocazione']['pac_daniel_ora'],step=100)
-        with c2: pf_s = st.slider("PAC Figlio/a (€)",100,500,config['allocazione']['pac_flor'],step=50)
+        with c1: pd_s = st.slider(f"PAC {_N1} (€)",500,2000,config['allocazione']['pac_daniel_ora'],step=100)
+        with c2: pf_s = st.slider(f"PAC {_NF} (€)",100,500,config['allocazione']['pac_flor'],step=50)
         with c3: rs   = st.slider("Rendimento (%)",4.0,10.0,7.0,step=0.5)
         anni_s  = st.slider("Orizzonte (anni)",5,25,18)
         tutti_sc= st.checkbox("Mostra 3 scenari (3%/7%/10%)")
@@ -1029,8 +1046,8 @@ elif sezione == "🎯 Simulatore strategie":
         else:
             df_sc = simula_scenario_completo(config,pd_s,pf_s,rs/100,anni_s)
             fig_sc = go.Figure()
-            for col,nome,col_c in [('etf_daniel','ETF Pers.1',COLORS['blu']),
-                                     ('etf_flor','ETF Figlio/a',COLORS['azzurro']),
+            for col,nome,col_c in [('etf_daniel',f'ETF {_N1}',COLORS['blu']),
+                                     ('etf_flor',f'ETF {_NF}',COLORS['azzurro']),
                                      ('fondi','Fondi bancari',COLORS['arancio']),
                                      ('generali','Generali',COLORS['rosso'])]:
                 fig_sc.add_trace(go.Scatter(x=df_sc['anno'],y=df_sc[col],
@@ -1043,10 +1060,10 @@ elif sezione == "🎯 Simulatore strategie":
 # ─────────────────────────────────────────────────────────────
 # SEZIONE 6: FIGLIO/A TIMELINE
 # ─────────────────────────────────────────────────────────────
-elif sezione == "👶 Figlio/a timeline":
-    st.title("Figlio/a timeline")
+elif sezione == _SEZIONE_FIGLIO:
+    st.title(f"{_NF} timeline")
     c1,c2 = st.columns(2)
-    with c1: pac_f = st.slider("PAC mensile figlio/a (€)",100,500,config['allocazione']['pac_flor'],step=50)
+    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",100,500,config['allocazione']['pac_flor'],step=50)
     with c2: rf    = st.slider("Rendimento base (%)",4.0,10.0,7.0,step=0.5)
 
     sc_flor = simula_pac_scenari(pac_f,18,rend_base=rf/100,
@@ -1072,8 +1089,8 @@ elif sezione == "👶 Figlio/a timeline":
         fig_f.add_vline(x=eta,line_dash="dot",line_color="#ccc",opacity=0.6)
         fig_f.add_annotation(x=eta,y=sc_flor['best']['valore'].iloc[-1]*0.85,
                                text=lbl,showarrow=False,font=dict(size=10,color="#888"))
-    fig_f.update_layout(title=f"Fondo figlio/a — €{pac_f}/mese · 18 anni",
-                         xaxis_title="Età figlio/a",yaxis_title="€",height=420,
+    fig_f.update_layout(title=f"Fondo {_NF} — €{pac_f}/mese · 18 anni",
+                         xaxis_title=f"Età {_NF}",yaxis_title="€",height=420,
                          legend=dict(orientation="h",y=1.08))
     st.plotly_chart(fig_f, use_container_width=True)
 

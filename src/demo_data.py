@@ -39,6 +39,9 @@ def demo_carica_params_persistenti(config: dict) -> dict:
         "liquidita_alessandra":       6000,
         "conto_comune":               12000,
         "affitto_accantonato":        2000,
+        "nome_persona1":              "Persona 1",
+        "nome_persona2":              "Persona 2",
+        "nome_figlio":                "Figlio/a",
     }
 
 

@@ -52,6 +52,9 @@ def carica_params_persistenti(config: dict) -> dict:
                                                        p['fondi_bancari']),
         'gestione_separata_generali': params_db.get('gestione_separata_generali',
                                                        p['gestione_separata_generali']),
+        'nome_persona1':              params_db.get('nome_persona1', 'Persona 1'),
+        'nome_persona2':              params_db.get('nome_persona2', 'Persona 2'),
+        'nome_figlio':                params_db.get('nome_figlio',   'Figlio/a'),
     }
 
 
