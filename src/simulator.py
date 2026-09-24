@@ -211,10 +211,10 @@ def simula_costi_flor(config, eta_max=23):
     return pd.DataFrame(rows)
 
 
-def simula_scenario_completo(config, pac_daniel=None, pac_flor=None,
+def simula_scenario_completo(config, pac_persona1=None, pac_flor=None,
                                rendimento=0.07, anni=20):
-    if pac_daniel is None:
-        pac_daniel = config['allocazione']['pac_daniel_ora']
+    if pac_persona1 is None:
+        pac_persona1 = config['allocazione']['pac_persona1_ora']
     if pac_flor is None:
         pac_flor = config['allocazione']['pac_flor']
     p = config['patrimonio']
@@ -222,16 +222,16 @@ def simula_scenario_completo(config, pac_daniel=None, pac_flor=None,
     inizio_nido = datetime.strptime(config['date']['inizio_asilo_nido'], '%Y-%m-%d').date()
     tasso = rendimento / 12
     data_inizio = date.today().replace(day=1)
-    liquidita = (p['liquidita_daniel'] + p['liquidita_alessandra'] +
+    liquidita = (p['liquidita_persona1'] + p['liquidita_persona2'] +
                  p['conto_comune'] + p['affitto_accantonato'])
-    etf_daniel, etf_flor = p['etf_cspx_directa'], 0
+    etf_persona1, etf_flor = p['etf_cspx_directa'], 0
     fondi, generali = p['fondi_bancari'], p['gestione_separata_generali']
     generali_attivo = True
     rows = []
     for mese in range(anni * 12 + 1):
         dc = data_inizio + relativedelta(months=mese)
-        pac_d = (config['allocazione']['pac_daniel_con_nido']
-                 if dc >= inizio_nido else pac_daniel)
+        pac_d = (config['allocazione']['pac_persona1_con_nido']
+                 if dc >= inizio_nido else pac_persona1)
         eta_anni = (dc - nascita_flor).days / 365.25
         costo_flor = 0
         for f in config.get('costi_flor', []):
@@ -239,22 +239,22 @@ def simula_scenario_completo(config, pac_daniel=None, pac_flor=None,
                 costo_flor = f['mensile']
                 break
         if mese > 0:
-            etf_daniel = (etf_daniel + pac_d) * (1 + tasso)
+            etf_persona1 = (etf_persona1 + pac_d) * (1 + tasso)
             etf_flor = (etf_flor + pac_flor) * (1 + tasso)
             fondi *= (1 + 0.04/12 - 0.02/12)
             if generali_attivo:
                 generali = generali * (1 + 0.03/12) + p['generali_versamento_mensile']
             scad = datetime.strptime(config['date']['scadenza_generali'], '%Y-%m-%d').date()
             if dc >= scad and generali_attivo:
-                etf_daniel += generali * 0.74
+                etf_persona1 += generali * 0.74
                 generali = 0
                 generali_attivo = False
-        totale = etf_daniel + etf_flor + fondi + generali + liquidita
+        totale = etf_persona1 + etf_flor + fondi + generali + liquidita
         rows.append({'data': dc, 'anno': round(mese/12, 2),
-                     'etf_daniel': round(etf_daniel, 0), 'etf_flor': round(etf_flor, 0),
+                     'etf_persona1': round(etf_persona1, 0), 'etf_flor': round(etf_flor, 0),
                      'fondi': round(fondi, 0), 'generali': round(generali, 0),
                      'liquidita': round(liquidita, 0), 'totale': round(totale, 0),
-                     'costo_flor_mese': costo_flor, 'pac_daniel_mese': pac_d if mese > 0 else 0})
+                     'costo_flor_mese': costo_flor, 'pac_persona1_mese': pac_d if mese > 0 else 0})
     return pd.DataFrame(rows)
 
 

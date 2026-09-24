@@ -7,9 +7,9 @@ famiglia:
   aggiornato: "2026-09"
 
 entrate:
-  daniel_stipendio: 2600
-  alessandra_stipendio_ordinario: 1600
-  alessandra_stipendio_maternita: 1280
+  stipendio_persona1: 2600
+  stipendio_persona2_ordinario: 1600
+  stipendio_persona2_maternita: 1280
   affitto_chiara: 300
   mutuo_mensile: 1317
 
@@ -24,8 +24,8 @@ allocazione:
   spese_correnti_ora: 1200
   spese_correnti_con_nido: 1800
   vacanze_buffer: 300
-  pac_daniel_ora: 1000
-  pac_daniel_con_nido: 800
+  pac_persona1_ora: 1000
+  pac_persona1_con_nido: 800
   pac_flor: 200
 
 patrimonio:
@@ -35,8 +35,8 @@ patrimonio:
   gestione_separata_generali: 56000
   generali_versamento_mensile: 100
   etf_cspx_directa: 10500
-  liquidita_daniel: 3400
-  liquidita_alessandra: 4000
+  liquidita_persona1: 3400
+  liquidita_persona2: 4000
   conto_comune: 5000
   affitto_accantonato: 1000
 
@@ -64,7 +64,7 @@ etf:
     nome: "iShares Core S&P 500"
     isin: "IE00B5BMR087"
     valore_iniziale: 10500
-    proprietario: "daniel"
+    proprietario: "persona1"
     stato: "attivo"
     note: "Su Directa — già in portafoglio"
 
@@ -83,9 +83,9 @@ etf:
     nome: "iShares Core MSCI World"
     isin: "IE00B4L5Y983"
     valore_iniziale: 0
-    proprietario: "daniel"
+    proprietario: "persona1"
     stato: "da_avviare"
-    note: "PAC Daniel €1.000/mese — avviare ottobre 2026"
+    note: "PAC Persona 1 €1.000/mese — avviare ottobre 2026"
 
   - ticker_yf: "EMAE.MI"
     ticker_bi: "EMAE"
@@ -93,7 +93,7 @@ etf:
     isin: "IE00B466KX20"
     ter: 0.55
     valore_iniziale: 0
-    proprietario: "daniel"
+    proprietario: "persona1"
     stato: "candidato"
     note: "Emergenti Asia — valutare come complemento a IWDA. TER 0.55%, YTD +26.8%"
 
@@ -103,7 +103,7 @@ etf:
     isin: "IE000BI8OT95"
     ter: 0.12
     valore_iniziale: 0
-    proprietario: "daniel"
+    proprietario: "persona1"
     stato: "candidato"
     note: "Alternativa low-cost a IWDA. TER 0.12% — stesso benchmark MSCI World. YTD +13.3%"
 
@@ -202,21 +202,21 @@ costi_flor:
 
 # ─── ADAPTER BANCHE ──────────────────────────────────────────
 banche:
-  - id: "bper_daniel"
-    nome: "BPER Daniel"
-    intestatario: "daniel"
+  - id: "bper_persona1"
+    nome: "BPER Persona 1"
+    intestatario: "persona1"
     formato: "bper_xls"
     pattern_file: "Lista_Movimenti_Daniel*"
 
-  - id: "bper_alessandra"
-    nome: "BPER Alessandra"
-    intestatario: "alessandra"
+  - id: "bper_persona2"
+    nome: "BPER Persona 2"
+    intestatario: "persona2"
     formato: "bper_xls_new"
     pattern_file: "Lista_Movimenti_Alessandra*"
 
 # ─── DEBITI E SPESE STRAORDINARIE ────────────────────────────
 debiti:
-  - descrizione: "Prestito fratello Alessandra"
+  - descrizione: "Prestito fratello Persona 2"
     importo_totale: 15000
     piano_rimborso:
       - data: "2026-12-01"

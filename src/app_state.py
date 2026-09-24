@@ -40,10 +40,10 @@ def carica_params_persistenti(config: dict) -> dict:
     p = config['patrimonio']
 
     return {
-        'liquidita_daniel':           params_db.get('liquidita_daniel',
-                                                       p['liquidita_daniel']),
-        'liquidita_alessandra':       params_db.get('liquidita_alessandra',
-                                                       p['liquidita_alessandra']),
+        'liquidita_persona1':          params_db.get('liquidita_persona1',
+                                                       p['liquidita_persona1']),
+        'liquidita_persona2':          params_db.get('liquidita_persona2',
+                                                       p['liquidita_persona2']),
         'conto_comune':               params_db.get('conto_comune',
                                                        p['conto_comune']),
         'affitto_accantonato':        params_db.get('affitto_accantonato',
