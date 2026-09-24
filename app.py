@@ -120,8 +120,7 @@ _NF = st.session_state['params'].get('nome_figlio',   'Figlio/a')
 if 'quote_map' not in st.session_state:
     st.session_state['quote_map'] = carica_quote_fondi_persistenti(config)
 
-# Carica fondi con quote aggiornate dal DB
-@st.cache_data(ttl=1800)
+# Carica fondi con quote aggiornate dal DB — non cacheata (dipende da quote_map in session_state)
 def get_fondi():
     if _DEMO:
         from demo_data import demo_get_fondi_snapshot
@@ -211,6 +210,8 @@ with st.sidebar:
                     st.error("Inserisci una password.")
                 elif new_pwd1 != new_pwd2:
                     st.error("Le password non corrispondono.")
+                elif _DEMO:
+                    st.warning("In DEMO mode il cambio password è disabilitato.")
                 else:
                     from database import salva_param as _salva_param_raw
                     _salva_param_raw("app_password", new_pwd1)

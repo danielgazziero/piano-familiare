@@ -98,8 +98,8 @@ def demo_get_storico_patrimonio(giorni: int = 365) -> pd.DataFrame:
     acn_usd = totale * 0.14 + _RNG.normal(0, 300, n).cumsum() * 0.1
     liq     = totale * 0.10
 
-    return pd.DataFrame({
-        "data":                 days,
+    df = pd.DataFrame({
+        "data":                 pd.to_datetime(days),
         "fondi_bancari":        fondi.round(0),
         "generali":             generali.round(0),
         "etf_daniel":           etf_dan.round(0),
@@ -110,6 +110,7 @@ def demo_get_storico_patrimonio(giorni: int = 365) -> pd.DataFrame:
         "totale_netto_fiscale": (totale * 0.96).round(0),
         "tassa_latente_fondi":  (totale * 0.04).round(0),
     })
+    return df.set_index("data")
 
 
 # ─── Storico fondo ────────────────────────────────────────────
@@ -147,25 +148,36 @@ def demo_carica_transazioni_db(mesi: int = 12) -> pd.DataFrame:
             return base + timedelta(days=int(offset))
 
         rows += [
-            (d(1),  2600,   "ACCREDITO STIPENDIO DANIEL",       "entrate",  "daniel"),
-            (d(1),  1600,   "ACCREDITO STIPENDIO ALESSANDRA",   "entrate",  "alessandra"),
-            (d(5),   300,   "AFFITTO CHIARA",                   "entrate",  "conto_comune"),
-            (d(3), -1317,   "RATA MUTUO",                       "mutuo",    "conto_comune"),
-            (d(6),  -280,   "ESSELUNGA SPESA",                  "spesa",    "daniel"),
-            (d(13), -265,   "CONAD SUPERMERCATO",               "spesa",    "alessandra"),
-            (d(20), -310,   "CARREFOUR SPESA",                  "spesa",    "daniel"),
-            (d(8),  -120,   "ENI GAS E LUCE",                   "bollette", "conto_comune"),
-            (d(10), -55,    "TIM FIBRA",                        "bollette", "conto_comune"),
-            (d(15), -65,    "AMAZON PRIME / ORDINI",            "varie",    "daniel"),
+            (d(1),  3000,   "ACCREDITO STIPENDIO PERSONA 1",   "entrate",  "persona1"),
+            (d(1),  2000,   "ACCREDITO STIPENDIO PERSONA 2",   "entrate",  "persona2"),
+            (d(5),   300,   "AFFITTO INQUILINO",               "entrate",  "conto_comune"),
+            (d(3), -1317,   "RATA MUTUO",                      "mutuo",    "conto_comune"),
+            (d(6),  -280,   "ESSELUNGA SPESA",                 "spesa",    "persona1"),
+            (d(13), -265,   "CONAD SUPERMERCATO",              "spesa",    "persona2"),
+            (d(20), -310,   "CARREFOUR SPESA",                 "spesa",    "persona1"),
+            (d(8),  -120,   "ENI GAS E LUCE",                  "bollette", "conto_comune"),
+            (d(10), -55,    "TIM FIBRA",                       "bollette", "conto_comune"),
+            (d(15), -65,    "AMAZON PRIME / ORDINI",           "varie",    "persona1"),
             (d(18), -42 + _RNG.integers(-20, 20),
-                            "BAR / RISTORANTE",                 "varie",    "daniel"),
-            (d(22), -85,    "FARMACIA",                         "salute",   "alessandra"),
+                            "BAR / RISTORANTE",                "varie",    "persona1"),
+            (d(22), -85,    "FARMACIA",                        "salute",   "persona2"),
         ]
 
     df = pd.DataFrame(rows, columns=["data", "importo", "descrizione", "categoria", "conto"])
     df["hash_tx"] = [f"demo_{i:04d}" for i in range(len(df))]
-    df["data"] = pd.to_datetime(df["data"])
-    return df.sort_values("data", ascending=False).reset_index(drop=True)
+    df["data"]    = pd.to_datetime(df["data"])
+    df = df.sort_values("data", ascending=False).reset_index(drop=True)
+
+    # Colonne attese da app.py
+    df["date"]        = df["data"]
+    df["amount"]      = df["importo"]
+    df["description"] = df["descrizione"]
+    df["category"]    = df["categoria"]
+    df["account"]     = df["conto"]
+    df["month"]       = df["data"].dt.strftime("%Y-%m")
+    df["income"]      = df["importo"].clip(lower=0)
+    df["expense"]     = df["importo"].clip(upper=0).abs()
+    return df
 
 
 # ─── Storico portafoglio ──────────────────────────────────────
@@ -183,11 +195,11 @@ def demo_get_storico_portafoglio(data_inizio=None, data_fine=None) -> pd.DataFra
     # CSPX: cresce da ~8.500 a ~11.200
     cspx_vals = np.linspace(8_500, 11_200, n) + _RNG.normal(0, 80, n).cumsum() * 0.2
 
+    # Formato wide atteso da app.py: colonna per ISIN + colonna 'totale'
     return pd.DataFrame({
-        "data":   days,
-        "isin":   "IE00B5BMR087",
-        "nome":   "iShares Core S&P 500",
-        "valore": cspx_vals.round(2),
+        "data":           days,
+        "IE00B5BMR087":   cspx_vals.round(2),
+        "totale":         cspx_vals.round(2),
     })
 
 
@@ -201,7 +213,7 @@ def demo_get_storico_asset(isin: str, data_inizio=None, data_fine=None) -> pd.Da
     days = pd.date_range(data_inizio, data_fine, freq="D")
     n = len(days)
     prezzo = np.linspace(400, 520, n) + _RNG.normal(0, 5, n)
-    quantita = 71
+    quantita = 50
     valore = prezzo * quantita * 0.92  # USD→EUR approssimato
 
     return pd.DataFrame({

@@ -1,9 +1,18 @@
 # Secrets — NON committare mai
 .streamlit/secrets.toml
+.env
+.env.*
 
 # Dati personali
 data/input/
 data/processed/
+data/reference/
+
+# Fogli Excel (dati bancari)
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
 
 # Python
 __pycache__/
