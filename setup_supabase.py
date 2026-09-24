@@ -10,10 +10,15 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
+import os
 from supabase import create_client
 
-SUPABASE_URL = "https://zgmevnjxfrigzcycrrqa.supabase.co"
-SUPABASE_SECRET = "sb_secret_J-KzvY7WhO1gfrSWV7mJ7g_nYP8_tA5"
+SUPABASE_URL    = os.environ.get("SUPABASE_URL", "")
+SUPABASE_SECRET = os.environ.get("SUPABASE_SECRET", "")
+if not SUPABASE_URL or not SUPABASE_SECRET:
+    raise RuntimeError(
+        "Imposta le variabili d'ambiente SUPABASE_URL e SUPABASE_SECRET prima di eseguire."
+    )
 
 SCHEMA_SQL = [
     """
