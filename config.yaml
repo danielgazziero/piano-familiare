@@ -117,6 +117,7 @@ fondi_bancari:
       ticker_yf: null   # fondi italiani non su Yahoo — valorizzare manualmente
       valore_quota_ref: 23.52    # ultimo valore noto (agosto 2026)
       data_ref: "2026-08-31"
+      ter: 0.020
 
     - nome: "ARCA AZ AMERICA CLIMA P"
       isin: "IT0001033502"
@@ -124,6 +125,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 93.184
       data_ref: "2026-08-31"
+      ter: 0.020
 
     - nome: "EURIZON AZ EMERG P"
       isin: "IT0001031928"
@@ -131,6 +133,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 16.048
       data_ref: "2026-08-31"
+      ter: 0.025
 
     - nome: "JPMF GLO SUST EQ ACC"
       isin: "LU2293888439"
@@ -138,6 +141,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 138.93
       data_ref: "2026-08-31"
+      ter: 0.022
 
     - nome: "EURIZON AZ AMER P"
       isin: "IT0001050126"
@@ -145,6 +149,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 57.876
       data_ref: "2026-08-31"
+      ter: 0.020
 
     - nome: "EURIZ AZ AREA EURO P"
       isin: "IT0001050225"
@@ -152,6 +157,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 68.064
       data_ref: "2026-08-31"
+      ter: 0.019
 
     - nome: "EURIZON AZ INT P"
       isin: "IT0001080446"
@@ -159,6 +165,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 35.056
       data_ref: "2026-08-31"
+      ter: 0.018
 
 # ─── AZIONI ACCENTURE (RSU/stock plan) ───────────────────────
 azioni:

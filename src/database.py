@@ -291,7 +291,7 @@ def salva_transazioni(df_tx: pd.DataFrame) -> int:
         records = []
         for _, row in df_tx.iterrows():
             # Hash univoco per deduplicazione
-            hash_str = f"{row['date'].date()}_{row['amount']}_{row['description'][:30]}_{row['account']}"
+            hash_str = f"{row['date'].date()}_{row['amount']}_{row['description'][:500]}_{row['account']}"
             hash_tx = hashlib.md5(hash_str.encode()).hexdigest()
             records.append({
                 'data': row['date'].date().isoformat(),
@@ -383,7 +383,7 @@ def carica_tutti_params() -> dict:
     """Carica tutti i parametri salvati."""
     try:
         client = get_client()
-        res = client.table('config_params').select('chiave, valore').limit(200).execute()
+        res = client.table('config_params').select('chiave, valore').limit(2000).execute()
         if not res.data:
             return {}
         result = {}
@@ -424,6 +424,22 @@ def verify_password(pwd: str, stored: str) -> bool:
     # Fallback plaintext per migrazione (prima modifica password)
     import hmac as _hmac2
     return _hmac2.compare_digest(pwd, stored or '')
+
+
+def salva_params_batch(params: dict) -> bool:
+    """Salva più parametri in un unico batch upsert invece di N round-trip sequenziali."""
+    if not params:
+        return True
+    try:
+        client = get_client()
+        now = datetime.now().isoformat()
+        records = [{'chiave': k, 'valore': json.dumps(v), 'updated_at': now}
+                   for k, v in params.items()]
+        client.table('config_params').upsert(records, on_conflict='chiave').execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore salvataggio params batch: {e}")
+        return False
 
 
 def carica_param_o_errore(chiave: str) -> Any:

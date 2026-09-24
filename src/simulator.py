@@ -99,13 +99,6 @@ def simula_portafoglio_fondi_scenari(fondi_rows, anni=10,
                 pct_da_mantenere (0-100), costo_annuo (opzionale).
     Simula l'aggregato in 3 scenari.
     """
-    costi = {
-        'ARCA AZ EUROPA CLIMA': 0.020, 'ARCA AZ AMERICA CLIMA P': 0.020,
-        'EURIZON AZ EMERG P': 0.025, 'JPMF GLO SUST EQ ACC': 0.022,
-        'EURIZON AZ AMER P': 0.020, 'EURIZ AZ AREA EURO P': 0.019,
-        'EURIZON AZ INT P': 0.018,
-    }
-
     risultati = {}
     for scenario, rend in [('base', rend_base), ('worst', rend_worst), ('best', rend_best)]:
         anni_data = []
@@ -117,7 +110,7 @@ def simula_portafoglio_fondi_scenari(fondi_rows, anni=10,
                     continue
                 val_init = row['valore_attuale'] * pct
                 cf_init = row['costo_fiscale_stimato'] * pct
-                ter = row.get('costo_annuo', costi.get(row['nome'], costo_annuo_default))
+                ter = row.get('costo_annuo', costo_annuo_default)
                 val = val_init * ((1 + rend - ter) ** anno)
                 pv = max(val - cf_init, 0)
                 tassa = pv * aliquota

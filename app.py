@@ -143,8 +143,9 @@ if not st.session_state['xls_importati'] and db_ok:
             if n_nuove > 0:
                 st.session_state['nuove_tx'] = n_nuove
         st.session_state['xls_importati'] = True
-    except Exception:
-        st.session_state['xls_importati'] = True
+    except Exception as e:
+        st.warning(f"⚠️ Errore import XLS: {e}")
+        # Non impostare il flag: consente retry al prossimo caricamento
 
 # Carica snapshot patrimonio corrente per auto-save
 etf_df_init   = get_etf_perf()
@@ -267,7 +268,7 @@ if sezione == "🏠 Stato di famiglia":
                                                     config['patrimonio']['affitto_accantonato'])
             }
             if salva_params_persistenti(nuovi_params):
-                st.session_state['params'] = nuovi_params
+                st.session_state['params'].update(nuovi_params)
                 st.session_state.pop('saved_today', None)  # forza re-save snapshot
                 st.success("Salvato su Supabase ✓")
                 st.rerun()
@@ -721,11 +722,8 @@ elif sezione == "🏦 Fondi bancari":
                "Il grafico e il piano di uscita si aggiornano in tempo reale.")
 
     fondi_df = get_fondi()
-    costi_map = {
-        'ARCA AZ EUROPA CLIMA': 2.0, 'ARCA AZ AMERICA CLIMA P': 2.0,
-        'EURIZON AZ EMERG P': 2.5, 'JPMF GLO SUST EQ ACC': 2.2,
-        'EURIZON AZ AMER P': 2.0, 'EURIZ AZ AREA EURO P': 1.9, 'EURIZON AZ INT P': 1.8,
-    }
+    costi_map = {f['nome']: f.get('ter', 0.02) * 100
+                 for f in config['fondi_bancari']['titoli']}
     df_edit_default = pd.DataFrame([{
         'Fondo': r['nome'],
         'ISIN': r['isin'],

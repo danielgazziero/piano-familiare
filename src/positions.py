@@ -163,20 +163,32 @@ def aggiorna_quantita(isin: str, nuova_quantita: float,
                 nome = res_meta.data[0]['nome']
                 tipo = res_meta.data[0]['tipo']
 
+        data_fine_chiusura = (data_modifica - timedelta(days=1)).isoformat()
+
         # Chiudi posizione attiva
         client.table('posizioni').update({
-            'data_fine': (data_modifica - timedelta(days=1)).isoformat()
+            'data_fine': data_fine_chiusura
         }).eq('isin', isin).is_('data_fine', 'null').execute()
 
-        client.table('posizioni').insert({
-            'isin': isin,
-            'nome': nome,
-            'tipo': tipo,
-            'quantita': nuova_quantita,
-            'data_inizio': data_modifica.isoformat(),
-            'data_fine': None,
-            'note': note or f'Modifica quantità a {nuova_quantita}'
-        }).execute()
+        try:
+            client.table('posizioni').insert({
+                'isin': isin,
+                'nome': nome,
+                'tipo': tipo,
+                'quantita': nuova_quantita,
+                'data_inizio': data_modifica.isoformat(),
+                'data_fine': None,
+                'note': note or f'Modifica quantità a {nuova_quantita}'
+            }).execute()
+        except Exception as ins_err:
+            # Rollback compensativo: riapre la posizione chiusa
+            try:
+                client.table('posizioni').update({
+                    'data_fine': None
+                }).eq('isin', isin).eq('data_fine', data_fine_chiusura).execute()
+            except Exception:
+                pass
+            raise ins_err
 
         print(f"  [+] Quantità {isin} aggiornata a {nuova_quantita} dal {data_modifica}")
         return True
@@ -399,8 +411,8 @@ def calcola_valore_giornaliero(isin: str, data_inizio: date,
     df = df.merge(prezzi_df.rename(columns={'prezzo': 'prezzo_raw'}),
                   on='data', how='left')
 
-    # Interpola prezzi mancanti (forward fill per weekend/festivi)
-    df['prezzo'] = df['prezzo_raw'].ffill().bfill()
+    # Forward fill per weekend/festivi — nessun bfill: evita prezzi fittizi ante-prima quotazione
+    df['prezzo'] = df['prezzo_raw'].ffill()
 
     _posizioni_parsed = [
         (
@@ -426,7 +438,7 @@ def _computa_valore_isin(posizioni_storico: list, prezzi_df: pd.DataFrame,
 
     df = df_dates.merge(prezzi_df.rename(columns={'prezzo': 'prezzo_raw'}),
                         on='data', how='left')
-    df['prezzo'] = df['prezzo_raw'].ffill().bfill()
+    df['prezzo'] = df['prezzo_raw'].ffill()
 
     posizioni_parsed = [
         (

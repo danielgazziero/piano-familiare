@@ -20,6 +20,28 @@ except Exception:
 
 
 @_cache_data(ttl=1800)
+def _batch_download(tickers: tuple, period: str) -> pd.DataFrame:
+    """Scarica tutti i ticker in una singola chiamata yfinance."""
+    try:
+        return yf.download(list(tickers), period=period, auto_adjust=True, progress=False)
+    except Exception as e:
+        print(f"  [!] Errore batch download ETF: {e}")
+        return pd.DataFrame()
+
+
+def _extract_series(raw: pd.DataFrame, ticker: str, n_tickers: int) -> pd.Series:
+    """Estrae la serie Close per un ticker dal risultato di yf.download."""
+    if raw.empty:
+        return pd.Series(dtype=float)
+    if n_tickers == 1:
+        return raw.get('Close', pd.Series(dtype=float)).dropna()
+    close = raw.get('Close', pd.DataFrame())
+    if isinstance(close, pd.Series) or close.empty:
+        return pd.Series(dtype=float)
+    return close.get(ticker, pd.Series(dtype=float)).dropna()
+
+
+@_cache_data(ttl=1800)
 def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
     try:
         obj = yf.Ticker(ticker)
@@ -45,26 +67,52 @@ def get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
 
 def get_portfolio_performance(config: dict) -> pd.DataFrame:
     results = []
-    for etf in config.get('etf', []):
+    etf_list = config.get('etf', [])
+    tickers = tuple(etf['ticker_yf'] for etf in etf_list if etf.get('ticker_yf'))
+    if not tickers:
+        return pd.DataFrame()
+
+    # Una sola chiamata batch per tutti i ticker (reduce 2×N → 1 HTTP call)
+    raw = _batch_download(tickers, '1y')
+    year_start = pd.Timestamp(date.today().year, 1, 1)
+
+    for etf in etf_list:
         ticker = etf['ticker_yf']
+        if not ticker:
+            continue
         nome = etf['nome']
         valore_iniziale = etf.get('valore_iniziale', 0)
         proprietario = etf.get('proprietario', 'persona1')
         stato = etf.get('stato', 'candidato')
 
-        hist_ytd = get_etf_data(ticker, period="ytd")
-        hist_1y = get_etf_data(ticker, period="1y")
+        series_1y = _extract_series(raw, ticker, len(tickers))
+
+        # Ricava subset YTD dalla serie 1y (evita una seconda chiamata HTTP)
+        if not series_1y.empty:
+            idx = series_1y.index
+            ys = year_start.tz_localize(idx.tz) if idx.tz is not None else year_start
+            series_ytd = series_1y[idx >= ys]
+        else:
+            series_ytd = pd.Series(dtype=float)
 
         perf_ytd = perf_1y = prezzo_attuale = None
         valore_attuale = valore_iniziale
 
-        if not hist_ytd.empty:
-            perf_ytd = round((hist_ytd['price'].iloc[-1] / hist_ytd['price'].iloc[0] - 1) * 100, 2)
-            prezzo_attuale = round(float(hist_ytd['price'].iloc[-1]), 2)
-            if valore_iniziale > 0:
-                valore_attuale = round(valore_iniziale * (1 + perf_ytd / 100), 2)
-        if not hist_1y.empty:
-            perf_1y = round((hist_1y['price'].iloc[-1] / hist_1y['price'].iloc[0] - 1) * 100, 2)
+        if not series_ytd.empty:
+            p0_ytd = float(series_ytd.iloc[0])
+            p_curr = float(series_ytd.iloc[-1])
+            prezzo_attuale = round(p_curr, 2)
+            perf_ytd = round((p_curr / p0_ytd - 1) * 100, 2) if p0_ytd else None
+
+        if not series_1y.empty:
+            p0_1y = float(series_1y.iloc[0])
+            p_curr = float(series_1y.iloc[-1])
+            prezzo_attuale = round(p_curr, 2)
+            perf_1y = round((p_curr / p0_1y - 1) * 100, 2) if p0_1y else None
+            if valore_iniziale > 0 and p0_1y:
+                # Calcola quantità implicita dal prezzo di 1 anno fa (più preciso di YTD% su costo storico)
+                q_impl = valore_iniziale / p0_1y
+                valore_attuale = round(q_impl * p_curr, 2)
 
         results.append({
             'ticker': etf['ticker_bi'], 'ticker_yf': ticker,
@@ -142,13 +190,9 @@ def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = Non
     df = get_fondi_snapshot(config, quote_aggiornate)
     piano_cfg = config['migrazione_fondi']['piano_annuale']
 
-    costi_stimati = {
-        'ARCA AZ EUROPA CLIMA': 0.020, 'ARCA AZ AMERICA CLIMA P': 0.020,
-        'EURIZON AZ EMERG P': 0.025, 'JPMF GLO SUST EQ ACC': 0.022,
-        'EURIZON AZ AMER P': 0.020, 'EURIZ AZ AREA EURO P': 0.019,
-        'EURIZON AZ INT P': 0.018,
-    }
-    df['costo_annuo_stimato'] = df['nome'].map(costi_stimati).fillna(0.02)
+    ter_map = {f['nome']: f.get('ter', 0.02)
+               for f in config.get('fondi_bancari', {}).get('titoli', [])}
+    df['costo_annuo_stimato'] = df['nome'].map(ter_map).fillna(0.02)
     df['priorita'] = df['costo_annuo_stimato'] * df['valore_attuale']
     df = df.sort_values('priorita', ascending=False).reset_index(drop=True)
 

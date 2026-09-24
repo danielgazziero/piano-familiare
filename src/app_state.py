@@ -17,7 +17,7 @@ from database import (
     salva_quote_fondi, carica_ultime_quote_fondi, storico_quote_fondo,
     salva_transazioni, carica_transazioni,
     salva_param, carica_param, carica_tutti_params,
-    test_connessione
+    salva_params_batch, test_connessione
 )
 
 
@@ -59,12 +59,8 @@ def carica_params_persistenti(config: dict) -> dict:
 
 
 def salva_params_persistenti(params: dict) -> bool:
-    """Salva i valori manuali aggiornati su Supabase."""
-    ok = True
-    for k, v in params.items():
-        if not salva_param(k, v):
-            ok = False
-    return ok
+    """Salva i valori manuali aggiornati su Supabase — batch upsert unico."""
+    return salva_params_batch(params)
 
 
 def carica_quote_fondi_persistenti(config: dict) -> dict:
