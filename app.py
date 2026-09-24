@@ -56,7 +56,8 @@ elif not st.session_state.get("_auth_ok"):
     st.title("🔒 Accesso protetto")
     pwd = st.text_input("Password", type="password")
     if st.button("Accedi"):
-        if pwd == _APP_PASSWORD:
+        import hmac
+        if hmac.compare_digest(pwd, _APP_PASSWORD):
             st.session_state["_auth_ok"] = True
             st.rerun()
         else:

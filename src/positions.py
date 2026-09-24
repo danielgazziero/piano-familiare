@@ -135,27 +135,29 @@ def aggiorna_quantita(isin: str, nuova_quantita: float,
     try:
         client = get_client()
 
+        # Recupera nome/tipo dalla posizione attiva prima di chiuderla
+        nome = ''
+        tipo = 'fondo'
+        for p in POSIZIONI_DEFAULT:
+            if p['isin'] == isin:
+                nome = p['nome']
+                tipo = p['tipo']
+                break
+        if not nome:
+            res_meta = (client.table('posizioni')
+                        .select('nome, tipo')
+                        .eq('isin', isin)
+                        .is_('data_fine', 'null')
+                        .limit(1)
+                        .execute())
+            if res_meta.data:
+                nome = res_meta.data[0]['nome']
+                tipo = res_meta.data[0]['tipo']
+
         # Chiudi posizione attiva
         client.table('posizioni').update({
             'data_fine': (data_modifica - timedelta(days=1)).isoformat()
         }).eq('isin', isin).is_('data_fine', 'null').execute()
-
-        # Apri nuova posizione
-        pos_corrente = carica_posizioni()
-        nome = ''
-        tipo = 'fondo'
-        if not pos_corrente.empty:
-            row = pos_corrente[pos_corrente['isin'] == isin]
-            if not row.empty:
-                nome = row['nome'].iloc[0]
-                tipo = row['tipo'].iloc[0]
-
-        if not nome:
-            for p in POSIZIONI_DEFAULT:
-                if p['isin'] == isin:
-                    nome = p['nome']
-                    tipo = p['tipo']
-                    break
 
         client.table('posizioni').insert({
             'isin': isin,
@@ -219,8 +221,8 @@ def set_ultima_data_scaricata(isin: str, ultima_data: date):
             'ultima_data': ultima_data.isoformat(),
             'updated_at': datetime.now().isoformat()
         }, on_conflict='isin').execute()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [!] Errore aggiornamento backfill_stato {isin}: {e}")
 
 
 def salva_prezzi(df: pd.DataFrame) -> int:

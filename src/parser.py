@@ -88,20 +88,25 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
         if not pattern:
             continue
 
+        # Sanifica il pattern: impedisce path traversal da valori Supabase controllati
+        if '..' in pattern or pattern.startswith('/') or pattern.startswith('\\'):
+            print(f"  [!] Pattern non sicuro ignorato per {banca['nome']}: {pattern!r}")
+            continue
+
         files = list(input_dir.glob(pattern))
         if not files:
-            print(f"  [!] Nessun file trovato per pattern '{pattern}' ({banca['nome']})")
+            print(f"  [!] Nessun file trovato per {banca['nome']} ({account})")
             continue
 
         adapter = get_adapter(bank_id)
-        for filepath in files:
-            print(f"  [+] Parsing {filepath.name} ({banca['nome']})...")
+        for i, filepath in enumerate(files, 1):
+            print(f"  [+] Parsing [{account}] file {i}/{len(files)} ({banca['nome']})...")
             try:
                 txns = adapter.parse(filepath, account)
                 all_transactions.extend(txns)
                 print(f"      → {len(txns)} transazioni caricate")
             except Exception as e:
-                print(f"  [!] Errore su {filepath.name}: {e}")
+                print(f"  [!] Errore parsing file {i} ({banca['nome']}): {e}")
 
     if not all_transactions:
         print("  [!] Nessuna transazione trovata. Controlla i file in data/input/")

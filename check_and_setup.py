@@ -235,7 +235,7 @@ def proponi_setup_supabase():
         info("È necessario creare le tabelle su Supabase.")
         risposta = input("\n  Vuoi procedere con il setup adesso? [s/N] ").strip().lower()
         if risposta == 's':
-            os.system(f"{sys.executable} {BASE_DIR / 'setup_supabase.py'}")
+            subprocess.run([sys.executable, str(BASE_DIR / 'setup_supabase.py')])
         else:
             info("→ Esegui manualmente: python setup_supabase.py")
         return False
@@ -250,7 +250,7 @@ def avvia_app():
     if risposta == 's':
         print("\n  Avvio in corso... (apri il browser su http://localhost:8501)")
         print("  Per fermare l'app: premi Ctrl+C\n")
-        os.system(f"{sys.executable} -m streamlit run {BASE_DIR / 'app.py'}")
+        subprocess.run([sys.executable, '-m', 'streamlit', 'run', str(BASE_DIR / 'app.py')])
 
 # ─────────────────────────────────────────────────────────────
 # MAIN
