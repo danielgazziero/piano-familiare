@@ -202,7 +202,7 @@ with st.sidebar:
                                       'nome_persona2': n2_inp,
                                       'nome_figlio':   nf_inp})
             st.rerun()
-    if not _DEMO and _APP_PASSWORD:
+    if _APP_PASSWORD:
         with st.expander("🔑 Password"):
             new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1")
             new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2")
