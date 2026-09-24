@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS patrimonio_log (
     data                 DATE NOT NULL DEFAULT CURRENT_DATE,
     fondi_bancari        NUMERIC,
     generali             NUMERIC,
-    etf_daniel           NUMERIC,
+    etf_persona1         NUMERIC,
     etf_flor             NUMERIC,
     azioni_acn_usd       NUMERIC,
     liquidita            NUMERIC,

@@ -20,7 +20,7 @@ class Transaction:
     amount: float          # negativo = uscita, positivo = entrata
     description: str
     category: str
-    account: str           # "daniel" | "alessandra" | "comune"
+    account: str           # "persona1" | "persona2" | "comune"
     raw_category: str = "" # categoria originale della banca
 
 
@@ -101,16 +101,16 @@ class BankAdapter:
         return 'Altro'
 
 
-class BperDanielAdapter(BankAdapter):
+class BperPersona1Adapter(BankAdapter):
     """
-    Adapter per estratto BPER di Daniel.
+    Adapter per estratto BPER formato BIFF8.
     Formato: BIFF8 (Excel 97-2003 .xls) — letto con xlrd 1.2.0.
     Non richiede LibreOffice né Office installato.
     Header alla riga 17 (indice 0-based), 8 colonne.
     """
     bank_id = "bper_xls"
 
-    def parse(self, filepath: Path, account: str = "daniel") -> List[Transaction]:
+    def parse(self, filepath: Path, account: str = "persona1") -> List[Transaction]:
         import xlrd
 
         wb = xlrd.open_workbook(str(filepath))
@@ -193,15 +193,15 @@ class BperDanielAdapter(BankAdapter):
         return transactions
 
 
-class BperAlessandraAdapter(BankAdapter):
+class BperPersona2Adapter(BankAdapter):
     """
-    Adapter per estratto BPER di Alessandra.
+    Adapter per estratto BPER formato XLSX (nuovi estratti).
     Formato: XLSX mascherato da .xls, header a riga 20,
     9 colonne con colonna vuota iniziale.
     """
     bank_id = "bper_xls_new"
 
-    def parse(self, filepath: Path, account: str = "alessandra") -> List[Transaction]:
+    def parse(self, filepath: Path, account: str = "persona2") -> List[Transaction]:
         df = pd.read_excel(filepath, engine='openpyxl',
                            header=None, skiprows=21)
         df = df.iloc[:, :9]
@@ -259,7 +259,7 @@ class NuovaBancaAdapter(BankAdapter):
 # ----------------------------------------------------------------
 ADAPTER_REGISTRY = {
     adapter.bank_id: adapter
-    for adapter in [BperDanielAdapter, BperAlessandraAdapter]
+    for adapter in [BperPersona1Adapter, BperPersona2Adapter]
 }
 
 

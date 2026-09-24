@@ -40,7 +40,7 @@ def get_portfolio_performance(config: dict) -> pd.DataFrame:
         ticker = etf['ticker_yf']
         nome = etf['nome']
         valore_iniziale = etf.get('valore_iniziale', 0)
-        proprietario = etf.get('proprietario', 'daniel')
+        proprietario = etf.get('proprietario', 'persona1')
         stato = etf.get('stato', 'candidato')
 
         hist_ytd = get_etf_data(ticker, period="ytd")
@@ -207,11 +207,11 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
     if aggiornamenti_manuali:
         p.update(aggiornamenti_manuali)
 
-    etf_daniel = p.get('etf_cspx_directa', 0)
+    etf_persona1 = p.get('etf_cspx_directa', 0)
     etf_flor = 0
     if etf_df is not None and not etf_df.empty:
-        etf_daniel = etf_df[(etf_df['proprietario'] == 'daniel') &
-                             (etf_df['stato'] == 'attivo')]['valore_attuale'].sum()
+        etf_persona1 = etf_df[(etf_df['proprietario'] == 'persona1') &
+                               (etf_df['stato'] == 'attivo')]['valore_attuale'].sum()
         etf_flor = etf_df[etf_df['proprietario'] == 'flor']['valore_attuale'].sum()
 
     fondi_tot = p.get('fondi_bancari', 0)
@@ -225,14 +225,14 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
     snap = {
         'fondi_bancari': round(fondi_tot, 0),
         'generali': p.get('gestione_separata_generali', 0),
-        'etf_daniel': round(etf_daniel, 0),
+        'etf_persona1': round(etf_persona1, 0),
         'etf_flor': round(etf_flor, 0),
         'azioni_acn_usd': round(azioni_usd, 0),
-        'liquidita': (p.get('liquidita_daniel', 0) + p.get('liquidita_alessandra', 0) +
+        'liquidita': (p.get('liquidita_persona1', 0) + p.get('liquidita_persona2', 0) +
                       p.get('conto_comune', 0) + p.get('affitto_accantonato', 0)),
     }
     snap['totale_eur'] = (snap['fondi_bancari'] + snap['generali'] +
-                          snap['etf_daniel'] + snap['etf_flor'] + snap['liquidita'])
+                          snap['etf_persona1'] + snap['etf_flor'] + snap['liquidita'])
     tassa_latente = p.get('fondi_plusvalenze', 0) * 0.26
     snap['tassa_latente_fondi'] = round(tassa_latente, 0)
     snap['totale_netto_fiscale'] = round(snap['totale_eur'] - tassa_latente, 0)

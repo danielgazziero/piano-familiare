@@ -27,7 +27,7 @@ SCHEMA_SQL = [
         data                 DATE NOT NULL DEFAULT CURRENT_DATE,
         fondi_bancari        NUMERIC,
         generali             NUMERIC,
-        etf_daniel           NUMERIC,
+        etf_persona1         NUMERIC,
         etf_flor             NUMERIC,
         azioni_acn_usd       NUMERIC,
         liquidita            NUMERIC,
@@ -157,8 +157,8 @@ def setup():
     from database import salva_param
     p = config['patrimonio']
     params = {
-        'liquidita_daniel': p['liquidita_daniel'],
-        'liquidita_alessandra': p['liquidita_alessandra'],
+        'liquidita_persona1': p['liquidita_persona1'],
+        'liquidita_persona2': p['liquidita_persona2'],
         'conto_comune': p['conto_comune'],
         'affitto_accantonato': p['affitto_accantonato'],
         'fondi_bancari': p['fondi_bancari'],
