@@ -108,6 +108,9 @@ if 'quote_map' not in st.session_state:
 # Carica fondi con quote aggiornate dal DB
 @st.cache_data(ttl=1800)
 def get_fondi():
+    if _DEMO:
+        from demo_data import demo_get_fondi_snapshot
+        return demo_get_fondi_snapshot()
     return get_fondi_snapshot(get_config(), st.session_state.get('quote_map', {}))
 
 # Importa automaticamente eventuali nuovi XLS in data/input/

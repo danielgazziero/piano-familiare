@@ -212,3 +212,39 @@ def demo_get_storico_asset(isin: str, data_inizio=None, data_fine=None) -> pd.Da
 
 def demo_get_eventi_portafoglio(data_inizio=None, data_fine=None) -> pd.DataFrame:
     return pd.DataFrame(columns=["data", "isin", "tipo", "quantita", "prezzo", "note"])
+
+
+# ─── Fondi bancari ────────────────────────────────────────────
+
+def demo_get_fondi_snapshot() -> pd.DataFrame:
+    fondi = [
+        {"nome": "GLOBFUND AZ EUROPA",      "isin": "IT9990000001", "quantita": 30.0,   "quota_ref": 30.00,  "quota_attuale": 32.00,  "costo": 750.0},
+        {"nome": "GLOBFUND AZ AMERICA",     "isin": "IT9990000002", "quantita": 50.0,   "quota_ref": 120.00, "quota_attuale": 125.00, "costo": 5000.0},
+        {"nome": "UNIVEST AZ EMERGENTI",    "isin": "IT9990000003", "quantita": 800.0,  "quota_ref": 18.00,  "quota_attuale": 18.80,  "costo": 12000.0},
+        {"nome": "ITALFUND GLOBAL EQ ACC",  "isin": "LU9990000004", "quantita": 100.0,  "quota_ref": 160.00, "quota_attuale": 165.00, "costo": 14000.0},
+        {"nome": "UNIVEST AZ AMERICA P",    "isin": "IT9990000005", "quantita": 500.0,  "quota_ref": 70.00,  "quota_attuale": 72.00,  "costo": 30000.0},
+        {"nome": "UNIVEST AZ EURO P",       "isin": "IT9990000006", "quantita": 400.0,  "quota_ref": 75.00,  "quota_attuale": 77.00,  "costo": 26000.0},
+        {"nome": "GLOBFUND AZ INTL P",      "isin": "IT9990000007", "quantita": 1500.0, "quota_ref": 40.00,  "quota_attuale": 41.50,  "costo": 52000.0},
+    ]
+    aliquota = 0.26
+    rows = []
+    today_str = date.today().strftime("%Y-%m-%d")
+    for f in fondi:
+        valore_attuale = round(f["quantita"] * f["quota_attuale"], 2)
+        plusvalenza    = max(valore_attuale - f["costo"], 0)
+        tassa_latente  = round(plusvalenza * aliquota, 2)
+        rows.append({
+            "nome":                  f["nome"],
+            "isin":                  f["isin"],
+            "quantita":              f["quantita"],
+            "quota_ref":             f["quota_ref"],
+            "quota_attuale":         f["quota_attuale"],
+            "data_ref":              today_str,
+            "valore_attuale":        valore_attuale,
+            "costo_fiscale_stimato": f["costo"],
+            "plusvalenza_stimata":   plusvalenza,
+            "tassa_latente":         tassa_latente,
+            "netto_uscita":          round(valore_attuale - tassa_latente, 2),
+            "pct_plusvalenza":       round(plusvalenza / f["costo"] * 100 if f["costo"] > 0 else 0, 1),
+        })
+    return pd.DataFrame(rows)
