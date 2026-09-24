@@ -34,9 +34,10 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
                    page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
-# ── AUTENTICAZIONE ────────────────────────────────────────────
+# ── AUTENTICAZIONE — disabilitata in dev (DEMO_MODE=True) ─────
 _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
-if _APP_PASSWORD:
+_IS_DEV = True  # branch dev: nessun login richiesto
+if _APP_PASSWORD and not _IS_DEV:
     if not st.session_state.get("_auth_ok"):
         st.title("🔒 Accesso protetto")
         pwd = st.text_input("Password", type="password")
@@ -48,8 +49,8 @@ if _APP_PASSWORD:
                 st.error("Password errata.")
         st.stop()
 
-# ── DEMO MODE — sostituisce tutte le funzioni DB con dati fittizi
-_DEMO = bool(st.secrets.get("DEMO_MODE", False))
+# ── DEMO MODE — sempre attivo su branch dev
+_DEMO = True
 if _DEMO:
     from demo_data import (
         demo_init_db_connection            as init_db_connection,
