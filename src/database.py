@@ -130,21 +130,32 @@ CREATE TABLE IF NOT EXISTS config_params (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- RLS: abilita ma permetti tutto (uso personale, chiave segreta)
+-- RLS: abilita e permetti solo alla service key (la anon key non può accedere)
 ALTER TABLE patrimonio_log     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quote_fondi        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transazioni        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config_params      ENABLE ROW LEVEL SECURITY;
 
--- Policy: accesso completo con service key
-CREATE POLICY "service_full_access" ON patrimonio_log
-    FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "service_full_access" ON quote_fondi
-    FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "service_full_access" ON transazioni
-    FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "service_full_access" ON config_params
-    FOR ALL USING (true) WITH CHECK (true);
+-- Policy: accesso esclusivo alla service key (bypassa RLS per definizione)
+-- La anon key non soddisfa auth.role() = 'service_role' → accesso negato
+CREATE POLICY "service_only" ON patrimonio_log
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+CREATE POLICY "service_only" ON quote_fondi
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+CREATE POLICY "service_only" ON transazioni
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+CREATE POLICY "service_only" ON config_params
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- MIGRAZIONE DB ESISTENTE: se le tabelle esistono già, esegui su Supabase SQL Editor:
+-- DROP POLICY IF EXISTS "service_full_access" ON patrimonio_log;
+-- DROP POLICY IF EXISTS "service_full_access" ON quote_fondi;
+-- DROP POLICY IF EXISTS "service_full_access" ON transazioni;
+-- DROP POLICY IF EXISTS "service_full_access" ON config_params;
+-- CREATE POLICY "service_only" ON patrimonio_log FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+-- CREATE POLICY "service_only" ON quote_fondi   FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+-- CREATE POLICY "service_only" ON transazioni   FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+-- CREATE POLICY "service_only" ON config_params FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
 """
 
 
@@ -387,12 +398,38 @@ def carica_tutti_params() -> dict:
     """Carica tutti i parametri salvati."""
     try:
         client = get_client()
-        res = client.table('config_params').select('chiave, valore').execute()
+        res = client.table('config_params').select('chiave, valore').limit(200).execute()
         if not res.data:
             return {}
-        return {r['chiave']: json.loads(r['valore']) for r in res.data}
+        result = {}
+        for r in res.data:
+            raw = r['valore']
+            try:
+                result[r['chiave']] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                result[r['chiave']] = raw
+        return result
     except Exception:
         return {}
+
+
+def carica_param_o_errore(chiave: str) -> Any:
+    """
+    Come carica_param ma propaga l'eccezione se il DB non è raggiungibile.
+    Usare per auth critica dove distinguere 'chiave assente' da 'DB down' è necessario.
+    """
+    client = get_client()
+    res = (client.table('config_params')
+           .select('valore')
+           .eq('chiave', chiave)
+           .execute())
+    if res.data:
+        raw = res.data[0]['valore']
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+    return None
 
 
 # ─────────────────────────────────────────────────────────────

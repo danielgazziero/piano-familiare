@@ -41,8 +41,8 @@ _DEMO = True
 _APP_PASSWORD = None
 _AUTH_ERR = None
 try:
-    from database import carica_param as _carica_param_raw
-    _APP_PASSWORD = _carica_param_raw("app_password")
+    from database import carica_param_o_errore as _carica_pwd
+    _APP_PASSWORD = _carica_pwd("app_password")
 except Exception:
     _AUTH_ERR = "db_error"
 

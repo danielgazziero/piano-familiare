@@ -13,7 +13,15 @@ import json
 
 from parser import load_config
 
+try:
+    import streamlit as _st
+    _cache_data = _st.cache_data
+except Exception:
+    def _cache_data(**_kw):
+        return lambda f: f
 
+
+@_cache_data(ttl=1800)
 def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
     try:
         obj = yf.Ticker(ticker)

@@ -112,8 +112,10 @@ def setup():
     # Usiamo l'RPC per eseguire SQL raw
     print("\n[2/3] Creazione tabelle...")
     print("\n" + "─" * 50)
-    print("AZIONE RICHIESTA: apri il browser su:")
-    print("https://zgmevnjxfrigzcycrrqa.supabase.co")
+    project_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    print("AZIONE RICHIESTA: apri il browser sul tuo progetto Supabase:")
+    print(f"  {project_url}/project/default/sql/new" if project_url else
+          "  https://supabase.com (accedi al tuo progetto)")
     print("\nVai su: SQL Editor (menu a sinistra)")
     print("Incolla ed esegui questo SQL:")
     print("─" * 50)
