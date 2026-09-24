@@ -114,6 +114,15 @@ _N1 = st.session_state['params'].get('nome_persona1', 'Persona 1')
 _N2 = st.session_state['params'].get('nome_persona2', 'Persona 2')
 _NF = st.session_state['params'].get('nome_figlio',   'Figlio/a')
 
+# Seeding asset_catalog (se prima esecuzione, fa prima il seeding poi carica)
+if db_ok and 'catalog_seeded' not in st.session_state:
+    from database import inizializza_asset_catalog_da_config as _seed_catalog
+    try:
+        _seed_catalog()
+    except Exception as _e:
+        st.warning(f"⚠️ Seeding catalog: {_e}")
+    st.session_state['catalog_seeded'] = True
+
 # Carica catalogo asset dal DB (fonte di verità per fondi/ETF/azioni)
 if 'asset_catalog' not in st.session_state:
     st.session_state['asset_catalog'] = get_asset_catalog() if db_ok else pd.DataFrame()
@@ -1239,6 +1248,20 @@ elif sezione == "⚙️ Gestione Asset":
 
     # Ricarica sempre dal DB in questa sezione
     cat_df = get_asset_catalog()
+
+    # Se il catalogo è vuoto, offre seeding manuale da config.yaml
+    if cat_df.empty:
+        st.warning("Il catalogo è vuoto. Clicca il pulsante per caricarlo da config.yaml.")
+        if st.button("🌱 Inizializza catalogo da config.yaml"):
+            from database import inizializza_asset_catalog_da_config as _seed
+            try:
+                _seed()
+                st.session_state.pop('asset_catalog', None)
+                st.session_state.pop('catalog_seeded', None)
+                st.success("Catalogo inizializzato.")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"Errore: {_e}")
     if cat_df.empty:
         st.info("Nessun asset nel catalogo. Aggiungi il primo qui sotto.")
         cat_df = pd.DataFrame(columns=['isin','nome','tipo','ticker_yf','ticker_bi',
