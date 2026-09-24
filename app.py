@@ -60,8 +60,8 @@ if _APP_PASSWORD and not _IS_DEV:
                 st.error("Password errata.")
         st.stop()
 
-# ── DEMO MODE — sempre attivo su branch dev
-_DEMO = True
+# ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
+_DEMO = bool(st.secrets.get("DEMO_MODE", False))
 if _DEMO:
     from demo_data import (
         demo_init_db_connection            as init_db_connection,
