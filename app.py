@@ -36,7 +36,7 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
 
 # ── AUTENTICAZIONE — disabilitata in dev (DEMO_MODE=True) ─────
 _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
-_IS_DEV = True  # branch dev: nessun login richiesto
+_IS_DEV = False
 if _APP_PASSWORD and not _IS_DEV:
     if not st.session_state.get("_auth_ok"):
         st.title("🔒 Accesso protetto")
