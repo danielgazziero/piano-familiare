@@ -24,23 +24,58 @@ def _build_quantita_arr(posizioni_parsed: list, dates_arr) -> np.ndarray:
 
 
 # ─────────────────────────────────────────────────────────────
-# POSIZIONI INIZIALI (dal config — caricate una volta sola)
+# POSIZIONI INIZIALI (derivate da config.yaml)
 # ─────────────────────────────────────────────────────────────
 
-POSIZIONI_DEFAULT = [
-    # Fondi bancari
-    {'isin': 'IT0001033486', 'nome': 'ARCA AZ EUROPA CLIMA',    'quantita': 16.474,  'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    {'isin': 'IT0001033502', 'nome': 'ARCA AZ AMERICA CLIMA P', 'quantita': 23.539,  'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    {'isin': 'IT0001031928', 'nome': 'EURIZON AZ EMERG P',      'quantita': 569.517, 'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    {'isin': 'LU2293888439', 'nome': 'JPMF GLO SUST EQ ACC',    'quantita': 83.494,  'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    {'isin': 'IT0001050126', 'nome': 'EURIZON AZ AMER P',       'quantita': 401.49,  'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    {'isin': 'IT0001050225', 'nome': 'EURIZ AZ AREA EURO P',    'quantita': 358.67,  'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    {'isin': 'IT0001080446', 'nome': 'EURIZON AZ INT P',        'quantita': 1114.2,  'data_acquisto': '2020-01-01', 'tipo': 'fondo'},
-    # ETF
-    {'isin': 'IE00B5BMR087', 'nome': 'iShares Core S&P 500 (CSPX)', 'quantita': 0, 'data_acquisto': '2024-01-01', 'tipo': 'etf'},
-    # Azioni
-    {'isin': 'IE00B4BNMY34', 'nome': 'Accenture (ACN)',         'quantita': 71,      'data_acquisto': '2022-01-01', 'tipo': 'azione'},
-]
+def _build_posizioni_default() -> list:
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from parser import load_config
+        cfg = load_config()
+    except Exception:
+        return []
+
+    posizioni = []
+
+    for f in cfg.get('fondi_bancari', {}).get('titoli', []):
+        if not f.get('isin'):
+            continue
+        posizioni.append({
+            'isin': f['isin'],
+            'nome': f['nome'],
+            'quantita': f.get('quantita', 0),
+            'data_acquisto': f.get('data_acquisto', '2020-01-01'),
+            'tipo': 'fondo',
+        })
+
+    for etf in cfg.get('etf', []):
+        if not etf.get('in_portafoglio') or not etf.get('isin'):
+            continue
+        posizioni.append({
+            'isin': etf['isin'],
+            'nome': etf['nome'],
+            'quantita': etf.get('quantita', 0),
+            'data_acquisto': etf.get('data_acquisto', '2024-01-01'),
+            'tipo': 'etf',
+        })
+
+    for az in cfg.get('azioni', []):
+        if not az.get('isin'):
+            continue
+        posizioni.append({
+            'isin': az['isin'],
+            'nome': az['nome'],
+            'quantita': az.get('quantita', 0),
+            'data_acquisto': az.get('data_acquisto', '2022-01-01'),
+            'tipo': 'azione',
+        })
+
+    return posizioni
+
+
+POSIZIONI_DEFAULT = _build_posizioni_default()
 
 # Schema SQL per le tabelle posizioni e prezzi_storici
 POSITIONS_SCHEMA_SQL = """
@@ -309,7 +344,13 @@ def backfill_prezzi(isins: List[str], verbose: bool = True) -> Dict[str, int]:
     """
     risultati = {}
     oggi = date.today()
-    data_default_inizio = date(2024, 1, 1)  # inizio storico di default
+    try:
+        from parser import load_config
+        _cfg = load_config()
+        data_default_inizio = date.fromisoformat(
+            _cfg.get('parametri', {}).get('data_inizio_storico', '2024-01-01'))
+    except Exception:
+        data_default_inizio = date(2024, 1, 1)
 
     # Carica tutti i checkpoint in una sola query invece di N query separate
     try:
@@ -466,7 +507,13 @@ def calcola_portafoglio_storico(isins: List[str] = None,
     if isins is None:
         isins = list(ASSET_TICKERS.keys())
     if data_inizio is None:
-        data_inizio = date(2024, 1, 1)
+        try:
+            from parser import load_config
+            _cfg = load_config()
+            data_inizio = date.fromisoformat(
+                _cfg.get('parametri', {}).get('data_inizio_storico', '2024-01-01'))
+        except Exception:
+            data_inizio = date(2024, 1, 1)
     if data_fine is None:
         data_fine = date.today()
 

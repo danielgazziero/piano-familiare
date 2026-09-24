@@ -211,6 +211,11 @@ def simula_scenario_completo(config, pac_persona1=None, pac_flor=None,
     if pac_flor is None:
         pac_flor = config['allocazione']['pac_flor']
     p = config['patrimonio']
+    p_cfg = config.get('parametri', {})
+    aliquota = p_cfg.get('aliquota_capital_gain', 0.26)
+    rend_fondi = p_cfg.get('rendimento_fondi_base', 0.04)
+    ter_fondi = p_cfg.get('ter_default', 0.02)
+    rend_gen = p_cfg.get('rendimento_generali', 0.03)
     nascita_flor = datetime.strptime(config['date']['nascita_flor'], '%Y-%m-%d').date()
     inizio_nido = datetime.strptime(config['date']['inizio_asilo_nido'], '%Y-%m-%d').date()
     tasso = rendimento / 12
@@ -234,12 +239,12 @@ def simula_scenario_completo(config, pac_persona1=None, pac_flor=None,
         if mese > 0:
             etf_persona1 = (etf_persona1 + pac_d) * (1 + tasso)
             etf_flor = (etf_flor + pac_flor) * (1 + tasso)
-            fondi *= (1 + 0.04/12 - 0.02/12)
+            fondi *= (1 + rend_fondi / 12 - ter_fondi / 12)
             if generali_attivo:
-                generali = generali * (1 + 0.03/12) + p['generali_versamento_mensile']
+                generali = generali * (1 + rend_gen / 12) + p['generali_versamento_mensile']
             scad = datetime.strptime(config['date']['scadenza_generali'], '%Y-%m-%d').date()
             if dc >= scad and generali_attivo:
-                etf_persona1 += generali * 0.74
+                etf_persona1 += generali * (1 - aliquota)
                 generali = 0
                 generali_attivo = False
         totale = etf_persona1 + etf_flor + fondi + generali + liquidita

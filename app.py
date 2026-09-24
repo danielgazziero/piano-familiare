@@ -597,16 +597,25 @@ elif sezione == "📈 ETF & mercato":
     st.caption("Aggiungi, rimuovi o modifica gli ETF e l'importo mensile per ciascuno. "
                "Il grafico mostra il portafoglio aggregato con scenari worst/base/best.")
 
-    # Tabella editabile ETF PAC
+    # Tabella editabile ETF PAC — seeded from config
+    _alloc = config.get('allocazione', {})
+    _pat = config.get('patrimonio', {})
+    _etf_map = {e['ticker_bi']: e for e in config.get('etf', [])}
     etf_default = [
-        {'ETF': 'IWDA', 'Descrizione': 'iShares Core MSCI World', 'Importo €/mese': 800,
-         'Valore iniziale €': 10500, 'Includi': True},
-        {'ETF': 'ACWE (Figlio/a)', 'Descrizione': 'SPDR MSCI ACWI', 'Importo €/mese': 200,
-         'Valore iniziale €': 0, 'Includi': True},
-        {'ETF': 'EMAE', 'Descrizione': 'SPDR MSCI EM Asia', 'Importo €/mese': 0,
-         'Valore iniziale €': 0, 'Includi': False},
-        {'ETF': 'MWRD', 'Descrizione': 'Amundi Core MSCI World', 'Importo €/mese': 0,
-         'Valore iniziale €': 0, 'Includi': False},
+        {'ETF': 'IWDA',
+         'Descrizione': _etf_map.get('IWDA', {}).get('nome', 'iShares Core MSCI World'),
+         'Importo €/mese': _alloc.get('pac_persona1_con_nido', 800),
+         'Valore iniziale €': _pat.get('etf_cspx_directa', 0),
+         'Includi': True},
+        {'ETF': f"ACWE ({st.session_state.get('params', {}).get('nome_figlio', 'Figlio/a')})",
+         'Descrizione': _etf_map.get('ACWE', {}).get('nome', 'SPDR MSCI ACWI'),
+         'Importo €/mese': _alloc.get('pac_flor', 200),
+         'Valore iniziale €': 0,
+         'Includi': True},
+    ] + [
+        {'ETF': e['ticker_bi'], 'Descrizione': e['nome'],
+         'Importo €/mese': 0, 'Valore iniziale €': 0, 'Includi': False}
+        for e in config.get('etf', []) if e.get('stato') == 'candidato'
     ]
     df_etf_edit = st.data_editor(
         pd.DataFrame(etf_default),
@@ -635,11 +644,14 @@ elif sezione == "📈 ETF & mercato":
             'Valore iniziale €': 'valore_iniziale'
         }).to_dict('records')
 
+        _p_cfg = config.get('parametri', {})
+        _sc_worst = _p_cfg.get('scenario_spread_worst', 0.04)
+        _sc_best = _p_cfg.get('scenario_spread_best', 0.03)
         sc_etf = simula_portafoglio_etf_scenari(
             etf_rows_sim, anni=anni_pac,
             rend_base=rend_base_etf/100,
-            rend_worst=max(rend_base_etf/100 - 0.04, 0.01),
-            rend_best=rend_base_etf/100 + 0.03
+            rend_worst=max(rend_base_etf/100 - _sc_worst, 0.01),
+            rend_best=rend_base_etf/100 + _sc_best
         )
 
         fig_etf_sc = go.Figure()
@@ -694,7 +706,8 @@ elif sezione == "📈 ETF & mercato":
         st.subheader("Confronto ETF candidati")
         fig_c = go.Figure()
         per_c = st.select_slider("Periodo confronto", ["6mo","ytd","1y","2y"], value="1y", key="pc")
-        confronto = {'EMAE':'EMAE.MI','MWRD':'MWRD.MI','IWDA':'IWDA.AS','CSPX':'CSPX.L'}
+        confronto = {e['ticker_bi']: e['ticker_yf']
+                     for e in config.get('etf', []) if e.get('ticker_yf')}
         pal_c = [COLORS['rosso'],COLORS['verde'],COLORS['blu'],COLORS['arancio']]
         for i,(nome,tick) in enumerate(confronto.items()):
             h = get_etf_history_chart(tick, per_c)
@@ -757,10 +770,12 @@ elif sezione == "🏦 Fondi bancari":
     df_attivi_f = df_fondi_edit[df_fondi_edit['Includi'] == True].copy()
 
     # Totali snapshot
+    _aliquota = config.get('parametri', {}).get('aliquota_capital_gain',
+                config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
     tot_val  = (df_attivi_f['Valore €'] * df_attivi_f['% mantenere'] / 100).sum()
     tot_cf   = (df_attivi_f['Costo fisc. €'] * df_attivi_f['% mantenere'] / 100).sum()
     tot_pv   = max(tot_val - tot_cf, 0)
-    tot_tassa= tot_pv * 0.26
+    tot_tassa= tot_pv * _aliquota
     tot_netto= tot_val - tot_tassa
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("Valore selezionato", f"€ {tot_val:,.0f}")
@@ -802,7 +817,7 @@ elif sezione == "🏦 Fondi bancari":
         df_sc_f = simula_fondo_scenari(
             val_f, cf_f, quantita_pct=1.0, anni=anni_f,
             rend_base=rend_b_f/100, rend_worst=rend_w_f/100, rend_best=rend_best_f/100,
-            costo_annuo=ter, aliquota=0.26
+            costo_annuo=ter, aliquota=_aliquota
         )
 
         fig_f = go.Figure()
@@ -859,7 +874,7 @@ elif sezione == "🏦 Fondi bancari":
         sc_agg = simula_portafoglio_fondi_scenari(
             fondi_rows_sim, anni=anni_f,
             rend_base=rend_b_f/100, rend_worst=rend_w_f/100,
-            rend_best=rend_best_f/100, aliquota=0.26
+            rend_best=rend_best_f/100, aliquota=_aliquota
         )
 
         fig_agg = go.Figure()
@@ -1004,8 +1019,12 @@ elif sezione == "🎯 Simulatore strategie":
         with c3: rend  = st.slider("Rendimento base (%)", 3.0, 12.0, 7.0, step=0.5)
 
         variabile = st.checkbox("Simula riduzione PAC con asilo nido (mag 2027)")
+        _p5 = config.get('parametri', {})
+        _sw5 = _p5.get('scenario_spread_worst', 0.04)
+        _sb5 = _p5.get('scenario_spread_best', 0.03)
         sc_pac = simula_pac_scenari(imp, anni, rend_base=rend/100,
-                                     rend_worst=max(rend/100-0.04,0.01), rend_best=rend/100+0.03)
+                                     rend_worst=max(rend/100 - _sw5, 0.01),
+                                     rend_best=rend/100 + _sb5)
         fig_pac = go.Figure()
         anni_arr = sc_pac['base']['anno'].tolist()
         fig_pac.add_trace(go.Scatter(
@@ -1040,12 +1059,18 @@ elif sezione == "🎯 Simulatore strategie":
     with tab2:
         st.subheader("Migrazione fondi → ETF")
         c1,c2 = st.columns(2)
+        _p_mig = config.get('parametri', {})
+        _rimb_def = _p_mig.get('rimborso_annuale_default',
+                    config['migrazione_fondi']['piano_annuale'][0]['rimborso_lordo'])
         with c1:
-            rimb = st.slider("Rimborso annuale (€)",10000,50000,22000,step=1000)
-            re   = st.slider("Rendimento ETF (%)",4.0,12.0,7.0,step=0.5)
+            rimb = st.slider("Rimborso annuale (€)", 10000, 50000, int(_rimb_def), step=1000)
+            re   = st.slider("Rendimento ETF (%)", 4.0, 12.0,
+                             _p_mig.get('rendimento_etf_base', 0.07) * 100, step=0.5)
         with c2:
-            rf   = st.slider("Rendimento fondi lordo (%)",2.0,8.0,4.0,step=0.5)
-            cf   = st.slider("Costo annuo fondi (%)",0.5,3.0,2.0,step=0.1)
+            rf   = st.slider("Rendimento fondi lordo (%)", 2.0, 8.0,
+                             _p_mig.get('rendimento_fondi_base', 0.04) * 100, step=0.5)
+            cf   = st.slider("Costo annuo fondi (%)", 0.5, 3.0,
+                             _p_mig.get('ter_default', 0.02) * 100, step=0.1)
         df_mig = simula_migrazione_fondi(config,rimb,re/100,rf/100,cf/100)
         fig_mig = go.Figure()
         fig_mig.add_trace(go.Scatter(x=df_mig['anno'],y=df_mig['scenario_etf'],
@@ -1096,8 +1121,10 @@ elif sezione == _SEZIONE_FIGLIO:
     with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",100,500,config['allocazione']['pac_flor'],step=50)
     with c2: rf    = st.slider("Rendimento base (%)",4.0,10.0,7.0,step=0.5)
 
-    sc_flor = simula_pac_scenari(pac_f,18,rend_base=rf/100,
-                                  rend_worst=max(rf/100-0.04,0.01),rend_best=rf/100+0.03)
+    _p6 = config.get('parametri', {})
+    sc_flor = simula_pac_scenari(pac_f, 18, rend_base=rf/100,
+                                  rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
+                                  rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
     df_costi = simula_costi_flor(config, eta_max=22)
 
     fig_f = go.Figure()

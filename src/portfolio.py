@@ -166,6 +166,9 @@ def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None) 
 def simula_uscita_fondo_data_x(config: dict, data_uscita: date,
                                 rendimento_annuo: float = 0.04,
                                 quote_aggiornate: Dict[str, float] = None) -> pd.DataFrame:
+    aliquota = config.get('parametri', {}).get(
+        'aliquota_capital_gain',
+        config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
     df = get_fondi_snapshot(config, quote_aggiornate)
     oggi = date.today()
     giorni = max((data_uscita - oggi).days, 0)
@@ -177,7 +180,7 @@ def simula_uscita_fondo_data_x(config: dict, data_uscita: date,
     df_proj['valore_proiettato'] = (df_proj['quantita'] * df_proj['quota_proiettata']).round(2)
     df_proj['plusvalenza_proiettata'] = (df_proj['valore_proiettato'] -
                                          df_proj['costo_fiscale_stimato']).clip(lower=0).round(2)
-    df_proj['tassa_proiettata'] = (df_proj['plusvalenza_proiettata'] * 0.26).round(2)
+    df_proj['tassa_proiettata'] = (df_proj['plusvalenza_proiettata'] * aliquota).round(2)
     df_proj['netto_proiettato'] = (df_proj['valore_proiettato'] - df_proj['tassa_proiettata']).round(2)
     df_proj['data_uscita'] = data_uscita
     df_proj['mesi_attesa'] = round(giorni / 30.44, 1)
@@ -209,7 +212,11 @@ def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = Non
                 continue
             importo = min(row['valore_attuale'], budget_residuo)
             quota_pv = (importo / row['valore_attuale']) * row['plusvalenza_stimata'] if row['valore_attuale'] > 0 else 0
-            tassa = round(quota_pv * 0.26, 2)
+            aliquota = config.get('parametri', {}).get(
+                'aliquota_capital_gain',
+                config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
+            etf_dest = config.get('parametri', {}).get('etf_destinazione_migrazione', 'IWDA / VWCE')
+            tassa = round(quota_pv * aliquota, 2)
             netto = round(importo - tassa, 2)
             budget_residuo -= importo
             fondi_residui.at[idx, 'valore_attuale'] = max(row['valore_attuale'] - importo, 0)
@@ -220,7 +227,7 @@ def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = Non
                 'rimborso_lordo': round(importo, 0),
                 'tassa_26pct': round(tassa, 0),
                 'netto_in_etf': round(netto, 0),
-                'etf_destinazione': 'IWDA / VWCE',
+                'etf_destinazione': etf_dest,
                 'motivo': f"TER ~{row['costo_annuo_stimato']*100:.1f}%"
             })
 
@@ -286,7 +293,10 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
     }
     snap['totale_eur'] = (snap['fondi_bancari'] + snap['generali'] +
                           snap['etf_persona1'] + snap['etf_flor'] + snap['liquidita'])
-    tassa_latente = p.get('fondi_plusvalenze', 0) * 0.26
+    aliquota = config.get('parametri', {}).get(
+        'aliquota_capital_gain',
+        config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
+    tassa_latente = p.get('fondi_plusvalenze', 0) * aliquota
     snap['tassa_latente_fondi'] = round(tassa_latente, 0)
     snap['totale_netto_fiscale'] = round(snap['totale_eur'] - tassa_latente, 0)
     return snap

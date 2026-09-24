@@ -6,6 +6,25 @@
 famiglia:
   aggiornato: "2026-09"
 
+# ─── PARAMETRI FINANZIARI CENTRALIZZATI ──────────────────────
+# Fonte unica per aliquote, rendimenti assunti, spread scenari.
+# Tutti i moduli leggono da qui — non hardcodare nei sorgenti.
+parametri:
+  aliquota_capital_gain: 0.26
+  rendimento_etf_base: 0.07
+  rendimento_etf_worst: 0.03
+  rendimento_etf_best: 0.10
+  rendimento_fondi_base: 0.04
+  rendimento_fondi_worst: 0.00
+  rendimento_fondi_best: 0.08
+  ter_default: 0.02
+  rendimento_generali: 0.03
+  data_inizio_storico: "2024-01-01"
+  etf_destinazione_migrazione: "IWDA / VWCE"
+  scenario_spread_worst: 0.04
+  scenario_spread_best: 0.03
+  rimborso_annuale_default: 22000
+
 entrate:
   stipendio_persona1: 2600
   stipendio_persona2_ordinario: 1600
@@ -66,6 +85,8 @@ etf:
     valore_iniziale: 10500
     proprietario: "persona1"
     stato: "attivo"
+    data_acquisto: "2024-01-01"
+    in_portafoglio: true
     note: "Su Directa — già in portafoglio"
 
   # ETF DA AVVIARE — PAC
@@ -117,6 +138,7 @@ fondi_bancari:
       ticker_yf: null   # fondi italiani non su Yahoo — valorizzare manualmente
       valore_quota_ref: 23.52    # ultimo valore noto (agosto 2026)
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.020
 
     - nome: "ARCA AZ AMERICA CLIMA P"
@@ -125,6 +147,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 93.184
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.020
 
     - nome: "EURIZON AZ EMERG P"
@@ -133,6 +156,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 16.048
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.025
 
     - nome: "JPMF GLO SUST EQ ACC"
@@ -141,7 +165,9 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 138.93
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.022
+      fallback_tickers: ["LU2293888439.PA"]
 
     - nome: "EURIZON AZ AMER P"
       isin: "IT0001050126"
@@ -149,6 +175,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 57.876
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.020
 
     - nome: "EURIZ AZ AREA EURO P"
@@ -157,6 +184,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 68.064
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.019
 
     - nome: "EURIZON AZ INT P"
@@ -165,6 +193,7 @@ fondi_bancari:
       ticker_yf: null
       valore_quota_ref: 35.056
       data_ref: "2026-08-31"
+      data_acquisto: "2020-01-01"
       ter: 0.018
 
 # ─── AZIONI ACCENTURE (RSU/stock plan) ───────────────────────
@@ -174,6 +203,7 @@ azioni:
     quantita: 71
     isin: "IE00B4BNMY34"
     tipo: "azioni_dipendente"
+    data_acquisto: "2022-01-01"
     note: "RSU/stock plan Accenture — verificare lock-up e tassazione separata"
 
 # ─── COSTI FLOR PER ETÀ ──────────────────────────────────────

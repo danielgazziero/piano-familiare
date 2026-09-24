@@ -11,37 +11,48 @@ import yfinance as yf
 
 
 # ─────────────────────────────────────────────────────────────
-# MAPPA ASSET → TICKER YAHOO FINANCE
+# MAPPA ASSET → TICKER YAHOO FINANCE  (derivata da config.yaml)
 # ─────────────────────────────────────────────────────────────
-# Fondi italiani: suffisso .MI (Borsa Italiana / Euronext Milan)
-# Fondi lussemburghesi: suffisso .MI o verifica alternativa
-# ETF: tickers standard già noti
+# Fondi italiani con ticker_yf: null → ticker costruito come {isin}.MI
+# ETF e azioni → usano ticker_yf dal config
 
-ASSET_TICKERS = {
-    # Fondi bancari
-    'IT0001033486': 'IT0001033486.MI',   # ARCA AZ EUROPA CLIMA
-    'IT0001033502': 'IT0001033502.MI',   # ARCA AZ AMERICA CLIMA P
-    'IT0001031928': 'IT0001031928.MI',   # EURIZON AZ EMERG P
-    'LU2293888439': 'LU2293888439.MI',   # JPMF GLO SUST EQ ACC (probare anche .PA)
-    'IT0001050126': 'IT0001050126.MI',   # EURIZON AZ AMER P
-    'IT0001050225': 'IT0001050225.MI',   # EURIZ AZ AREA EURO P
-    'IT0001080446': 'IT0001080446.MI',   # EURIZON AZ INT P
+def _build_tickers_from_config():
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from parser import load_config
+        cfg = load_config()
+    except Exception:
+        return {}, {}
 
-    # ETF su Directa
-    'IE00B5BMR087': 'CSPX.L',           # iShares Core S&P 500
-    'IE00B44Z5B48': 'ACWE.MI',          # SPDR MSCI ACWI
-    'IE00B4L5Y983': 'IWDA.AS',          # iShares Core MSCI World
-    'IE000BI8OT95': 'MWRD.MI',          # Amundi Core MSCI World
-    'IE00B466KX20': 'EMAE.MI',          # SPDR MSCI EM Asia
+    tickers: dict = {}
+    fallbacks: dict = {}
 
-    # Azioni
-    'IE00B4BNMY34': 'ACN',              # Accenture
-}
+    for f in cfg.get('fondi_bancari', {}).get('titoli', []):
+        isin = f.get('isin')
+        if not isin:
+            continue
+        tickers[isin] = f.get('ticker_yf') or f'{isin}.MI'
+        if f.get('fallback_tickers'):
+            fallbacks[isin] = f['fallback_tickers']
 
-# Ticker di fallback se il primario non funziona
-FALLBACK_TICKERS = {
-    'LU2293888439': ['LU2293888439.PA'],  # JPM Global Sust EQ — solo ticker verificati
-}
+    for etf in cfg.get('etf', []):
+        isin = etf.get('isin')
+        ticker = etf.get('ticker_yf')
+        if isin and ticker:
+            tickers[isin] = ticker
+
+    for az in cfg.get('azioni', []):
+        isin = az.get('isin')
+        ticker = az.get('ticker_yf')
+        if isin and ticker:
+            tickers[isin] = ticker
+
+    return tickers, fallbacks
+
+
+ASSET_TICKERS, FALLBACK_TICKERS = _build_tickers_from_config()
 
 
 def get_ticker(isin: str) -> Optional[str]:
