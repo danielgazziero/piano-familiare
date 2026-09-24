@@ -172,7 +172,7 @@ with st.sidebar:
         "🏦 Fondi bancari",
         "📊 Azioni Accenture",
         "🎯 Simulatore strategie",
-        "👶 Flor timeline"
+        "👶 Figlio/a timeline"
     ])
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
@@ -240,11 +240,11 @@ if sezione == "🏠 Stato di famiglia":
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
     c2.metric("Netto fiscale",     f"€ {snap['totale_netto_fiscale']:,.0f}", delta=f"-€ {snap['tassa_latente_fondi']:,.0f} latenti")
     c3.metric("Fondi bancari",     f"€ {snap['fondi_bancari']:,.0f}")
-    c4.metric("ETF Daniel+Flor",   f"€ {snap['etf_daniel']+snap['etf_flor']:,.0f}")
+    c4.metric("ETF Daniel+Figlio/a",   f"€ {snap['etf_daniel']+snap['etf_flor']:,.0f}")
     c5.metric("Azioni ACN (USD)",  f"$ {snap['azioni_acn_usd']:,.0f}")
 
     fig_pat = go.Figure(go.Pie(
-        labels=['Fondi bancari','Generali','ETF Daniel','ETF Flor','Azioni ACN','Liquidità'],
+        labels=['Fondi bancari','Generali','ETF Daniel','ETF Figlio/a','Azioni ACN','Liquidità'],
         values=[snap['fondi_bancari'],snap['generali'],snap['etf_daniel'],
                 snap['etf_flor'],snap['azioni_acn_usd'],snap['liquidita']],
         hole=0.45, marker_colors=list(COLORS.values())[:6]
@@ -551,7 +551,7 @@ elif sezione == "📈 ETF & mercato":
     etf_default = [
         {'ETF': 'IWDA', 'Descrizione': 'iShares Core MSCI World', 'Importo €/mese': 800,
          'Valore iniziale €': 10500, 'Includi': True},
-        {'ETF': 'ACWE (Flor)', 'Descrizione': 'SPDR MSCI ACWI', 'Importo €/mese': 200,
+        {'ETF': 'ACWE (Figlio/a)', 'Descrizione': 'SPDR MSCI ACWI', 'Importo €/mese': 200,
          'Valore iniziale €': 0, 'Includi': True},
         {'ETF': 'EMAE', 'Descrizione': 'SPDR MSCI EM Asia', 'Importo €/mese': 0,
          'Valore iniziale €': 0, 'Includi': False},
@@ -657,7 +657,7 @@ elif sezione == "📈 ETF & mercato":
         st.plotly_chart(fig_c, use_container_width=True)
         st.info("💡 MWRD = alternativa Amundi a IWDA (stesso indice, TER 0.12%). "
                 "EMAE = satellite emergenti asiatici — interessante al 10-15% del PAC "
-                "se vuoi esposizione separata dall'ACWI di Flor.")
+                "se vuoi esposizione separata dall'ACWI del figlio/a.")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1012,7 +1012,7 @@ elif sezione == "🎯 Simulatore strategie":
         st.subheader("Scenario patrimoniale completo")
         c1,c2,c3 = st.columns(3)
         with c1: pd_s = st.slider("PAC Daniel (€)",500,2000,config['allocazione']['pac_daniel_ora'],step=100)
-        with c2: pf_s = st.slider("PAC Flor (€)",100,500,config['allocazione']['pac_flor'],step=50)
+        with c2: pf_s = st.slider("PAC Figlio/a (€)",100,500,config['allocazione']['pac_flor'],step=50)
         with c3: rs   = st.slider("Rendimento (%)",4.0,10.0,7.0,step=0.5)
         anni_s  = st.slider("Orizzonte (anni)",5,25,18)
         tutti_sc= st.checkbox("Mostra 3 scenari (3%/7%/10%)")
@@ -1030,7 +1030,7 @@ elif sezione == "🎯 Simulatore strategie":
             df_sc = simula_scenario_completo(config,pd_s,pf_s,rs/100,anni_s)
             fig_sc = go.Figure()
             for col,nome,col_c in [('etf_daniel','ETF Daniel',COLORS['blu']),
-                                     ('etf_flor','ETF Flor',COLORS['azzurro']),
+                                     ('etf_flor','ETF Figlio/a',COLORS['azzurro']),
                                      ('fondi','Fondi bancari',COLORS['arancio']),
                                      ('generali','Generali',COLORS['rosso'])]:
                 fig_sc.add_trace(go.Scatter(x=df_sc['anno'],y=df_sc[col],
@@ -1041,12 +1041,12 @@ elif sezione == "🎯 Simulatore strategie":
 
 
 # ─────────────────────────────────────────────────────────────
-# SEZIONE 6: FLOR TIMELINE
+# SEZIONE 6: FIGLIO/A TIMELINE
 # ─────────────────────────────────────────────────────────────
-elif sezione == "👶 Flor timeline":
-    st.title("Flor timeline")
+elif sezione == "👶 Figlio/a timeline":
+    st.title("Figlio/a timeline")
     c1,c2 = st.columns(2)
-    with c1: pac_f = st.slider("PAC mensile Flor (€)",100,500,config['allocazione']['pac_flor'],step=50)
+    with c1: pac_f = st.slider("PAC mensile figlio/a (€)",100,500,config['allocazione']['pac_flor'],step=50)
     with c2: rf    = st.slider("Rendimento base (%)",4.0,10.0,7.0,step=0.5)
 
     sc_flor = simula_pac_scenari(pac_f,18,rend_base=rf/100,
@@ -1072,8 +1072,8 @@ elif sezione == "👶 Flor timeline":
         fig_f.add_vline(x=eta,line_dash="dot",line_color="#ccc",opacity=0.6)
         fig_f.add_annotation(x=eta,y=sc_flor['best']['valore'].iloc[-1]*0.85,
                                text=lbl,showarrow=False,font=dict(size=10,color="#888"))
-    fig_f.update_layout(title=f"Fondo Flor — €{pac_f}/mese · 18 anni",
-                         xaxis_title="Età Flor",yaxis_title="€",height=420,
+    fig_f.update_layout(title=f"Fondo figlio/a — €{pac_f}/mese · 18 anni",
+                         xaxis_title="Età figlio/a",yaxis_title="€",height=420,
                          legend=dict(orientation="h",y=1.08))
     st.plotly_chart(fig_f, use_container_width=True)
 
