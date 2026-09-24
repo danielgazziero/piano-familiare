@@ -288,8 +288,18 @@ def backfill_prezzi(isins: List[str], verbose: bool = True) -> Dict[str, int]:
     oggi = date.today()
     data_default_inizio = date(2024, 1, 1)  # inizio storico di default
 
+    # Carica tutti i checkpoint in una sola query invece di N query separate
+    try:
+        client = get_client()
+        res = client.table('backfill_stato').select('isin, ultima_data').execute()
+        checkpoint_map = {
+            r['isin']: date.fromisoformat(r['ultima_data']) for r in (res.data or [])
+        }
+    except Exception:
+        checkpoint_map = {}
+
     for isin in isins:
-        ultima = get_ultima_data_scaricata(isin)
+        ultima = checkpoint_map.get(isin)
 
         if ultima is None:
             # Prima volta — scarica dall'inizio
@@ -405,11 +415,44 @@ def calcola_valore_giornaliero(isin: str, data_inizio: date,
     return df[['data', 'isin', 'quantita', 'prezzo', 'valore']].dropna(subset=['prezzo'])
 
 
+def _computa_valore_isin(posizioni_storico: list, prezzi_df: pd.DataFrame,
+                          df_dates: pd.DataFrame) -> Optional[pd.Series]:
+    """Calcola serie valore giornaliero da dati già caricati (no DB calls)."""
+    if not posizioni_storico or prezzi_df.empty:
+        return None
+
+    df = df_dates.merge(prezzi_df.rename(columns={'prezzo': 'prezzo_raw'}),
+                        on='data', how='left')
+    df['prezzo'] = df['prezzo_raw'].ffill().bfill()
+
+    posizioni_parsed = [
+        (
+            date.fromisoformat(pos['data_inizio']),
+            date.fromisoformat(pos['data_fine']) if pos['data_fine'] else date(2099, 12, 31),
+            float(pos['quantita']),
+        )
+        for pos in posizioni_storico
+    ]
+
+    def get_quantita(d: date) -> float:
+        q = 0.0
+        for d_inizio, d_fine, quantita in posizioni_parsed:
+            if d_inizio <= d <= d_fine:
+                q = quantita
+        return q
+
+    df['quantita'] = df['data'].apply(get_quantita)
+    df['valore'] = (df['quantita'] * df['prezzo']).round(2)
+    series = df.set_index('data')['valore'].dropna()
+    return series if not series.empty else None
+
+
 def calcola_portafoglio_storico(isins: List[str] = None,
                                   data_inizio: date = None,
                                   data_fine: date = None) -> pd.DataFrame:
     """
     Calcola il valore aggregato del portafoglio giorno per giorno.
+    Usa 2 query batch (posizioni + prezzi) invece di 2×N query separate.
     Restituisce DataFrame con: data, valore_totale, e colonne per ogni asset.
     """
     if isins is None:
@@ -419,11 +462,63 @@ def calcola_portafoglio_storico(isins: List[str] = None,
     if data_fine is None:
         data_fine = date.today()
 
+    # Carica tutte le posizioni in una sola query
+    try:
+        client = get_client()
+        res_pos = (client.table('posizioni')
+                   .select('isin, quantita, data_inizio, data_fine')
+                   .in_('isin', isins)
+                   .order('data_inizio')
+                   .execute())
+        posizioni_raw = res_pos.data or []
+    except Exception:
+        posizioni_raw = []
+
+    # Carica tutti i prezzi in una sola query
+    try:
+        client = get_client()
+        res_prez = (client.table('prezzi_storici')
+                    .select('isin, data, prezzo')
+                    .in_('isin', isins)
+                    .gte('data', data_inizio.isoformat())
+                    .lte('data', data_fine.isoformat())
+                    .order('data')
+                    .execute())
+        prezzi_raw = res_prez.data or []
+    except Exception:
+        prezzi_raw = []
+
+    # Organizza posizioni per ISIN
+    posizioni_per_isin: Dict[str, list] = {isin: [] for isin in isins}
+    for p in posizioni_raw:
+        posizioni_per_isin.setdefault(p['isin'], []).append(p)
+
+    # Organizza prezzi per ISIN come DataFrame
+    prezzi_per_isin: Dict[str, pd.DataFrame] = {}
+    if prezzi_raw:
+        pz = pd.DataFrame(prezzi_raw)
+        pz['data'] = pd.to_datetime(pz['data']).dt.date
+        pz['prezzo'] = pd.to_numeric(pz['prezzo'])
+        for isin_val, grp in pz.groupby('isin'):
+            prezzi_per_isin[str(isin_val)] = grp[['data', 'prezzo']].reset_index(drop=True)
+
+    df_dates = pd.DataFrame({'data': pd.date_range(data_inizio, data_fine, freq='D').date})
+
     frames = {}
     for isin in isins:
-        df = calcola_valore_giornaliero(isin, data_inizio, data_fine)
-        if not df.empty:
-            frames[isin] = df.set_index('data')['valore']
+        posizioni_storico = posizioni_per_isin.get(isin, [])
+        if not posizioni_storico:
+            for p in POSIZIONI_DEFAULT:
+                if p['isin'] == isin:
+                    posizioni_storico = [{'quantita': p['quantita'],
+                                           'data_inizio': p['data_acquisto'],
+                                           'data_fine': None}]
+                    break
+
+        prezzi_isin = prezzi_per_isin.get(isin, pd.DataFrame())
+        series = _computa_valore_isin(posizioni_storico, prezzi_isin, df_dates)
+        if series is not None:
+            frames[isin] = series
 
     if not frames:
         return pd.DataFrame()
