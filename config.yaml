@@ -71,12 +71,12 @@ etf:
   # ETF DA AVVIARE — PAC
   - ticker_yf: "ACWE.MI"
     ticker_bi: "ACWE"
-    nome: "SPDR MSCI ACWI (Flor)"
+    nome: "SPDR MSCI ACWI (Figlio/a)"
     isin: "IE00B44Z5B48"
     valore_iniziale: 0
     proprietario: "flor"
     stato: "da_avviare"
-    note: "Conto minore Directa — avviare dopo CF Flor"
+    note: "Conto minore Directa — avviare dopo CF figlio/a"
 
   - ticker_yf: "IWDA.AS"
     ticker_bi: "IWDA"
