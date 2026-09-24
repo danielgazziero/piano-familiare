@@ -141,15 +141,28 @@ def get_fondi():
     cat = st.session_state.get('asset_catalog', pd.DataFrame())
     fondi_data = None
     if not cat.empty and 'tipo' in cat.columns:
-        # Costruisce la lista fondi unendo catalog + quote correnti
-        fondi_cat = cat[cat['tipo'] == 'fondo'].to_dict('records')
+        # Costruisce la lista fondi unendo catalog + quote correnti + quantità da posizioni
+        fondi_cat = cat[cat['tipo'] == 'fondo'].copy()
+        # Merge quantità da posizioni (asset_catalog non ha quantita)
+        try:
+            from positions import carica_posizioni
+            pos_df = carica_posizioni()
+            if not pos_df.empty and 'isin' in pos_df.columns:
+                pos_fondi = pos_df[pos_df['isin'].isin(fondi_cat['isin'])][['isin', 'quantita']]
+                fondi_cat = fondi_cat.merge(pos_fondi, on='isin', how='left')
+                fondi_cat['quantita'] = fondi_cat['quantita'].fillna(0)
+            else:
+                fondi_cat['quantita'] = fondi_cat.get('quantita', pd.Series(0, index=fondi_cat.index))
+        except Exception:
+            if 'quantita' not in fondi_cat.columns:
+                fondi_cat['quantita'] = 0
+        fondi_list = fondi_cat.to_dict('records')
         qm = st.session_state.get('quote_map', {})
-        # Aggiunge quota corrente ai metadati del catalog
-        for f in fondi_cat:
+        for f in fondi_list:
             if f['isin'] in qm:
                 f['quota_aggiornata'] = qm[f['isin']]
-        if fondi_cat:
-            fondi_data = fondi_cat
+        if fondi_list:
+            fondi_data = fondi_list
     return get_fondi_snapshot(get_config(), st.session_state.get('quote_map', {}),
                                fondi_data=fondi_data)
 
@@ -161,7 +174,25 @@ def get_etf_perf():
 
 def get_azioni():
     cat = st.session_state.get('asset_catalog', pd.DataFrame())
-    return get_azioni_snapshot(get_config(), catalog_df=cat if not cat.empty else None)
+    if cat.empty or 'tipo' not in cat.columns:
+        return get_azioni_snapshot(get_config())
+    az_cat = cat[cat['tipo'] == 'azione'].copy()
+    if az_cat.empty:
+        return get_azioni_snapshot(get_config())
+    # Merge quantità da posizioni (asset_catalog non ha quantita)
+    if 'quantita' not in az_cat.columns:
+        try:
+            from positions import carica_posizioni
+            pos_df = carica_posizioni()
+            if not pos_df.empty and 'isin' in pos_df.columns:
+                pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
+                az_cat = az_cat.merge(pos_az, on='isin', how='left')
+                az_cat['quantita'] = az_cat['quantita'].fillna(0)
+            else:
+                az_cat['quantita'] = 0
+        except Exception:
+            az_cat['quantita'] = 0
+    return get_azioni_snapshot(get_config(), catalog_df=az_cat)
 
 # Importa automaticamente eventuali nuovi XLS in data/input/
 if 'xls_importati' not in st.session_state:

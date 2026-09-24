@@ -148,12 +148,13 @@ def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
     rows = []
 
     for fondo in fondi:
-        quota = fondo['valore_quota_ref']
+        quota = fondo.get('quota_aggiornata') or fondo.get('valore_quota_ref', 0)
         if quote_aggiornate and fondo['isin'] in quote_aggiornate:
             quota = quote_aggiornate[fondo['isin']]
+        quantita = fondo.get('quantita', 0)
 
-        valore_attuale = round(fondo['quantita'] * quota, 2)
-        valore_ref = round(fondo['quantita'] * fondo['valore_quota_ref'], 2)
+        valore_attuale = round(quantita * quota, 2)
+        valore_ref = round(quantita * fondo.get('valore_quota_ref', 0), 2)
         peso = valore_ref / tot_valore_ref if tot_valore_ref > 0 else 0
         costo_fiscale_stimato = round(costo_fiscale_tot * peso, 2)
         plusvalenza_stimata = max(valore_attuale - costo_fiscale_stimato, 0)
@@ -162,9 +163,9 @@ def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
 
         rows.append({
             'nome': fondo['nome'], 'isin': fondo['isin'],
-            'quantita': fondo['quantita'],
-            'quota_ref': fondo['valore_quota_ref'],
-            'quota_attuale': quota, 'data_ref': fondo['data_ref'],
+            'quantita': quantita,
+            'quota_ref': fondo.get('valore_quota_ref', 0),
+            'quota_attuale': quota, 'data_ref': fondo.get('data_ref', ''),
             'valore_attuale': valore_attuale,
             'costo_fiscale_stimato': costo_fiscale_stimato,
             'plusvalenza_stimata': plusvalenza_stimata,
@@ -255,8 +256,8 @@ def get_azioni_snapshot(config: dict,
         azioni = config.get('azioni', [])
     rows = []
     for az in azioni:
-        ticker = az['ticker_yf']
-        quantita = az['quantita']
+        ticker = az.get('ticker_yf') or az.get('ticker')
+        quantita = az.get('quantita', 0)
         hist_ytd = get_etf_data(ticker, period="ytd")
         hist_1y = get_etf_data(ticker, period="1y")
 
