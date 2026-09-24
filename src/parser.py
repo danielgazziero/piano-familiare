@@ -8,7 +8,17 @@ from pathlib import Path
 from typing import List
 import yaml
 
+import adapters as _adapters_mod
 from adapters import get_adapter, Transaction
+
+
+def _carica_da_db(chiave: str):
+    """Carica un valore da Supabase config_params. Ritorna None se non disponibile."""
+    try:
+        from database import carica_param
+        return carica_param(chiave)
+    except Exception:
+        return None
 
 
 def load_config(config_path: Path = None) -> dict:
@@ -31,10 +41,21 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
     banche = config.get('banche', [])
     all_transactions: List[Transaction] = []
 
+    # Inietta keyword trasferimenti interni da Supabase
+    kw = _carica_da_db('transfer_keywords')
+    if isinstance(kw, list) and kw:
+        _adapters_mod.TRANSFER_KEYWORDS = kw
+
     for banca in banche:
-        pattern = banca['pattern_file']
         bank_id = banca['formato']
         account = banca['intestatario']
+
+        # Pattern: prima Supabase (pattern_file_<banca_id>), poi config.yaml, poi skip
+        pattern = _carica_da_db(f"pattern_file_{banca['id']}") or banca.get('pattern_file')
+        if not pattern:
+            print(f"  [!] Pattern non configurato per {banca['nome']}.")
+            print(f"      → Aggiungi 'pattern_file_{banca['id']}' in Supabase config_params.")
+            continue
 
         files = list(input_dir.glob(pattern))
         if not files:

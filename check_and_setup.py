@@ -120,7 +120,7 @@ def check_librerie():
     return da_installare
 
 # ─────────────────────────────────────────────────────────────
-# 4. LIBREOFFICE (necessario per leggere XLS BPER Daniel)
+# 4. LIBREOFFICE (necessario per leggere XLS BPER formato BIFF8)
 # ─────────────────────────────────────────────────────────────
 
 def check_libreoffice():

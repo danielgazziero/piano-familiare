@@ -383,7 +383,7 @@ etf:
 ### Aggiornare importo PAC
 ```yaml
 allocazione:
-  pac_daniel_ora: 1200
+  pac_persona1_ora: 1200
 ```
 
 ### Aggiungere un rimborso effettuato

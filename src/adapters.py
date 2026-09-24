@@ -30,10 +30,10 @@ MESI_IT = {
     'settembre': '09', 'ottobre': '10', 'novembre': '11', 'dicembre': '12'
 }
 
-TRANSFER_KEYWORDS = [
-    'GAZZIERO DANIEL', 'CRIPPA ALESSANDRA', 'ALESSANDRA CRIPPA',
-    'BONIFICO o/c: GAZZIERO DANIEL', 'BONIFICO o/c: CRIPPA'
-]
+# Parole-chiave per escludere i bonifici interni tra i conti di famiglia.
+# La lista viene popolata a runtime da Supabase (config_params → transfer_keywords).
+# In locale/offline rimane vuota (nessuna esclusione).
+TRANSFER_KEYWORDS: list = []
 
 
 def parse_date_it(s: str) -> Optional[datetime]:
