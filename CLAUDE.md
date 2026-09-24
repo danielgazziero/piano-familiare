@@ -189,6 +189,8 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | T7 | Auth fail-secure — password solo da `config_params.app_password` su Supabase, `APP_PASSWORD` rimosso da Streamlit Cloud secrets; dev protetto anche in DEMO mode | `app.py` |
 | T8 | `carica_param` fallback a raw string se valore non è JSON valido (consente inserimento manuale senza encoding) | `src/database.py:carica_param()` |
 | T9 | Nomi generici `persona1`/`persona2` in tutto il codice, `config.yaml` e schema DB; migrazione colonne Supabase | tutti i file `src/`, `config.yaml`, `setup_supabase.py`, `docs/setup_supabase_schema.sql` |
+| T10 | RLS policy tutte le tabelle → `USING (auth.role() = 'service_role')` (anon/authenticated bloccati) | `setup_supabase.py`, `src/positions.py → POSITIONS_SCHEMA_SQL` |
+| T11 | `public.rls_auto_enable()` SECURITY DEFINER → SECURITY INVOKER (Supabase Security Advisor) | SQL Supabase: `ALTER FUNCTION public.rls_auto_enable() SECURITY INVOKER;` |
 
 ### 🔴 Alta priorità
 
@@ -231,3 +233,4 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 - **Non usare nomi personali** nel codice, config.yaml o DB — usare `persona1`/`persona2`. I valori sensibili (keyword bonifici, pattern file XLS) vanno in Supabase `config_params`
 - **Non aggiungere `APP_PASSWORD`** a Streamlit Cloud secrets — la password app viene esclusivamente da Supabase `config_params.app_password`
 - **Non bypassare auth in DEMO mode** — `_DEMO` controlla i dati mostrati, non l'autenticazione
+- **Supabase Security Advisor — `rls_auto_enable()`**: funzione interna Supabase, non nel codice. Se il Security Advisor segnala "Public/Signed-In Users Can Execute SECURITY DEFINER Function", eseguire nel SQL Editor: `ALTER FUNCTION public.rls_auto_enable() SECURITY INVOKER;` — il semplice `REVOKE EXECUTE` non basta perché Supabase ha grant a livello di schema
