@@ -80,14 +80,14 @@ RLS_SQL = [
     "ALTER TABLE quote_fondi     ENABLE ROW LEVEL SECURITY",
     "ALTER TABLE transazioni     ENABLE ROW LEVEL SECURITY",
     "ALTER TABLE config_params   ENABLE ROW LEVEL SECURITY",
-    """CREATE POLICY IF NOT EXISTS "full_access" ON patrimonio_log
-        FOR ALL USING (true) WITH CHECK (true)""",
-    """CREATE POLICY IF NOT EXISTS "full_access" ON quote_fondi
-        FOR ALL USING (true) WITH CHECK (true)""",
-    """CREATE POLICY IF NOT EXISTS "full_access" ON transazioni
-        FOR ALL USING (true) WITH CHECK (true)""",
-    """CREATE POLICY IF NOT EXISTS "full_access" ON config_params
-        FOR ALL USING (true) WITH CHECK (true)""",
+    """CREATE POLICY IF NOT EXISTS "service_only" ON patrimonio_log
+        FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role')""",
+    """CREATE POLICY IF NOT EXISTS "service_only" ON quote_fondi
+        FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role')""",
+    """CREATE POLICY IF NOT EXISTS "service_only" ON transazioni
+        FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role')""",
+    """CREATE POLICY IF NOT EXISTS "service_only" ON config_params
+        FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role')""",
 ]
 
 
@@ -215,15 +215,18 @@ ALTER TABLE prezzi_storici  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE backfill_stato  ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON posizioni       FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON posizioni
+      FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON prezzi_storici  FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON prezzi_storici
+      FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON backfill_stato  FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON backfill_stato
+      FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 """

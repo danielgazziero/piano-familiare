@@ -5,11 +5,9 @@ azioni Accenture (yfinance), piano di uscita ottimale fondi.
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, date
+from datetime import date
 from typing import Dict, List, Optional
 import yfinance as yf
-from pathlib import Path
-import json
 
 from parser import load_config
 
@@ -250,28 +248,3 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
     return snap
 
 
-def load_patrimonio_log(log_path: Path = None) -> pd.DataFrame:
-    if log_path is None:
-        log_path = Path(__file__).parent.parent / 'data' / 'reference' / 'patrimonio_log.json'
-    try:
-        with open(log_path) as f:
-            log = json.load(f)
-        df = pd.DataFrame(log).T
-        df.index = pd.to_datetime(df.index + '-01')
-        return df.apply(pd.to_numeric, errors='coerce')
-    except (FileNotFoundError, json.JSONDecodeError):
-        return pd.DataFrame()
-
-
-def log_patrimonio(snapshot: dict, log_path: Path = None):
-    if log_path is None:
-        log_path = Path(__file__).parent.parent / 'data' / 'reference' / 'patrimonio_log.json'
-    mese = datetime.now().strftime('%Y-%m')
-    try:
-        with open(log_path) as f:
-            log = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        log = {}
-    log[mese] = {k: round(v, 2) if isinstance(v, float) else v for k, v in snapshot.items()}
-    with open(log_path, 'w') as f:
-        json.dump(log, f, indent=2, ensure_ascii=False)

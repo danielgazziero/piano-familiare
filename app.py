@@ -56,9 +56,12 @@ elif not st.session_state.get("_auth_ok"):
     st.title("🔒 Accesso protetto")
     pwd = st.text_input("Password", type="password")
     if st.button("Accedi"):
-        import hmac
-        if hmac.compare_digest(pwd, _APP_PASSWORD):
+        from database import verify_password as _verify_pwd, hash_password as _hash_pwd, salva_param as _salva_param_auth
+        if _verify_pwd(pwd, _APP_PASSWORD):
             st.session_state["_auth_ok"] = True
+            # Migrazione trasparente: se la password era in chiaro, re-hasha al primo login
+            if not _APP_PASSWORD.startswith('pbkdf2$'):
+                _salva_param_auth("app_password", _hash_pwd(pwd))
             st.rerun()
         else:
             st.error("Password errata.")
@@ -210,13 +213,15 @@ with st.sidebar:
             if st.button("💾 Cambia password"):
                 if not new_pwd1:
                     st.error("Inserisci una password.")
+                elif len(new_pwd1) < 8:
+                    st.error("La password deve essere di almeno 8 caratteri.")
                 elif new_pwd1 != new_pwd2:
                     st.error("Le password non corrispondono.")
                 elif _DEMO:
                     st.warning("In DEMO mode il cambio password è disabilitato.")
                 else:
-                    from database import salva_param as _salva_param_raw
-                    _salva_param_raw("app_password", new_pwd1)
+                    from database import salva_param as _salva_param_raw, hash_password as _hash_pwd_change
+                    _salva_param_raw("app_password", _hash_pwd_change(new_pwd1))
                     st.success("Password aggiornata! Al prossimo login usa la nuova.")
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")

@@ -20,25 +20,23 @@ def _get_credentials():
     try:
         import streamlit as st
         url    = st.secrets["SUPABASE_URL"]
-        key    = st.secrets["SUPABASE_KEY"]
         secret = st.secrets["SUPABASE_SECRET"]
-        return url, key, secret
+        return url, secret
     except Exception:
         url    = os.environ.get("SUPABASE_URL", "")
-        key    = os.environ.get("SUPABASE_KEY", "")
         secret = os.environ.get("SUPABASE_SECRET", "")
         if not url:
             raise RuntimeError(
                 "Credenziali Supabase mancanti. "
-                "Configura SUPABASE_URL, SUPABASE_KEY, SUPABASE_SECRET "
+                "Configura SUPABASE_URL e SUPABASE_SECRET "
                 "in .streamlit/secrets.toml o come variabili d'ambiente."
             )
-        return url, key, secret
+        return url, secret
 
 
-def _make_client(use_secret: bool) -> Client:
-    url, key, secret = _get_credentials()
-    return create_client(url, secret if use_secret else key)
+def _make_client() -> Client:
+    url, secret = _get_credentials()
+    return create_client(url, secret)
 
 
 def _cached_client():
@@ -46,31 +44,15 @@ def _cached_client():
         import streamlit as st
         @st.cache_resource
         def _build():
-            return _make_client(use_secret=True)
+            return _make_client()
         return _build()
     except Exception:
-        return _make_client(use_secret=True)
-
-
-def _cached_public_client():
-    try:
-        import streamlit as st
-        @st.cache_resource
-        def _build_pub():
-            return _make_client(use_secret=False)
-        return _build_pub()
-    except Exception:
-        return _make_client(use_secret=False)
+        return _make_client()
 
 
 def get_client() -> Client:
-    """Client Supabase con secret key (singleton per sessione Streamlit)."""
+    """Client Supabase con service key (singleton per sessione Streamlit)."""
     return _cached_client()
-
-
-def get_public_client() -> Client:
-    """Client Supabase con publishable key (singleton per sessione Streamlit)."""
-    return _cached_public_client()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -411,6 +393,33 @@ def carica_tutti_params() -> dict:
         return result
     except Exception:
         return {}
+
+
+def hash_password(pwd: str) -> str:
+    """PBKDF2-HMAC-SHA256 con salt casuale. Formato: 'pbkdf2$sha256$<salt>$<hash>'."""
+    import hashlib, os as _os
+    salt = _os.urandom(16).hex()
+    h = hashlib.pbkdf2_hmac('sha256', pwd.encode('utf-8'), salt.encode(), 260_000)
+    return f"pbkdf2$sha256${salt}${h.hex()}"
+
+
+def verify_password(pwd: str, stored: str) -> bool:
+    """
+    Verifica la password contro il valore salvato in DB.
+    Supporta sia hash PBKDF2 (formato 'pbkdf2$...') sia plaintext legacy
+    per consentire la migrazione trasparente al primo login.
+    """
+    import hashlib, hmac as _hmac
+    if stored and stored.startswith('pbkdf2$'):
+        parts = stored.split('$')
+        if len(parts) != 4:
+            return False
+        _, algo, salt, expected = parts
+        h = hashlib.pbkdf2_hmac(algo, pwd.encode('utf-8'), salt.encode(), 260_000)
+        return _hmac.compare_digest(h.hex(), expected)
+    # Fallback plaintext per migrazione (prima modifica password)
+    import hmac as _hmac2
+    return _hmac2.compare_digest(pwd, stored or '')
 
 
 def carica_param_o_errore(chiave: str) -> Any:
