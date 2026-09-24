@@ -204,8 +204,8 @@ if sezione == "🏠 Stato di famiglia":
             fondi_man    = st.number_input("Fondi bancari (€)", value=int(p_saved.get('fondi_bancari', config['patrimonio']['fondi_bancari'])), step=500)
             generali_man = st.number_input("Generali (€)", value=int(p_saved.get('gestione_separata_generali', config['patrimonio']['gestione_separata_generali'])), step=500)
         with c2:
-            liq_dan = st.number_input("Liquidità Daniel (€)", value=int(p_saved.get('liquidita_daniel', config['patrimonio']['liquidita_daniel'])), step=100)
-            liq_ale = st.number_input("Liquidità Alessandra (€)", value=int(p_saved.get('liquidita_alessandra', config['patrimonio']['liquidita_alessandra'])), step=100)
+            liq_dan = st.number_input("Liquidità Persona 1 (€)", value=int(p_saved.get('liquidita_daniel', config['patrimonio']['liquidita_daniel'])), step=100)
+            liq_ale = st.number_input("Liquidità Persona 2 (€)", value=int(p_saved.get('liquidita_alessandra', config['patrimonio']['liquidita_alessandra'])), step=100)
         with c3:
             conto_com = st.number_input("Conto comune (€)", value=int(p_saved.get('conto_comune', config['patrimonio']['conto_comune'])), step=100)
 
@@ -240,11 +240,11 @@ if sezione == "🏠 Stato di famiglia":
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
     c2.metric("Netto fiscale",     f"€ {snap['totale_netto_fiscale']:,.0f}", delta=f"-€ {snap['tassa_latente_fondi']:,.0f} latenti")
     c3.metric("Fondi bancari",     f"€ {snap['fondi_bancari']:,.0f}")
-    c4.metric("ETF Daniel+Figlio/a",   f"€ {snap['etf_daniel']+snap['etf_flor']:,.0f}")
+    c4.metric("ETF totale",   f"€ {snap['etf_daniel']+snap['etf_flor']:,.0f}")
     c5.metric("Azioni ACN (USD)",  f"$ {snap['azioni_acn_usd']:,.0f}")
 
     fig_pat = go.Figure(go.Pie(
-        labels=['Fondi bancari','Generali','ETF Daniel','ETF Figlio/a','Azioni ACN','Liquidità'],
+        labels=['Fondi bancari','Generali','ETF Pers.1','ETF Figlio/a','Azioni ACN','Liquidità'],
         values=[snap['fondi_bancari'],snap['generali'],snap['etf_daniel'],
                 snap['etf_flor'],snap['azioni_acn_usd'],snap['liquidita']],
         hole=0.45, marker_colors=list(COLORS.values())[:6]
@@ -1011,7 +1011,7 @@ elif sezione == "🎯 Simulatore strategie":
     with tab3:
         st.subheader("Scenario patrimoniale completo")
         c1,c2,c3 = st.columns(3)
-        with c1: pd_s = st.slider("PAC Daniel (€)",500,2000,config['allocazione']['pac_daniel_ora'],step=100)
+        with c1: pd_s = st.slider("PAC Persona 1 (€)",500,2000,config['allocazione']['pac_daniel_ora'],step=100)
         with c2: pf_s = st.slider("PAC Figlio/a (€)",100,500,config['allocazione']['pac_flor'],step=50)
         with c3: rs   = st.slider("Rendimento (%)",4.0,10.0,7.0,step=0.5)
         anni_s  = st.slider("Orizzonte (anni)",5,25,18)
@@ -1029,7 +1029,7 @@ elif sezione == "🎯 Simulatore strategie":
         else:
             df_sc = simula_scenario_completo(config,pd_s,pf_s,rs/100,anni_s)
             fig_sc = go.Figure()
-            for col,nome,col_c in [('etf_daniel','ETF Daniel',COLORS['blu']),
+            for col,nome,col_c in [('etf_daniel','ETF Pers.1',COLORS['blu']),
                                      ('etf_flor','ETF Figlio/a',COLORS['azzurro']),
                                      ('fondi','Fondi bancari',COLORS['arancio']),
                                      ('generali','Generali',COLORS['rosso'])]:
