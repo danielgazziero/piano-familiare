@@ -38,18 +38,22 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
 _DEMO = True
 
 # ── AUTENTICAZIONE — solo in produzione, password esclusivamente da Supabase
-_APP_PASSWORD = ""
 if not _DEMO:
+    _APP_PASSWORD = None
+    _AUTH_ERR = None
     try:
         from database import carica_param as _carica_param_raw
-        _db_pwd = _carica_param_raw("app_password")
-        if _db_pwd:
-            _APP_PASSWORD = _db_pwd
+        _APP_PASSWORD = _carica_param_raw("app_password")
     except Exception:
-        pass
+        _AUTH_ERR = "db_error"
 
-if _APP_PASSWORD:
-    if not st.session_state.get("_auth_ok"):
+    if _AUTH_ERR == "db_error":
+        st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
+        st.stop()
+    elif not _APP_PASSWORD:
+        st.error("⚠️ Password non configurata. Inserisci il valore `app_password` nella tabella `config_params` su Supabase.")
+        st.stop()
+    elif not st.session_state.get("_auth_ok"):
         st.title("🔒 Accesso protetto")
         pwd = st.text_input("Password", type="password")
         if st.button("Accedi"):
@@ -59,6 +63,8 @@ if _APP_PASSWORD:
             else:
                 st.error("Password errata.")
         st.stop()
+else:
+    _APP_PASSWORD = None
 
 if _DEMO:
     from demo_data import (
