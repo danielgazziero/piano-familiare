@@ -34,21 +34,21 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
                    page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
-# ── AUTENTICAZIONE ────────────────────────────────────────────
-_APP_PASSWORD_SECRET = st.secrets.get("APP_PASSWORD", "")
-_IS_DEV = False
+# ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
+_DEMO = bool(st.secrets.get("DEMO_MODE", False))
 
-# Password sovrascrivibile da Supabase (senza toccare Streamlit Cloud)
-_APP_PASSWORD = _APP_PASSWORD_SECRET
-try:
-    from database import carica_param as _carica_param_raw
-    _db_pwd = _carica_param_raw("app_password")
-    if _db_pwd:
-        _APP_PASSWORD = _db_pwd
-except Exception:
-    pass
+# ── AUTENTICAZIONE — solo in produzione, password esclusivamente da Supabase
+_APP_PASSWORD = ""
+if not _DEMO:
+    try:
+        from database import carica_param as _carica_param_raw
+        _db_pwd = _carica_param_raw("app_password")
+        if _db_pwd:
+            _APP_PASSWORD = _db_pwd
+    except Exception:
+        pass
 
-if _APP_PASSWORD and not _IS_DEV:
+if _APP_PASSWORD:
     if not st.session_state.get("_auth_ok"):
         st.title("🔒 Accesso protetto")
         pwd = st.text_input("Password", type="password")
@@ -60,8 +60,6 @@ if _APP_PASSWORD and not _IS_DEV:
                 st.error("Password errata.")
         st.stop()
 
-# ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
-_DEMO = bool(st.secrets.get("DEMO_MODE", False))
 if _DEMO:
     from demo_data import (
         demo_init_db_connection            as init_db_connection,
