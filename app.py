@@ -34,6 +34,41 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
                    page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
+# ── AUTENTICAZIONE ────────────────────────────────────────────
+_APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
+if _APP_PASSWORD:
+    if not st.session_state.get("_auth_ok"):
+        st.title("🔒 Accesso protetto")
+        pwd = st.text_input("Password", type="password")
+        if st.button("Accedi"):
+            if pwd == _APP_PASSWORD:
+                st.session_state["_auth_ok"] = True
+                st.rerun()
+            else:
+                st.error("Password errata.")
+        st.stop()
+
+# ── DEMO MODE — sostituisce tutte le funzioni DB con dati fittizi
+_DEMO = bool(st.secrets.get("DEMO_MODE", False))
+if _DEMO:
+    from demo_data import (
+        demo_init_db_connection            as init_db_connection,
+        demo_carica_params_persistenti     as carica_params_persistenti,
+        demo_salva_params_persistenti      as salva_params_persistenti,
+        demo_carica_quote_fondi_persistenti as carica_quote_fondi_persistenti,
+        demo_auto_save_snapshot            as auto_save_snapshot,
+        demo_importa_transazioni_xls       as importa_transazioni_xls,
+        demo_carica_transazioni_db         as carica_transazioni_db,
+        demo_get_storico_patrimonio        as get_storico_patrimonio,
+        demo_get_storico_fondo             as get_storico_fondo,
+        demo_aggiorna_quote_fondi          as aggiorna_quote_fondi,
+        demo_esegui_backfill_avvio         as esegui_backfill_avvio,
+        demo_get_storico_portafoglio       as get_storico_portafoglio,
+        demo_get_storico_asset             as get_storico_asset,
+        demo_aggiorna_quantita_asset       as aggiorna_quantita_asset,
+        demo_get_eventi_portafoglio        as get_eventi_portafoglio,
+    )
+
 BASE_DIR  = Path(__file__).parent
 INPUT_DIR = BASE_DIR / 'data' / 'input'
 
@@ -116,7 +151,11 @@ if db_ok and 'backfill_done' not in st.session_state:
 # ── SIDEBAR ──────────────────────────────────────────────────
 with st.sidebar:
     st.title("📊 Piano Familiare")
-    st.caption("Daniel & Alessandra")
+    if _DEMO:
+        st.warning("⚠️ DEMO MODE — dati fittizi")
+        st.caption("Nessun dato reale viene letto o scritto.")
+    else:
+        st.caption("Daniel & Alessandra")
     if db_ok:
         st.success("☁️ Supabase connesso", icon="✅")
     else:
