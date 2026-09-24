@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Piano Finanziario Familiare
 
-App Streamlit per il monitoraggio del patrimonio familiare (Daniel & Alessandra).
+App Streamlit per il monitoraggio del patrimonio familiare.
 
 ## Comandi principali
 
@@ -28,10 +28,10 @@ App disponibile su http://localhost:8501 — si ricarica automaticamente ad ogni
 
 - **Frontend:** Streamlit — navigazione via `st.sidebar.radio`, un unico `app.py`
 - **Grafici:** Plotly (go.Figure / px)
-- **Database:** Supabase (Postgres hosted) — credenziali hardcoded in `src/database.py`
+- **Database:** Supabase (Postgres hosted) — credenziali in `.streamlit/secrets.toml` (gitignored) via `st.secrets`
 - **Prezzi ETF/azioni:** yfinance — ticker in `config.yaml` e `src/prices.py`
 - **Prezzi fondi bancari:** manuali — nessun ticker Yahoo, valorizzati da `quote_fondi` su Supabase
-- **Parsing XLS banca:** xlrd 1.2.0 (BIFF8 per Daniel) + openpyxl (Alessandra)
+- **Parsing XLS banca:** xlrd 1.2.0 (BIFF8, formato vecchio conto Persona 1) + openpyxl (formato nuovo)
 
 ## Architettura e flusso dati
 
@@ -69,10 +69,21 @@ app.py
 ### Parsing XLS bancari
 
 `src/parser.py` legge `config.yaml → banche[].formato` e delega a `src/adapters.py`:
-- `bper_xls` → xlrd 1.2.0 BIFF8 (estratti più vecchi di Daniel)
-- `bper_xls_new` → openpyxl (estratti Alessandra e nuovi Daniel)
+- `bper_xls` → xlrd 1.2.0 BIFF8 (estratti vecchio formato, conto Persona 1)
+- `bper_xls_new` → openpyxl (estratti nuovo formato, conto Persona 2 e recenti Persona 1)
 
 File XLS da mettere in `data/input/` — vengono importati automaticamente all'avvio.
+
+### Autenticazione
+
+La password di accesso viene **esclusivamente** da Supabase `config_params` → chiave `app_password`.
+
+- **dev:** `_DEMO = True` hardcoded — mostra dati fittizi, ma auth Supabase sempre richiesta
+- **main:** `_DEMO = bool(st.secrets.get("DEMO_MODE", False))` — con `DEMO_MODE = false` usa dati reali
+
+Comportamento fail-secure: se Supabase non raggiungibile o `app_password` non presente → `st.stop()`. Mai accesso libero. `APP_PASSWORD` non esiste e non va aggiunto ai secrets Streamlit Cloud.
+
+`carica_param()` in `src/database.py` prova `json.loads()` sul valore, poi fallback a raw string — consente inserimento manuale in Supabase senza encoding JSON.
 
 ## Schema Supabase
 
@@ -91,6 +102,33 @@ Tabelle principali (SQL completo in `src/database.py` e `src/positions.py`):
 Schema da creare su Supabase SQL Editor: vedere `docs/setup_supabase_schema.sql`. Le tabelle `posizioni`, `prezzi_storici`, `backfill_stato` sono in `src/positions.py → POSITIONS_SCHEMA_SQL`.
 
 ## Convenzioni di codice
+
+### Nomi generici (privacy — repo pubblico)
+
+Non usare mai nomi reali delle persone nel codice, config o DB. Usa sempre:
+- `persona1` al posto del nome reale della Persona 1
+- `persona2` al posto del nome reale della Persona 2
+
+**Esempi corretti:** `liquidita_persona1`, `etf_persona1`, `pac_persona1_ora`, `intestatario: "persona1"`
+
+I valori reali legati alle persone (keyword bonifici interni, pattern nomi file XLS) vengono **esclusivamente da Supabase** `config_params` — vedi sezione "Riconciliazione dati personali" qui sotto.
+
+### Riconciliazione dati personali (pattern file e keyword bonifici)
+
+Il codice è completamente agnostico rispetto alle persone. I valori specifici vengono da Supabase:
+
+| Chiave Supabase (`config_params`) | Contenuto | Usato in |
+|---|---|---|
+| `nome_persona1` | Nome dell'intestatario conto Persona 1 | `src/parser.py` → pattern file XLS |
+| `nome_persona2` | Nome dell'intestatario conto Persona 2 | `src/parser.py` → pattern file XLS |
+| `transfer_keywords` | JSON array di stringhe per escludere bonifici interni tra conti di famiglia | `src/parser.py` → `src/adapters.py` |
+
+**Come funziona la riconciliazione file XLS:**
+`config.yaml` contiene `pattern_template: "Lista_Movimenti_{nome}*"` per ogni banca. A runtime, `parser.py` legge `nome_<account>` da Supabase e costruisce il pattern reale (`_risolvi_pattern()`). Il codice non conosce mai i nomi delle persone.
+
+`TRANSFER_KEYWORDS` in `adapters.py` è `[]` di default e viene popolata a runtime da `transfer_keywords` in Supabase.
+
+### Altre convenzioni
 
 - Colori come costanti dict in cima ad `app.py`: `COLORS`, `SC_COLORS`, `SC_DASH`
 - Cache con `@st.cache_data(ttl=1800)` per chiamate yfinance; `ttl=3600` per config
@@ -119,7 +157,7 @@ Schema da creare su Supabase SQL Editor: vedere `docs/setup_supabase_schema.sql`
 |---|---|---|---|
 | CSPX | IE00B5BMR087 | Attivo | — |
 | ACWE | IE00B44Z5B48 | Da avviare | €200/mese — Flor |
-| IWDA | IE00B4L5Y983 | Da avviare | €1.000/mese — Daniel |
+| IWDA | IE00B4L5Y983 | Da avviare | €1.000/mese — Persona 1 |
 
 ### Azioni
 - **Accenture ACN** (IE00B4BNMY34) — 71 azioni RSU stock plan, valorizzate in USD
@@ -127,10 +165,10 @@ Schema da creare su Supabase SQL Editor: vedere `docs/setup_supabase_schema.sql`
 ## Contesto finanziario
 
 - **Patrimonio totale:** ~€189k
-- **Debito:** €15.000 fratello Alessandra — tranche dic 2026, mag 2027, dic 2027
+- **Debito:** €15.000 fratello Persona 2 — tranche dic 2026, mag 2027, dic 2027
 - **Mutuo:** €1.317/mese (già dedotto dagli stipendi netti)
-- **Entrate nette:** Daniel €2.600 + Alessandra €1.600 + affitto €300 = €4.500/mese
-- **Nascita Flor:** ottobre 2026 — Alessandra maternità all'80% fino maggio 2027
+- **Entrate nette:** Persona 1 €2.600 + Persona 2 €1.600 + affitto €300 = €4.500/mese
+- **Nascita Flor:** ottobre 2026 — Persona 2 maternità all'80% fino maggio 2027
 - **Asilo nido:** da maggio 2027 — €600/mese
 
 ## Roadmap — Feature da implementare
@@ -148,6 +186,9 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | T5 | Date re-parsate per ogni giorno → pre-parse una sola volta in `_posizioni_parsed` | `src/positions.py:calcola_valore_giornaliero()` |
 | T6 | `NuovaBancaAdapter` stub rimosso da `ADAPTER_REGISTRY` | `src/adapters.py` |
 | — | `timedelta` aggiunto agli import mancanti | `app.py:11` |
+| T7 | Auth fail-secure — password solo da `config_params.app_password` su Supabase, `APP_PASSWORD` rimosso da Streamlit Cloud secrets; dev protetto anche in DEMO mode | `app.py` |
+| T8 | `carica_param` fallback a raw string se valore non è JSON valido (consente inserimento manuale senza encoding) | `src/database.py:carica_param()` |
+| T9 | Nomi generici `persona1`/`persona2` in tutto il codice, `config.yaml` e schema DB; migrazione colonne Supabase | tutti i file `src/`, `config.yaml`, `setup_supabase.py`, `docs/setup_supabase_schema.sql` |
 
 ### 🔴 Alta priorità
 
@@ -187,3 +228,6 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 - **data/** — non sovrascrivere quando si aggiorna il codice
 - Le credenziali Supabase vanno in `.streamlit/secrets.toml` (gitignored) o variabili d'ambiente `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SECRET` — mai hardcodate nel codice
 - `inizializza_posizioni()` va chiamata solo una volta (inserisce le posizioni default nel DB se vuoto)
+- **Non usare nomi personali** nel codice, config.yaml o DB — usare `persona1`/`persona2`. I valori sensibili (keyword bonifici, pattern file XLS) vanno in Supabase `config_params`
+- **Non aggiungere `APP_PASSWORD`** a Streamlit Cloud secrets — la password app viene esclusivamente da Supabase `config_params.app_password`
+- **Non bypassare auth in DEMO mode** — `_DEMO` controlla i dati mostrati, non l'autenticazione

@@ -37,34 +37,31 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
 
-# ── AUTENTICAZIONE — solo in produzione, password esclusivamente da Supabase
-if not _DEMO:
-    _APP_PASSWORD = None
-    _AUTH_ERR = None
-    try:
-        from database import carica_param as _carica_param_raw
-        _APP_PASSWORD = _carica_param_raw("app_password")
-    except Exception:
-        _AUTH_ERR = "db_error"
+# ── AUTENTICAZIONE — richiesta sempre, password esclusivamente da Supabase
+_APP_PASSWORD = None
+_AUTH_ERR = None
+try:
+    from database import carica_param as _carica_param_raw
+    _APP_PASSWORD = _carica_param_raw("app_password")
+except Exception:
+    _AUTH_ERR = "db_error"
 
-    if _AUTH_ERR == "db_error":
-        st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
-        st.stop()
-    elif not _APP_PASSWORD:
-        st.error("⚠️ Password non configurata. Inserisci il valore `app_password` nella tabella `config_params` su Supabase.")
-        st.stop()
-    elif not st.session_state.get("_auth_ok"):
-        st.title("🔒 Accesso protetto")
-        pwd = st.text_input("Password", type="password")
-        if st.button("Accedi"):
-            if pwd == _APP_PASSWORD:
-                st.session_state["_auth_ok"] = True
-                st.rerun()
-            else:
-                st.error("Password errata.")
-        st.stop()
-else:
-    _APP_PASSWORD = None
+if _AUTH_ERR == "db_error":
+    st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
+    st.stop()
+elif not _APP_PASSWORD:
+    st.error("⚠️ Password non configurata. Inserisci il valore `app_password` nella tabella `config_params` su Supabase.")
+    st.stop()
+elif not st.session_state.get("_auth_ok"):
+    st.title("🔒 Accesso protetto")
+    pwd = st.text_input("Password", type="password")
+    if st.button("Accedi"):
+        if pwd == _APP_PASSWORD:
+            st.session_state["_auth_ok"] = True
+            st.rerun()
+        else:
+            st.error("Password errata.")
+    st.stop()
 
 if _DEMO:
     from demo_data import (

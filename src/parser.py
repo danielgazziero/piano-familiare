@@ -8,7 +8,50 @@ from pathlib import Path
 from typing import List
 import yaml
 
+import adapters as _adapters_mod
 from adapters import get_adapter, Transaction
+
+
+def _carica_da_db(chiave: str):
+    """Carica un valore da Supabase config_params. Ritorna None se non disponibile."""
+    try:
+        from database import carica_param
+        return carica_param(chiave)
+    except Exception:
+        return None
+
+
+def _risolvi_pattern(banca: dict, account: str) -> str | None:
+    """
+    Risolve il pattern glob per trovare i file XLS della banca.
+    Priorità:
+      1. pattern_file fisso in config.yaml (se presente)
+      2. pattern_template in config.yaml + nome_<account> da Supabase
+      3. pattern_file_<banca_id> da Supabase (chiave esplicita, fallback legacy)
+    Ritorna None con warning se non è possibile determinare il pattern.
+    """
+    # 1. Pattern fisso esplicito
+    if banca.get('pattern_file'):
+        return banca['pattern_file']
+
+    # 2. Template + nome persona da Supabase
+    tmpl = banca.get('pattern_template')
+    if tmpl and '{nome}' in tmpl:
+        nome = _carica_da_db(f"nome_{account}")
+        if nome:
+            return tmpl.replace('{nome}', str(nome))
+        print(f"  [!] Nome non configurato per '{account}'.")
+        print(f"      → Aggiungi 'nome_{account}' in Supabase config_params.")
+        return None
+
+    # 3. Chiave esplicita legacy
+    pattern = _carica_da_db(f"pattern_file_{banca['id']}")
+    if pattern:
+        return str(pattern)
+
+    print(f"  [!] Pattern non configurato per {banca['nome']}.")
+    print(f"      → Aggiungi 'nome_{account}' in Supabase config_params.")
+    return None
 
 
 def load_config(config_path: Path = None) -> dict:
@@ -31,10 +74,19 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
     banche = config.get('banche', [])
     all_transactions: List[Transaction] = []
 
+    # Inietta keyword trasferimenti interni da Supabase
+    kw = _carica_da_db('transfer_keywords')
+    if isinstance(kw, list) and kw:
+        _adapters_mod.TRANSFER_KEYWORDS = kw
+
     for banca in banche:
-        pattern = banca['pattern_file']
         bank_id = banca['formato']
-        account = banca['intestatario']
+        account = banca['intestatario']   # "persona1" | "persona2" | "comune"
+
+        # Risolvi il pattern: template in config + nome da Supabase
+        pattern = _risolvi_pattern(banca, account)
+        if not pattern:
+            continue
 
         files = list(input_dir.glob(pattern))
         if not files:
