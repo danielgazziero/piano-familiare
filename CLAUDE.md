@@ -139,37 +139,34 @@ Il codice è completamente agnostico rispetto alle persone. I valori specifici v
 
 ## Asset in portafoglio
 
+Metadati pubblici (ISIN, ticker) in `config.yaml`. Quantità, valori e quote reali esclusivamente in Supabase (`asset_catalog`, `posizioni`, `quote_fondi`).
+
 ### Fondi bancari BPER (prezzi manuali)
 
-| Fondo | ISIN | Quote |
-|---|---|---|
-| ARCA AZ EUROPA CLIMA | IT0001033486 | 16.474 |
-| ARCA AZ AMERICA CLIMA P | IT0001033502 | 23.539 |
-| EURIZON AZ EMERG P | IT0001031928 | 569.517 |
-| JPMF GLO SUST EQ ACC | LU2293888439 | 83.494 |
-| EURIZON AZ AMER P | IT0001050126 | 401.49 |
-| EURIZ AZ AREA EURO P | IT0001050225 | 358.67 |
-| EURIZON AZ INT P | IT0001080446 | 1114.2 |
+| Fondo | ISIN |
+|---|---|
+| ARCA AZ EUROPA CLIMA | IT0001033486 |
+| ARCA AZ AMERICA CLIMA P | IT0001033502 |
+| EURIZON AZ EMERG P | IT0001031928 |
+| JPMF GLO SUST EQ ACC | LU2293888439 |
+| EURIZON AZ AMER P | IT0001050126 |
+| EURIZ AZ AREA EURO P | IT0001050225 |
+| EURIZON AZ INT P | IT0001080446 |
 
 ### ETF (Directa SIM)
 
-| ETF | ISIN | Stato | PAC |
-|---|---|---|---|
-| CSPX | IE00B5BMR087 | Attivo | — |
-| ACWE | IE00B44Z5B48 | Da avviare | €200/mese — Flor |
-| IWDA | IE00B4L5Y983 | Da avviare | €1.000/mese — Persona 1 |
+| ETF | ISIN | Stato |
+|---|---|---|
+| CSPX | IE00B5BMR087 | Attivo |
+| ACWE | IE00B44Z5B48 | Da avviare |
+| IWDA | IE00B4L5Y983 | Da avviare |
 
 ### Azioni
-- **Accenture ACN** (IE00B4BNMY34) — 71 azioni RSU stock plan, valorizzate in USD
+- **Accenture ACN** (IE00B4BNMY34) — RSU stock plan, valorizzate in USD
 
 ## Contesto finanziario
 
-- **Patrimonio totale:** ~€189k
-- **Debito:** €15.000 fratello Persona 2 — tranche dic 2026, mag 2027, dic 2027
-- **Mutuo:** €1.317/mese (già dedotto dagli stipendi netti)
-- **Entrate nette:** Persona 1 €2.600 + Persona 2 €1.600 + affitto €300 = €4.500/mese
-- **Nascita Flor:** ottobre 2026 — Persona 2 maternità all'80% fino maggio 2027
-- **Asilo nido:** da maggio 2027 — €600/mese
+I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config_params` e non sono mai nel codice o nel repo.
 
 ## Roadmap — Feature da implementare
 

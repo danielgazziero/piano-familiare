@@ -114,15 +114,6 @@ _N1 = st.session_state['params'].get('nome_persona1', 'Persona 1')
 _N2 = st.session_state['params'].get('nome_persona2', 'Persona 2')
 _NF = st.session_state['params'].get('nome_figlio',   'Figlio/a')
 
-# Seeding asset_catalog (se prima esecuzione, fa prima il seeding poi carica)
-if db_ok and 'catalog_seeded' not in st.session_state:
-    from database import inizializza_asset_catalog_da_config as _seed_catalog
-    try:
-        _seed_catalog()
-    except Exception as _e:
-        st.warning(f"⚠️ Seeding catalog: {_e}")
-    st.session_state['catalog_seeded'] = True
-
 # Carica catalogo asset dal DB (fonte di verità per fondi/ETF/azioni)
 if 'asset_catalog' not in st.session_state:
     st.session_state['asset_catalog'] = get_asset_catalog() if db_ok else pd.DataFrame()

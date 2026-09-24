@@ -164,16 +164,13 @@ def esegui_backfill_avvio(config: dict, verbose: bool = False) -> dict:
     from positions import backfill_prezzi, inizializza_posizioni
     from prices import reload_asset_tickers, ASSET_TICKERS
 
-    # 1. Semina asset_catalog da config.yaml se è la prima volta
-    inizializza_asset_catalog_da_config()
-
-    # 2. Ricarica la mappa ISIN→ticker dal DB (ora popolata)
+    # 1. Ricarica la mappa ISIN→ticker dal DB
     reload_asset_tickers()
 
-    # 3. Inizializza le posizioni attive se la tabella è vuota
+    # 2. Inizializza le posizioni attive se la tabella è vuota
     inizializza_posizioni()
 
-    # 4. Backfill prezzi per tutti gli ISIN noti
+    # 3. Backfill prezzi per tutti gli ISIN noti
     isins_da_aggiornare = list(ASSET_TICKERS.keys())
     risultati = backfill_prezzi(isins_da_aggiornare, verbose=verbose)
     n_totale = sum(v for v in risultati.values() if v)
