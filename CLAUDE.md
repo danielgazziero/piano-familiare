@@ -202,31 +202,19 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | T18 | `simula_scenario_completo` crashava con `KeyError: nascita_figlio` se chiave assente — guard con `return pd.DataFrame()` | `src/simulator.py` |
 | S1 ✅ | Password plaintext in Supabase: auto-hash PBKDF2 all'avvio dell'app, prima del form login — finestra vulnerabilità azzerata | `app.py` |
 | S2 ✅ | Glob metacharacter injection da Supabase: `nome_<account>` ora sanitizzato prima della sostituzione nel pattern template | `src/parser.py` |
+| S3 ✅ | MD5 → SHA-256 per `hash_tx` in `salva_transazioni()` — elimina rischio collisioni nella deduplicazione | `src/database.py` |
+| S4 ✅ | `str(e)` → `type(e).__name__` in tutti i print di eccezione (~25 occorrenze) — evita esposizione nomi colonne DB nei log | `src/database.py`, `src/positions.py`, `src/prices.py` |
+| S5 ✅ | Timeout sessione auth 3600s — `_auth_ts` salvato al login, verificato ad ogni rerun; avviso e redirect se scaduta | `app.py` |
+| S6 ✅ | `data_ref` validata con `date.fromisoformat()` prima dell'upsert Supabase — errore visibile in UI se formato errato | `app.py` |
+| E3 ✅ | `get_azioni_snapshot()` usa solo `period="1y"` — YTD calcolato come subset con filtro indice data (era 2× chiamate yfinance) | `src/portfolio.py` |
+| E4 ✅ | `carica_posizioni()` cacheata in `session_state['pos_df_cache']` via `_get_posizioni()` — evita 2× chiamate Supabase per rerun | `app.py` |
+| E5 ✅ | Backfill prezzi: ISIN raggruppati per `data_da` → `scarica_tutti_storici()` per gruppo (era N chiamate HTTP sequenziali) | `src/positions.py` |
+| E6 ✅ | `iterrows()` → `to_dict('records')` in `salva_prezzi()` e `salva_transazioni()` | `src/positions.py`, `src/database.py` |
+| E7 ✅ | `carica_ultime_quote_fondi()`: prova RPC `get_latest_quotes()` (DISTINCT ON lato DB) con fallback query standard — SQL inline nel codice | `src/database.py` |
+| E8 ✅ | `_build_client` estratta a livello di modulo con `@cache_resource` — elimina ridefinizione di `_build()` ad ogni chiamata | `src/database.py` |
+| E9 ✅ | `get_fondi()` cacheata in `session_state['fondi_df_cache']`; svuotata con `pos_df_cache` nel bottone "🔄 Aggiorna tutto" | `app.py` |
 
-### 🔴🔴 Priorità MASSIMA — Audit sicurezza & efficienza (25/09/2026)
-
-Risultati dell'audit sistematico del codebase. S1 e S2 già risolti sopra.
-
-#### Sicurezza residua
-
-| ID | Sev | Problema | File | Fix |
-|---|---|---|---|---|
-| S3 | MEDIA | MD5 per deduplicazione transazioni — collisioni note possono causare perdita silente di transazioni | `src/database.py:319` | Sostituire `hashlib.md5` con `hashlib.sha256` nel calcolo di `hash_tx` |
-| S4 | BASSA | Exception completa (`str(e)`) stampata su stdout — espone nomi colonne DB e valori nei log Streamlit Cloud | `src/database.py`, `src/positions.py`, `src/prices.py` (~25 occorrenze) | Loggare solo `type(e).__name__` nelle eccezioni di produzione |
-| S5 | BASSA | Nessun timeout sessione auth — `_auth_ok` in session_state persiste indefinitamente | `app.py:56` | Salvare `_auth_ts = time.time()` al login; invalidare dopo 3600s ad ogni rerun |
-| S6 | BASSA | Campo `data_ref` in Gestione Asset non validato prima dell'upsert Supabase | `app.py:~1329` | `date.fromisoformat(dr)` con `st.error` + `st.stop()` se non valido |
-
-#### Efficienza residua
-
-| ID | Sev | Problema | File | Fix |
-|---|---|---|---|---|
-| E3 | ALTA | 2× chiamate yfinance per ogni azione (ytd + 1y separate) — raddoppia la latenza per ogni azione in portafoglio | `src/portfolio.py:261` | Scaricare solo `period="1y"` e filtrare il subset YTD per indice data |
-| E4 | ALTA | `carica_posizioni()` chiamata 2× per ogni rerun Streamlit (in `get_fondi` e `get_azioni`) — ~400ms di overhead evitabile | `app.py:140,177` | Caricare una volta in `session_state['pos_df_cache']`; svuotare nel bottone "🔄 Aggiorna tutto" |
-| E5 | MEDIA | Backfill prezzi: N chiamate HTTP sequenziali (una per ISIN) invece di 1 batch yfinance | `src/positions.py:360` | Raggruppare ISIN per `data_da` minima e chiamare `scarica_tutti_storici` per gruppo |
-| E6 | MEDIA | `iterrows()` in hot path scrittura prezzi e transazioni — lento su batch grandi | `src/positions.py:264`, `src/database.py:316` | Sostituire con `to_dict('records')` e vectorizzare il calcolo hash |
-| E7 | MEDIA | `carica_ultime_quote_fondi` scarica fino a 5000 righe e raggruppa in Python — crescerà nel tempo | `src/database.py:261` | Creare RPC Supabase `get_latest_quotes()` con `DISTINCT ON (isin) ORDER BY isin, data DESC` |
-| E8 | BASSA | `_cached_client` ridefinisce `_build` a ogni chiamata — pattern fragile con `@st.cache_resource` | `src/database.py:42` | Estrarre `_build_client` a livello di modulo |
-| E9 | BASSA | `get_fondi()` non cacheata — eseguita ad ogni rerun Streamlit (chiamata 3 volte per load completo) | `app.py:128` | Caching in `session_state['fondi_df_cache']`; svuotare nel bottone "🔄 Aggiorna tutto" |
+> **Nota E7**: il codice usa il fallback automaticamente finché non viene creata la funzione RPC su Supabase. SQL da eseguire una volta nel SQL Editor (documentato inline in `src/database.py:~260`).
 
 ### 🔴 Alta priorità — Feature
 
