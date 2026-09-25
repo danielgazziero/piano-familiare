@@ -46,14 +46,8 @@ _GRID    = 'rgba(255,255,255,0.07)'
 
 def _inject_theme():
     """
-    Imposta template Plotly e inietta CSS nel <head> del documento padre
-    tramite un componente iframe height=0 (nessun layout shift, nessun riavvio).
-
-    Perché il componente invece di st.markdown():
-    - st.markdown() inserisce un <div> nel flusso → layout shift ad ogni rerun
-    - Emotion inietta i suoi stili dinamicamente DOPO st.markdown(), vincendo
-    - Il JS del componente gira DOPO Emotion → il nostro <style> è l'ultimo
-      nel <head> del padre → vince sempre, senza bisogno di !important extra
+    Imposta template Plotly e inietta CSS via st.markdown (confermato che funziona).
+    Solo proprietà colore — niente padding/margin/border-width per evitare layout shift.
     """
     dark = st.session_state.get('dark_mode', False)
 
@@ -72,78 +66,45 @@ def _inject_theme():
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
-    # ── CSS: testo grezzo (senza tag <style>, lo aggiunge il JS) ────────────
+    # ── CSS via st.markdown ──────────────────────────────────────────────────
+    # Verificato via browser: st.markdown() con <style> in body si applica globalmente.
+    # !important batte le regole Emotion (che non usano !important).
+    # Solo proprietà colore → nessun layout shift (padding/margin/border-width esclusi).
     if dark:
-        css_text = f"""
-body {{ background-color:{_BG};color:{_TEXT};color-scheme:dark; }}
-[data-testid="stApp"] {{ background:{_BG};color:{_TEXT};color-scheme:dark; }}
-[data-testid="stAppViewContainer"],[data-testid="stMainBlockContainer"],
-section.main,.main .block-container {{ background-color:{_BG}; }}
-[data-testid="stHeader"] {{ background:{_BG};border-bottom:1px solid {_BORDER}; }}
-[data-testid="stSidebar"],
-section[data-testid="stSidebar"] > div:first-child {{
-    background-color:{_BG2};color:{_TEXT};
-}}
-[data-testid="metric-container"] {{
-    background-color:{_BG2};border-radius:8px;padding:8px;
-}}
-[data-testid="stMetricValue"] {{ color:{_TEXT}; }}
-[data-testid="stMetricLabel"] {{ color:rgba(250,250,250,.65); }}
-[data-testid="stMetricDelta"] {{ color:#1baf7a; }}
-[data-testid="stExpander"] {{ background-color:{_BG2};border-color:{_BORDER}; }}
-input,textarea {{ background-color:{_BG2};color:{_TEXT};border-color:{_BORDER}; }}
-[data-baseweb="select"]>div {{
-    background-color:{_BG2};border-color:{_BORDER};color:{_TEXT};
-}}
-[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"] {{
-    background-color:{_BG2};border-color:{_BORDER};color:{_TEXT};
-}}
-[role="option"]:hover,[data-baseweb="option"]:hover {{ background-color:#3a3b45; }}
-[data-baseweb="tab-list"] {{ background-color:{_BG}; }}
-[data-baseweb="tab"] {{ color:rgba(250,250,250,.6); }}
-[aria-selected="true"][data-baseweb="tab"] {{
-    color:{_TEXT};border-bottom-color:#1F5C8B;
-}}
-.stButton>button {{
-    background-color:{_BG2};color:{_TEXT};border-color:{_BORDER};
-}}
-.stButton>button:hover {{ background-color:#3a3b45; }}
-[data-testid="stDataFrame"] {{ background-color:{_BG2}; }}
-small,[data-testid="stCaptionContainer"] {{ color:rgba(250,250,250,.5); }}
-[data-testid="stAlert"] {{
-    background-color:{_BG2};border-color:{_BORDER};color:{_TEXT};
-}}
-hr {{ border-color:{_BORDER}; }}
-.js-plotly-plot .plotly .bg {{ fill:{_BG2}; }}
-"""
+        css = f"""<style>
+body {{background-color:{_BG}!important;color:{_TEXT}!important;color-scheme:dark}}
+[data-testid="stApp"] {{background:{_BG}!important;color:{_TEXT}!important;color-scheme:dark}}
+[data-testid="stAppViewContainer"] {{background-color:{_BG}!important}}
+[data-testid="stHeader"] {{background-color:{_BG}!important}}
+[data-testid="stSidebar"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
+[data-testid="stSidebar"] * {{color:{_TEXT}!important}}
+[data-testid="stMetricValue"] {{color:{_TEXT}!important}}
+[data-testid="stMetricLabel"] {{color:rgba(250,250,250,.65)!important}}
+[data-testid="stMetricDelta"] {{color:#1baf7a!important}}
+[data-testid="metric-container"] {{background-color:{_BG2}!important}}
+[data-testid="stExpander"] {{background-color:{_BG2}!important}}
+[data-testid="stAlert"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
+[data-testid="stDataFrame"] {{background-color:{_BG2}!important}}
+input,textarea {{background-color:{_BG2}!important;color:{_TEXT}!important}}
+[data-baseweb="select"]>div {{background-color:{_BG2}!important;color:{_TEXT}!important}}
+[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
+[data-baseweb="tab-list"] {{background-color:{_BG}!important}}
+[data-baseweb="tab"] {{color:rgba(250,250,250,.6)!important}}
+[aria-selected="true"][data-baseweb="tab"] {{color:{_TEXT}!important}}
+.stButton>button {{background-color:{_BG2}!important;color:{_TEXT}!important}}
+small,[data-testid="stCaptionContainer"] {{color:rgba(250,250,250,.5)!important}}
+hr {{border-color:{_BORDER}!important}}
+.js-plotly-plot .plotly .bg {{fill:{_BG2}!important}}
+</style>"""
     else:
-        css_text = """
-body { color-scheme:light; }
-[data-testid="stApp"] { background:#FFFFFF;color:#31333F; }
-[data-testid="stSidebar"],
-section[data-testid="stSidebar"] > div:first-child {
-    background-color:#F0F2F6;color:#31333F;
-}
-[data-testid="metric-container"] {
-    background-color:#F0F2F6;border-radius:8px;padding:8px;
-}
-"""
-
-    # Inietta nel <head> del documento padre tramite iframe-component height=0.
-    # - window.parent è accessibile perché stesso origin (localhost)
-    # - id fisso '_app_th' → rimpiazzato, non duplicato, ad ogni rerun
-    # - height=0 → nessun layout shift
-    css_js = css_text.replace('`', r'\`').replace('${', r'\${')
-    st.components.v1.html(f"""<script>
-(function(){{
-  try {{
-    var p = window.parent.document;
-    var el = p.getElementById('_app_th');
-    if(!el){{ el = p.createElement('style'); el.id='_app_th'; p.head.appendChild(el); }}
-    el.textContent = `{css_js}`;
-  }} catch(e) {{}}
-}})();
-</script>""", height=0)
+        css = """<style>
+body {background-color:#FFFFFF!important;color:#31333F!important;color-scheme:light}
+[data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important}
+[data-testid="stSidebar"] {background-color:#F0F2F6!important;color:#31333F!important}
+[data-testid="stSidebar"] * {color:#31333F!important}
+[data-testid="metric-container"] {background-color:#F0F2F6!important}
+</style>"""
+    st.markdown(css, unsafe_allow_html=True)
 
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
