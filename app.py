@@ -42,15 +42,20 @@ _DEMO = bool(st.secrets.get("DEMO_MODE", False))
 # ── AUTENTICAZIONE — richiesta sempre, password esclusivamente da Supabase
 _APP_PASSWORD = None
 _AUTH_ERR = None
-try:
-    from database import carica_param_o_errore as _carica_pwd
-    _APP_PASSWORD = _carica_pwd("app_password")
-    if _APP_PASSWORD and not _APP_PASSWORD.startswith('pbkdf2$'):
-        from database import hash_password as _hp, salva_param as _sp_startup
-        _APP_PASSWORD = _hp(_APP_PASSWORD)
-        _sp_startup("app_password", _APP_PASSWORD)
-except Exception:
-    _AUTH_ERR = "db_error"
+if '_app_pwd_cache' in st.session_state:
+    _APP_PASSWORD = st.session_state['_app_pwd_cache']
+else:
+    try:
+        from database import carica_param_o_errore as _carica_pwd
+        _APP_PASSWORD = _carica_pwd("app_password")
+        if _APP_PASSWORD and not _APP_PASSWORD.startswith('pbkdf2$'):
+            from database import hash_password as _hp, salva_param as _sp_startup
+            _APP_PASSWORD = _hp(_APP_PASSWORD)
+            _sp_startup("app_password", _APP_PASSWORD)
+        if _APP_PASSWORD:
+            st.session_state['_app_pwd_cache'] = _APP_PASSWORD
+    except Exception:
+        _AUTH_ERR = "db_error"
 
 if _AUTH_ERR == "db_error":
     st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
@@ -296,7 +301,9 @@ with st.sidebar:
                     st.warning("In DEMO mode il cambio password è disabilitato.")
                 else:
                     from database import salva_param as _salva_param_raw, hash_password as _hash_pwd_change
-                    _salva_param_raw("app_password", _hash_pwd_change(new_pwd1))
+                    _new_hash = _hash_pwd_change(new_pwd1)
+                    _salva_param_raw("app_password", _new_hash)
+                    st.session_state['_app_pwd_cache'] = _new_hash
                     st.success("Password aggiornata! Al prossimo login usa la nuova.")
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
@@ -305,7 +312,7 @@ with st.sidebar:
         st.cache_data.clear()
         for k in ['params','quote_map','xls_importati','saved_today',
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
-                  'pos_df_cache','fondi_df_cache']:
+                  'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     if st.session_state.get('nuove_tx'):

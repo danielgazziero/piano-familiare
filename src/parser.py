@@ -110,7 +110,7 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
                 all_transactions.extend(txns)
                 print(f"      → {len(txns)} transazioni caricate")
             except Exception as e:
-                print(f"  [!] Errore parsing file {i} ({banca['nome']}): {e}")
+                print(f"  [!] Errore parsing file {i} ({banca['nome']}): {type(e).__name__}")
 
     if not all_transactions:
         print("  [!] Nessuna transazione trovata. Controlla i file in data/input/")

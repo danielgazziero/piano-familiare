@@ -359,6 +359,7 @@ def carica_transazioni(mesi: int = 12) -> pd.DataFrame:
                .select('data, importo, descrizione, categoria, conto')
                .gte('data', data_inizio)
                .order('data', desc=True)
+               .limit(5000)
                .execute())
         if not res.data:
             return pd.DataFrame()

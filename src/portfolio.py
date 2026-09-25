@@ -25,7 +25,7 @@ def _batch_download(tickers: tuple, period: str) -> pd.DataFrame:
     try:
         return yf.download(list(tickers), period=period, auto_adjust=True, progress=False)
     except Exception as e:
-        print(f"  [!] Errore batch download ETF: {e}")
+        print(f"  [!] Errore batch download ETF: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -50,7 +50,7 @@ def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
             return pd.DataFrame()
         return hist[['Close']].rename(columns={'Close': 'price'})
     except Exception as e:
-        print(f"  [!] Errore download {ticker}: {e}")
+        print(f"  [!] Errore download {ticker}: {type(e).__name__}")
         return pd.DataFrame()
 
 

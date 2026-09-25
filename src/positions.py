@@ -522,6 +522,7 @@ def calcola_portafoglio_storico(isins: List[str] = None,
                     .gte('data', data_inizio.isoformat())
                     .lte('data', data_fine.isoformat())
                     .order('data')
+                    .limit(50000)
                     .execute())
         prezzi_raw = res_prez.data or []
     except Exception:
