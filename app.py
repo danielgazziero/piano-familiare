@@ -72,24 +72,15 @@ def _init_plotly_template():
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
 
-@st.fragment
-def _theme_toggle_fragment():
+def _inject_css():
     """
-    Fragment isolato: solo questo si aggiorna al cambio tema, la pagina principale
-    resta ferma (nessun layout shift). Inietta CSS globale + toggle.
+    Inietta CSS solo per light mode (dark è nativo via config.toml base=dark).
+    Chiamata nel main script: session_state è già aggiornato prima del rerun automatico,
+    quindi legge il valore corretto al primo passaggio senza st.rerun() aggiuntivo.
     """
-    dark = st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
-
-    # CSS sempre iniettato: copre entrambe le modalità in regole separate.
-    # Il browser applica solo le regole che matchano lo stato corrente.
-    if dark:
-        # Dark mode: solo override per i grafici Plotly (il tema nativo gestisce il resto)
-        css = f"""<style>
-.js-plotly-plot .plotly .bg {{fill:{_BG3}!important}}
-</style>"""
-    else:
-        # Light mode: override completo del tema dark nativo
-        css = """<style>
+    dark = st.session_state.get('_dark_mode_toggle', True)
+    if not dark:
+        st.markdown("""<style>
 body {background-color:#FFFFFF!important;color:#31333F!important}
 [data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important}
 [data-testid="stAppViewContainer"] {background-color:#FFFFFF!important}
@@ -114,9 +105,7 @@ input,textarea {background-color:#FFFFFF!important;color:#31333F!important}
 .stButton>button {background-color:#F0F2F6!important;color:#31333F!important}
 small,[data-testid="stCaptionContainer"] {color:rgba(49,51,63,.5)!important}
 hr {border-color:rgba(49,51,63,0.2)!important}
-.js-plotly-plot .plotly .bg {fill:white!important}
-</style>"""
-    st.markdown(css, unsafe_allow_html=True)
+</style>""", unsafe_allow_html=True)
 
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
@@ -186,6 +175,7 @@ if _DEMO:
     )
 
 _init_plotly_template()
+_inject_css()
 
 BASE_DIR  = Path(__file__).parent
 INPUT_DIR = BASE_DIR / 'data' / 'input'
@@ -399,7 +389,7 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
             st.session_state.pop(k, None)
         st.rerun()
-    _theme_toggle_fragment()
+    st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
     if st.session_state.get('nuove_tx'):
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
     if st.session_state.get('backfill_nuovi'):
