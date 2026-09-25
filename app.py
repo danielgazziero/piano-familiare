@@ -1214,7 +1214,15 @@ elif sezione == _SEZIONE_FIGLIO:
     df_costi = simula_costi_figlio(config, eta_max=22)
 
     if df_costi.empty:
-        st.info("Imposta la data di nascita in Supabase (`config_params` → chiave `nascita_figlio`, valore `\"YYYY-MM-DD\"`) per visualizzare la timeline dei costi.")
+        with st.expander("📅 Imposta data di nascita", expanded=True):
+            nascita_input = st.date_input("Data di nascita", value=None, min_value=date(2000,1,1), max_value=date.today())
+            if st.button("💾 Salva") and nascita_input:
+                from app_state import salva_param as _sp
+                _sp('nascita_figlio', nascita_input.strftime('%Y-%m-%d'))
+                config.setdefault('date', {})['nascita_figlio'] = nascita_input.strftime('%Y-%m-%d')
+                df_costi = simula_costi_figlio(config, eta_max=22)
+                st.success("Data salvata.")
+                st.rerun()
 
     fig_f = go.Figure()
     anni_arr = sc_figlio['base']['anno'].tolist()
