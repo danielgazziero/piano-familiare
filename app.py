@@ -45,12 +45,16 @@ _BORDER  = 'rgba(255,255,255,0.12)'
 _GRID    = 'rgba(255,255,255,0.07)'
 
 def _plotly_chart(fig, **kwargs):
-    """Wrapper st.plotly_chart: forza bgcolor della figura in base al tema corrente."""
+    """Wrapper st.plotly_chart: forza bgcolor e bypassa il tema Streamlit.
+    theme=None evita che Streamlit sovrascriva title position, modebar e colori
+    con il suo sistema di theming, lasciando il pieno controllo al nostro layout.
+    """
     dark = st.session_state.get('_dark_mode_toggle', True)
     if dark:
         fig.update_layout(paper_bgcolor=_BG3, plot_bgcolor=_BG2, font_color=_TEXT)
     else:
         fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', font_color='#31333F')
+    kwargs['theme'] = None
     st.plotly_chart(fig, **kwargs)
 
 
