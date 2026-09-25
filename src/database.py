@@ -203,6 +203,7 @@ def carica_patrimonio_log(giorni: int = 365) -> pd.DataFrame:
                .select('*')
                .gte('data', data_inizio)
                .order('data')
+               .limit(giorni + 10)
                .execute())
         if not res.data:
             return pd.DataFrame()

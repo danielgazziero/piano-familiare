@@ -214,6 +214,7 @@ def storico_posizioni(isin: str) -> pd.DataFrame:
                .select('*')
                .eq('isin', isin)
                .order('data_inizio')
+               .limit(100)
                .execute())
         if not res.data:
             return pd.DataFrame()
@@ -578,7 +579,7 @@ def eventi_portafoglio(data_inizio: date = None, data_fine: date = None) -> pd.D
             q = q.gte('data_inizio', data_inizio.isoformat())
         if data_fine:
             q = q.lte('data_inizio', data_fine.isoformat())
-        res = q.execute()
+        res = q.limit(500).execute()
         if not res.data:
             return pd.DataFrame()
 
