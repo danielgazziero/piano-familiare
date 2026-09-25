@@ -299,6 +299,7 @@ def carica_prezzi_db(isin: str, data_inizio: date,
                .gte('data', data_inizio.isoformat())
                .lte('data', data_fine.isoformat())
                .order('data')
+               .limit(3000)
                .execute())
         if not res.data:
             return pd.DataFrame()

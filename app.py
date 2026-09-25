@@ -218,7 +218,7 @@ if not st.session_state['xls_importati'] and db_ok:
                 st.session_state['nuove_tx'] = n_nuove
         st.session_state['xls_importati'] = True
     except Exception as e:
-        st.warning(f"⚠️ Errore import XLS: {e}")
+        st.warning(f"⚠️ Errore import XLS: {type(e).__name__}")
         # Non impostare il flag: consente retry al prossimo caricamento
 
 # Carica snapshot patrimonio corrente per auto-save
