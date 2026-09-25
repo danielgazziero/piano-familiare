@@ -1211,6 +1211,16 @@ elif sezione == _SEZIONE_FIGLIO:
     sc_figlio = simula_pac_scenari(pac_f, 18, rend_base=rf/100,
                                     rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
                                     rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
+    # Prova a leggere nascita_figlio da Supabase (fonte di verità) e iniettalo nel config
+    if not config.get('date', {}).get('nascita_figlio'):
+        try:
+            from database import carica_param as _cp
+            _nb = _cp('nascita_figlio')
+            if _nb:
+                config.setdefault('date', {})['nascita_figlio'] = str(_nb)
+        except Exception:
+            pass
+
     df_costi = simula_costi_figlio(config, eta_max=22)
 
     if df_costi.empty:

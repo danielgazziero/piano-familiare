@@ -35,7 +35,7 @@ entrate:
   mutuo_mensile: 0
 
 date:
-  nascita_figlio: "2026-10-01"
+  nascita_figlio: ""
   inizio_maternita: "2026-10-01"
   fine_maternita: "2027-05-01"
   inizio_asilo_nido: "2027-05-01"
