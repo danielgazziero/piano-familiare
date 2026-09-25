@@ -225,6 +225,13 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
 | E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
 
+### ✅ Fix tecnici completati (25/09/2026 — round 3)
+
+| # | Fix | File |
+|---|---|---|
+| S8 ✅ | `st.warning(f"... {e}")` → `{type(e).__name__}` per errori import XLS — esposto nell'UI a utenti autenticati | `app.py:221` |
+| E13 ✅ | `.limit(3000)` aggiunto a `carica_prezzi_db()` — fondi con storico dal 2020 superano il limite Supabase 1000 nel percorso "Per asset" | `src/positions.py` |
+
 ### 🔴 Alta priorità — Feature
 
 | # | Feature | Moduli coinvolti | Note |
