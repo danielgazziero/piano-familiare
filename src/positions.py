@@ -331,7 +331,7 @@ def backfill_prezzi(isins: List[str], verbose: bool = True) -> Dict[str, int]:
     # Carica tutti i checkpoint in una sola query invece di N query separate
     try:
         client = get_client()
-        res = client.table('backfill_stato').select('isin, ultima_data').execute()
+        res = client.table('backfill_stato').select('isin, ultima_data').limit(200).execute()
         checkpoint_map = {
             r['isin']: date.fromisoformat(r['ultima_data']) for r in (res.data or [])
         }
@@ -401,6 +401,7 @@ def calcola_valore_giornaliero(isin: str, data_inizio: date,
                .select('quantita, data_inizio, data_fine')
                .eq('isin', isin)
                .order('data_inizio')
+               .limit(500)
                .execute())
         posizioni_storico = res.data if res.data else []
     except Exception:
@@ -510,6 +511,7 @@ def calcola_portafoglio_storico(isins: List[str] = None,
                    .select('isin, quantita, data_inizio, data_fine')
                    .in_('isin', isins)
                    .order('data_inizio')
+                   .limit(500)
                    .execute())
         posizioni_raw = res_pos.data or []
     except Exception:

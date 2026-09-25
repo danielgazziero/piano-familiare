@@ -225,6 +225,16 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
 | E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
 
+### ✅ Fix tecnici completati (25/09/2026 — round 4)
+
+| # | Fix | File |
+|---|---|---|
+| E17 ✅ | `.limit(200)` a `carica_asset_catalog()` | `src/database.py` |
+| E18 ✅ | `.limit(giorni+5)` a `storico_quote_fondo()` | `src/database.py` |
+| E19 ✅ | `.limit(500)` a `calcola_valore_giornaliero()` — query `posizioni` per ISIN | `src/positions.py` |
+| E20 ✅ | `.limit(500)` a `calcola_portafoglio_storico()` — query `posizioni` bulk | `src/positions.py` |
+| E21 ✅ | `.limit(200)` a `backfill_prezzi()` — query `backfill_stato` | `src/positions.py` |
+
 ### ✅ Fix tecnici completati (25/09/2026 — round 3)
 
 | # | Fix | File |

@@ -302,6 +302,7 @@ def storico_quote_fondo(isin: str, giorni: int = 180) -> pd.DataFrame:
                .eq('isin', isin)
                .gte('data', data_inizio)
                .order('data')
+               .limit(giorni + 5)
                .execute())
         if not res.data:
             return pd.DataFrame()
@@ -512,6 +513,7 @@ def carica_asset_catalog() -> pd.DataFrame:
                .select('*')
                .order('tipo')
                .order('nome')
+               .limit(200)
                .execute())
         if not res.data:
             return pd.DataFrame()
