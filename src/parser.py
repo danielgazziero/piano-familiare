@@ -39,7 +39,11 @@ def _risolvi_pattern(banca: dict, account: str) -> str | None:
     if tmpl and '{nome}' in tmpl:
         nome = _carica_da_db(f"nome_{account}")
         if nome:
-            return tmpl.replace('{nome}', str(nome))
+            nome = str(nome)
+            if any(c in nome for c in ['*', '?', '[', ']', '/', '\\', '..']):
+                print(f"  [!] nome_{account} contiene caratteri non sicuri, ignorato: {nome!r}")
+                return None
+            return tmpl.replace('{nome}', nome)
         print(f"  [!] Nome non configurato per '{account}'.")
         print(f"      → Aggiungi 'nome_{account}' in Supabase config_params.")
         return None
@@ -88,7 +92,7 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
         if not pattern:
             continue
 
-        # Sanifica il pattern: impedisce path traversal da valori Supabase controllati
+        # Sanifica il pattern: impedisce path traversal e glob injection da valori Supabase
         if '..' in pattern or pattern.startswith('/') or pattern.startswith('\\'):
             print(f"  [!] Pattern non sicuro ignorato per {banca['nome']}: {pattern!r}")
             continue

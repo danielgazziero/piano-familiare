@@ -44,6 +44,10 @@ _AUTH_ERR = None
 try:
     from database import carica_param_o_errore as _carica_pwd
     _APP_PASSWORD = _carica_pwd("app_password")
+    if _APP_PASSWORD and not _APP_PASSWORD.startswith('pbkdf2$'):
+        from database import hash_password as _hp, salva_param as _sp_startup
+        _APP_PASSWORD = _hp(_APP_PASSWORD)
+        _sp_startup("app_password", _APP_PASSWORD)
 except Exception:
     _AUTH_ERR = "db_error"
 
