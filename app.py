@@ -44,14 +44,37 @@ _TEXT    = '#FAFAFA'
 _BORDER  = 'rgba(255,255,255,0.12)'
 _GRID    = 'rgba(255,255,255,0.07)'
 
-def _inject_theme():
+def _plotly_chart(fig, _title=None, **kwargs):
+    """Wrapper st.plotly_chart: bgcolor + titolo come elemento Streamlit separato.
+    Passa _title esplicitamente per garantire che il titolo sia sempre quello corrente;
+    se non passato, lo legge dal figure via to_dict() come fallback.
     """
-    Imposta template Plotly e inietta CSS via st.markdown (confermato che funziona).
-    Solo proprietà colore — niente padding/margin/border-width per evitare layout shift.
-    """
-    dark = st.session_state.get('dark_mode', False)
+    dark = st.session_state.get('_dark_mode_toggle', True)
+    if dark:
+        fig.update_layout(paper_bgcolor=_BG3, plot_bgcolor=_BG2, font_color=_TEXT)
+    else:
+        fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', font_color='#31333F')
 
-    # ── Plotly template ──────────────────────────────────────────────────────
+    if _title is None:
+        _layout = fig.to_dict().get('layout', {})
+        _t = _layout.get('title', {})
+        _title = (_t.get('text') if isinstance(_t, dict) else str(_t or '')) or None
+
+    if _title:
+        fig.update_layout(title_text='', margin=dict(t=20))
+        st.markdown(
+            f"<div style='text-align:center;font-weight:600;font-size:1em;"
+            f"padding-bottom:2px'>{_title}</div>",
+            unsafe_allow_html=True,
+        )
+
+    kwargs['theme'] = None
+    st.plotly_chart(fig, **kwargs)
+
+
+def _init_plotly_template():
+    """Imposta il template Plotly globale in base al tema corrente."""
+    dark = st.session_state.get('_dark_mode_toggle', True)
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
         paper_bgcolor=_BG3, plot_bgcolor=_BG2,
         font=dict(color=_TEXT, size=12),
@@ -66,45 +89,56 @@ def _inject_theme():
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
-    # ── CSS via st.markdown ──────────────────────────────────────────────────
-    # Verificato via browser: st.markdown() con <style> in body si applica globalmente.
-    # !important batte le regole Emotion (che non usano !important).
-    # Solo proprietà colore → nessun layout shift (padding/margin/border-width esclusi).
-    if dark:
-        css = f"""<style>
-body {{background-color:{_BG}!important;color:{_TEXT}!important;color-scheme:dark}}
-[data-testid="stApp"] {{background:{_BG}!important;color:{_TEXT}!important;color-scheme:dark}}
-[data-testid="stAppViewContainer"] {{background-color:{_BG}!important}}
-[data-testid="stHeader"] {{background-color:{_BG}!important}}
-[data-testid="stSidebar"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-testid="stSidebar"] * {{color:{_TEXT}!important}}
-[data-testid="stMetricValue"] {{color:{_TEXT}!important}}
-[data-testid="stMetricLabel"] {{color:rgba(250,250,250,.65)!important}}
-[data-testid="stMetricDelta"] {{color:#1baf7a!important}}
-[data-testid="metric-container"] {{background-color:{_BG2}!important}}
-[data-testid="stExpander"] {{background-color:{_BG2}!important}}
-[data-testid="stAlert"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-testid="stDataFrame"] {{background-color:{_BG2}!important}}
-input,textarea {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-baseweb="select"]>div {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-baseweb="tab-list"] {{background-color:{_BG}!important}}
-[data-baseweb="tab"] {{color:rgba(250,250,250,.6)!important}}
-[aria-selected="true"][data-baseweb="tab"] {{color:{_TEXT}!important}}
-.stButton>button {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-small,[data-testid="stCaptionContainer"] {{color:rgba(250,250,250,.5)!important}}
-hr {{border-color:{_BORDER}!important}}
-.js-plotly-plot .plotly .bg {{fill:{_BG2}!important}}
-</style>"""
-    else:
-        css = """<style>
-body {background-color:#FFFFFF!important;color:#31333F!important;color-scheme:light}
+
+def _inject_css():
+    """
+    Inietta CSS di base sempre (scrollbar stabile, transizioni smooth),
+    più overrides light mode quando il toggle è disattivato.
+    """
+    dark = st.session_state.get('_dark_mode_toggle', True)
+
+    # Sempre: scrollbar-gutter:stable evita lo spostamento del contenuto quando
+    # compare/scompare la scrollbar al cambio di tema o al caricamento di nuovi elementi.
+    # Le transizioni rendono il cambio colore meno brusco.
+    st.markdown("""<style>
+html { scrollbar-gutter: stable; overflow-y: scroll; }
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+[data-testid="stSidebar"],
+[data-testid="stHeader"] {
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+</style>""", unsafe_allow_html=True)
+
+    if not dark:
+        st.markdown("""<style>
+body {background-color:#FFFFFF!important;color:#31333F!important}
 [data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important}
+[data-testid="stAppViewContainer"] {background-color:#FFFFFF!important}
+[data-testid="stHeader"] {background-color:#FFFFFF!important}
+[data-testid="stMain"] {background-color:#FFFFFF!important}
+[data-testid="stMainBlockContainer"] {background-color:#FFFFFF!important}
 [data-testid="stSidebar"] {background-color:#F0F2F6!important;color:#31333F!important}
 [data-testid="stSidebar"] * {color:#31333F!important}
+[data-testid="stMetricValue"] {color:#31333F!important}
+[data-testid="stMetricLabel"] {color:rgba(49,51,63,.65)!important}
+[data-testid="stMetricDelta"] {color:#1F5C8B!important}
 [data-testid="metric-container"] {background-color:#F0F2F6!important}
-</style>"""
-    st.markdown(css, unsafe_allow_html=True)
+[data-testid="stExpander"] {background-color:#F0F2F6!important}
+[data-testid="stAlert"] {background-color:#F0F2F6!important;color:#31333F!important}
+[data-testid="stDataFrame"] {background-color:#FFFFFF!important}
+input,textarea {background-color:#FFFFFF!important;color:#31333F!important}
+[data-baseweb="select"]>div {background-color:#FFFFFF!important;color:#31333F!important}
+[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"] {background-color:#FFFFFF!important;color:#31333F!important}
+[data-baseweb="tab-list"] {background-color:#FFFFFF!important}
+[data-baseweb="tab"] {color:rgba(49,51,63,.6)!important}
+[aria-selected="true"][data-baseweb="tab"] {color:#31333F!important}
+.stButton>button {background-color:#F0F2F6!important;color:#31333F!important}
+small,[data-testid="stCaptionContainer"] {color:rgba(49,51,63,.5)!important}
+hr {border-color:rgba(49,51,63,0.2)!important}
+</style>""", unsafe_allow_html=True)
 
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
@@ -173,7 +207,8 @@ if _DEMO:
         demo_get_eventi_portafoglio        as get_eventi_portafoglio,
     )
 
-_inject_theme()
+_init_plotly_template()
+_inject_css()
 
 BASE_DIR  = Path(__file__).parent
 INPUT_DIR = BASE_DIR / 'data' / 'input'
@@ -387,14 +422,7 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
             st.session_state.pop(k, None)
         st.rerun()
-    _dark_toggle = st.toggle(
-        "🌙 Dark mode",
-        value=st.session_state.get('dark_mode', False),
-        key="_dark_mode_toggle",
-    )
-    if _dark_toggle != st.session_state.get('dark_mode', False):
-        st.session_state['dark_mode'] = _dark_toggle
-        st.rerun()
+    st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
     if st.session_state.get('nuove_tx'):
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
     if st.session_state.get('backfill_nuovi'):
@@ -462,7 +490,7 @@ if sezione == "🏠 Stato di famiglia":
         hole=0.45, marker_colors=list(COLORS.values())[:6]
     ))
     fig_pat.update_layout(title="Composizione patrimonio", height=340, margin=dict(t=40,b=0,l=0,r=0))
-    st.plotly_chart(fig_pat, use_container_width=True, theme=None)
+    _plotly_chart(fig_pat, use_container_width=True, theme=None)
 
     # Storico patrimonio da Supabase
     log_df = get_storico_patrimonio(giorni=730)
@@ -488,7 +516,7 @@ if sezione == "🏠 Stato di famiglia":
             ))
         fig_log.update_layout(height=250, xaxis_title="", yaxis_title="€",
                                margin=dict(t=20,b=0), legend=dict(orientation="h",y=1.08))
-        st.plotly_chart(fig_log, use_container_width=True, theme=None)
+        _plotly_chart(fig_log, use_container_width=True, theme=None)
 
         # Delta rispetto a inizio periodo
         if len(log_filt) >= 2:
@@ -517,9 +545,8 @@ if sezione == "🏠 Stato di famiglia":
         cat_df = mese_df[mese_df['amount']<0].groupby('category')['expense'].sum().sort_values()
         fig_cat = go.Figure(go.Bar(x=cat_df.values, y=cat_df.index,
                                     orientation='h', marker_color=COLORS['blu']))
-        fig_cat.update_layout(title=f"Uscite per categoria — {mese_sel}",
-                               height=max(280,len(cat_df)*28), margin=dict(t=40,b=0,l=0,r=0))
-        st.plotly_chart(fig_cat, use_container_width=True, theme=None)
+        fig_cat.update_layout(height=max(280,len(cat_df)*28), margin=dict(t=40,b=0,l=0,r=0))
+        _plotly_chart(fig_cat, _title=f"Uscite per categoria — {mese_sel}", use_container_width=True, theme=None)
         with st.expander("Dettaglio transazioni"):
             show = mese_df[['date','account','description','amount','category']].copy()
             show['date']   = show['date'].dt.strftime('%d/%m/%Y')
@@ -603,7 +630,7 @@ elif sezione == "📉 Portafoglio storico":
                 height=380, xaxis_title="", yaxis_title="€",
                 margin=dict(t=40,b=0)
             )
-            st.plotly_chart(fig_tot, use_container_width=True, theme=None)
+            _plotly_chart(fig_tot, use_container_width=True, theme=None)
 
             # Grafico composizione (area stacked)
             st.subheader("Composizione nel tempo")
@@ -630,7 +657,7 @@ elif sezione == "📉 Portafoglio storico":
                 legend=dict(orientation="h", y=1.08),
                 margin=dict(t=60,b=0)
             )
-            st.plotly_chart(fig_comp, use_container_width=True, theme=None)
+            _plotly_chart(fig_comp, use_container_width=True, theme=None)
 
     # ── Vista per asset ───────────────────────────────────────
     else:
@@ -679,7 +706,6 @@ elif sezione == "📉 Portafoglio storico":
                     yaxis='y2'
                 ))
                 fig_asset.update_layout(
-                    title=f"{asset_sel} — prezzo quota e valore posizione",
                     height=380,
                     yaxis=dict(title="Prezzo quota €", side='left'),
                     yaxis2=dict(title="Valore € posizione",
@@ -687,7 +713,7 @@ elif sezione == "📉 Portafoglio storico":
                     legend=dict(orientation="h", y=1.08),
                     margin=dict(t=60,b=0)
                 )
-                st.plotly_chart(fig_asset, use_container_width=True, theme=None)
+                _plotly_chart(fig_asset, _title=f"{asset_sel} — prezzo quota e valore posizione", use_container_width=True, theme=None)
 
                 # Storico quantità (variazioni)
                 st.subheader("Storico variazioni quantità")
@@ -757,9 +783,8 @@ elif sezione == "📈 ETF & mercato":
                 fig.add_trace(go.Scatter(x=h.index, y=h['indexed'].round(2),
                                           name=nome, line=dict(color=pal[i%len(pal)],width=2)))
         fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
-        fig.update_layout(title=f"Performance relativa (base 100) · {periodo}",
-                           height=400, legend=dict(orientation="h",y=1.08))
-        st.plotly_chart(fig, use_container_width=True, theme=None)
+        fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
+        _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}", use_container_width=True, theme=None)
 
     # ── SIMULATORE PAC ETF — tabella editabile ────────────────
     st.subheader("Simulatore PAC — portafoglio ETF personalizzabile")
@@ -876,11 +901,10 @@ elif sezione == "📈 ETF & mercato":
         vf_best = sc_etf['best']['valore'].iloc[-1]
 
         fig_etf_sc.update_layout(
-            title=f"Portafoglio ETF — €{tot_pac:,.0f}/mese · partenza €{tot_ini:,.0f} · {anni_pac} anni",
             height=420, xaxis_title="Anni", yaxis_title="€",
             legend=dict(orientation="h", y=1.08)
         )
-        st.plotly_chart(fig_etf_sc, use_container_width=True, theme=None)
+        _plotly_chart(fig_etf_sc, _title=f"Portafoglio ETF — €{tot_pac:,.0f}/mese · partenza €{tot_ini:,.0f} · {anni_pac} anni", use_container_width=True, theme=None)
 
         c1,c2,c3,c4 = st.columns(4)
         c1.metric("PAC totale/mese", f"€ {tot_pac:,.0f}")
@@ -909,7 +933,7 @@ elif sezione == "📈 ETF & mercato":
         fig_c.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
         fig_c.update_layout(title="Confronto (base 100)", height=320,
                              legend=dict(orientation="h",y=1.08))
-        st.plotly_chart(fig_c, use_container_width=True, theme=None)
+        _plotly_chart(fig_c, use_container_width=True, theme=None)
         st.info("💡 MWRD = alternativa Amundi a IWDA (stesso indice, TER 0.12%). "
                 "EMAE = satellite emergenti asiatici — interessante al 10-15% del PAC "
                 "se vuoi esposizione separata dall'ACWI del figlio/a.")
@@ -1002,7 +1026,7 @@ elif sezione == "🏦 Fondi bancari":
                                          name='Quota €', line=dict(color=COLORS['blu'],width=2)))
             fig_st.update_layout(height=200, xaxis_title="", yaxis_title="Quota €",
                                   margin=dict(t=20,b=0))
-            st.plotly_chart(fig_st, use_container_width=True, theme=None)
+            _plotly_chart(fig_st, use_container_width=True, theme=None)
 
     if fondo_sel:
         row_f = df_attivi_f[df_attivi_f['Fondo'] == fondo_sel].iloc[0]
@@ -1039,12 +1063,12 @@ elif sezione == "🏦 Fondi bancari":
                 opacity=0.5
             ))
 
+        _fig_f_title = f"{fondo_sel} — {int(pct*100)}% · scenari worst/base/best"
         fig_f.update_layout(
-            title=f"{fondo_sel} — {int(pct*100)}% · scenari worst/base/best",
             height=400, xaxis_title="Anni", yaxis_title="€",
             legend=dict(orientation="h", y=1.08)
         )
-        st.plotly_chart(fig_f, use_container_width=True, theme=None)
+        _plotly_chart(fig_f, _title=_fig_f_title, use_container_width=True, theme=None)
 
         # KPI anno scelto
         anno_kpi = st.slider("Mostra valori all'anno", 0, anni_f, min(3, anni_f), key="kpi_anno")
@@ -1101,7 +1125,7 @@ elif sezione == "🏦 Fondi bancari":
             height=420, xaxis_title="Anni", yaxis_title="€",
             legend=dict(orientation="h", y=1.08)
         )
-        st.plotly_chart(fig_agg, use_container_width=True, theme=None)
+        _plotly_chart(fig_agg, use_container_width=True, theme=None)
 
     # ── Simulatore uscita data X ──────────────────────────────
     st.subheader("Simulatore: se esco il giorno X")
@@ -1131,7 +1155,7 @@ elif sezione == "🏦 Fondi bancari":
                             title="Netto reinvestito in ETF per anno e per fondo",
                             labels={'anno':'Anno','netto_in_etf':'€ netto'})
         fig_piano.update_layout(height=300, legend=dict(orientation="h",y=1.08))
-        st.plotly_chart(fig_piano, use_container_width=True, theme=None)
+        _plotly_chart(fig_piano, use_container_width=True, theme=None)
         c1,c2,c3 = st.columns(3)
         c1.metric("Tot. rimborsato", f"€ {piano_df['rimborso_lordo'].sum():,.0f}")
         c2.metric("Tot. tasse",      f"€ {piano_df['tassa_26pct'].sum():,.0f}")
@@ -1162,9 +1186,8 @@ elif sezione == "📊 Azioni Accenture":
         fig_acn.add_trace(go.Scatter(x=hist_acn.index, y=hist_acn['price'].round(2),
                                       name='ACN', fill='tozeroy',
                                       line=dict(color=COLORS['blu'],width=2)))
-        fig_acn.update_layout(title=f"Accenture (ACN) — {periodo_acn}",
-                               yaxis_title="USD", height=360)
-        st.plotly_chart(fig_acn, use_container_width=True, theme=None)
+        fig_acn.update_layout(yaxis_title="USD", height=360)
+        _plotly_chart(fig_acn, _title=f"Accenture (ACN) — {periodo_acn}", use_container_width=True, theme=None)
 
     st.subheader("Simulatore vendita — scenari worst/base/best")
     if not azioni_df.empty and azioni_df.iloc[0]['prezzo_attuale_usd']:
@@ -1188,9 +1211,8 @@ elif sezione == "📊 Azioni Accenture":
             fig_vend.add_trace(go.Scatter(x=anni_arr, y=[round(v,0) for v in valori],
                                            name=label, line=dict(color=col,width=2)))
 
-        fig_vend.update_layout(title=f"Valore {n_vend} azioni ACN — scenari",
-                                height=320, xaxis_title="Anni", yaxis_title="USD")
-        st.plotly_chart(fig_vend, use_container_width=True, theme=None)
+        fig_vend.update_layout(height=320, xaxis_title="Anni", yaxis_title="USD")
+        _plotly_chart(fig_vend, _title=f"Valore {n_vend} azioni ACN — scenari", use_container_width=True, theme=None)
 
         anni_fraz = mesi_acn / 12
         for rend, label in [(rw_acn,'Worst'),(rb_acn,'Base'),(rb2_acn,'Best')]:
@@ -1246,7 +1268,7 @@ elif sezione == "🎯 Simulatore strategie":
                                           line=dict(color=COLORS['arancio'],width=2,dash='dot')))
         fig_pac.update_layout(height=400, xaxis_title="Anni", yaxis_title="€",
                                legend=dict(orientation="h",y=1.08))
-        st.plotly_chart(fig_pac, use_container_width=True, theme=None)
+        _plotly_chart(fig_pac, use_container_width=True, theme=None)
 
         c1,c2,c3 = st.columns(3)
         c1.metric("Base",  f"€ {sc_pac['base']['valore'].iloc[-1]:,.0f}")
@@ -1275,7 +1297,7 @@ elif sezione == "🎯 Simulatore strategie":
         fig_mig.add_trace(go.Scatter(x=df_mig['anno'],y=df_mig['scenario_fondi'],
                                       name='Resto nei fondi',line=dict(color=COLORS['grigio'],width=2,dash='dash')))
         fig_mig.update_layout(height=340,xaxis_title="Anni",yaxis_title="€ netto")
-        st.plotly_chart(fig_mig, use_container_width=True, theme=None)
+        _plotly_chart(fig_mig, use_container_width=True, theme=None)
 
     with tab3:
         st.subheader("Scenario patrimoniale completo")
@@ -1306,7 +1328,7 @@ elif sezione == "🎯 Simulatore strategie":
                                              name=nome,stackgroup='one',line=dict(color=col_c)))
         fig_sc.update_layout(height=400,xaxis_title="Anni",yaxis_title="€",
                               legend=dict(orientation="h",y=1.08))
-        st.plotly_chart(fig_sc, use_container_width=True, theme=None)
+        _plotly_chart(fig_sc, use_container_width=True, theme=None)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1364,10 +1386,10 @@ elif sezione == _SEZIONE_FIGLIO:
         fig_f.add_vline(x=eta,line_dash="dot",line_color="#ccc",opacity=0.6)
         fig_f.add_annotation(x=eta,y=sc_figlio['best']['valore'].iloc[-1]*0.85,
                                text=lbl,showarrow=False,font=dict(size=10,color="#888"))
-    fig_f.update_layout(title=f"Fondo {_NF} — €{pac_f}/mese · 18 anni",
-                         xaxis_title=f"Età {_NF}",yaxis_title="€",height=420,
-                         legend=dict(orientation="h",y=1.08))
-    st.plotly_chart(fig_f, use_container_width=True, theme=None)
+    _fig_f_title2 = f"Fondo {_NF} — €{pac_f}/mese · 18 anni"
+    fig_f.update_layout(xaxis_title=f"Età {_NF}", yaxis_title="€", height=420,
+                        legend=dict(orientation="h", y=1.08))
+    _plotly_chart(fig_f, _title=_fig_f_title2, use_container_width=True, theme=None)
 
     c1,c2,c3 = st.columns(3)
     c1.metric("Worst (18 anni)", f"€ {sc_figlio['worst']['valore'].iloc[-1]:,.0f}")
@@ -1378,7 +1400,7 @@ elif sezione == _SEZIONE_FIGLIO:
         st.subheader("Costi per fascia d'età")
         fig_c = px.bar(df_costi,x='eta',y='costo_annuale',color='voce',
                         labels={'eta':'Età','costo_annuale':'€/anno','voce':'Fase'},height=300)
-        st.plotly_chart(fig_c, use_container_width=True, theme=None)
+        _plotly_chart(fig_c, use_container_width=True, theme=None)
 
         df_tab = sc_figlio['base'][sc_figlio['base']['anno'].apply(lambda x: x==int(x))].copy()
         df_tab['eta'] = df_tab['anno'].astype(int)
