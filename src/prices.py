@@ -138,7 +138,7 @@ def scarica_storico(isin: str, data_inizio: date, data_fine: date = None) -> pd.
         return df[['data', 'isin', 'ticker', 'prezzo', 'fonte']]
 
     except Exception as e:
-        print(f"  [!] Errore scaricamento {isin} ({ticker_str}): {e}")
+        print(f"  [!] Errore scaricamento {isin} ({ticker_str}): {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -181,7 +181,7 @@ def scarica_tutti_storici(isins: List[str], data_inizio: date,
         raw = yf.download(tickers_list, start=start_str, end=end_str,
                           auto_adjust=True, progress=False)
     except Exception as e:
-        print(f"  [!] Errore batch yfinance: {e} — fallback a download singoli")
+        print(f"  [!] Errore batch yfinance: {type(e).__name__} — fallback a download singoli")
         raw = pd.DataFrame()
 
     frames = []
@@ -215,7 +215,7 @@ def scarica_tutti_storici(isins: List[str], data_inizio: date,
             print(f"  [+] {isin}: {len(df_t)} giorni scaricati")
         except Exception as e:
             missing_isins.append(isin)
-            print(f"  [!] {isin}: errore in batch — {e}")
+            print(f"  [!] {isin}: errore in batch — {type(e).__name__}")
 
     # Fallback individuale per ISIN con dati mancanti (usa fallback ticker se disponibili)
     for isin in missing_isins:

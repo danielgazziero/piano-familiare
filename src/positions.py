@@ -88,7 +88,7 @@ def carica_posizioni() -> pd.DataFrame:
             return pd.DataFrame()
         return pd.DataFrame(res.data)
     except Exception as e:
-        print(f"  [!] Errore caricamento posizioni: {e}")
+        print(f"  [!] Errore caricamento posizioni: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -147,7 +147,7 @@ def inizializza_posizioni():
         client.table('posizioni').insert(records).execute()
         print(f"  [+] {len(records)} posizioni inizializzate da asset_catalog")
     except Exception as e:
-        print(f"  [!] Errore inizializzazione posizioni: {e}")
+        print(f"  [!] Errore inizializzazione posizioni: {type(e).__name__}")
 
 
 def aggiorna_quantita(isin: str, nuova_quantita: float,
@@ -202,7 +202,7 @@ def aggiorna_quantita(isin: str, nuova_quantita: float,
         print(f"  [+] Quantità {isin} aggiornata a {nuova_quantita} dal {data_modifica}")
         return True
     except Exception as e:
-        print(f"  [!] Errore aggiornamento quantità: {e}")
+        print(f"  [!] Errore aggiornamento quantità: {type(e).__name__}")
         return False
 
 
@@ -219,7 +219,7 @@ def storico_posizioni(isin: str) -> pd.DataFrame:
             return pd.DataFrame()
         return pd.DataFrame(res.data)
     except Exception as e:
-        print(f"  [!] Errore storico posizioni: {e}")
+        print(f"  [!] Errore storico posizioni: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -252,7 +252,7 @@ def set_ultima_data_scaricata(isin: str, ultima_data: date):
             'updated_at': datetime.now().isoformat()
         }, on_conflict='isin').execute()
     except Exception as e:
-        print(f"  [!] Errore aggiornamento backfill_stato {isin}: {e}")
+        print(f"  [!] Errore aggiornamento backfill_stato {isin}: {type(e).__name__}")
 
 
 def salva_prezzi(df: pd.DataFrame) -> int:
@@ -279,10 +279,10 @@ def salva_prezzi(df: pd.DataFrame) -> int:
                 ).execute()
                 inseriti += len(batch)
             except Exception as e:
-                print(f"  [!] Errore batch prezzi: {e}")
+                print(f"  [!] Errore batch prezzi: {type(e).__name__}")
         return inseriti
     except Exception as e:
-        print(f"  [!] Errore salvataggio prezzi: {e}")
+        print(f"  [!] Errore salvataggio prezzi: {type(e).__name__}")
         return 0
 
 
@@ -307,7 +307,7 @@ def carica_prezzi_db(isin: str, data_inizio: date,
         df['prezzo'] = pd.to_numeric(df['prezzo'])
         return df
     except Exception as e:
-        print(f"  [!] Errore caricamento prezzi {isin}: {e}")
+        print(f"  [!] Errore caricamento prezzi {isin}: {type(e).__name__}")
         return pd.DataFrame()
 
 

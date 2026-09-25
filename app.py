@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from pathlib import Path
 from datetime import date, datetime, timedelta
+import time
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
@@ -57,6 +58,11 @@ if _AUTH_ERR == "db_error":
 elif not _APP_PASSWORD:
     st.error("⚠️ Password non configurata. Inserisci il valore `app_password` nella tabella `config_params` su Supabase.")
     st.stop()
+elif st.session_state.get("_auth_ok") and time.time() - st.session_state.get("_auth_ts", 0) > 3600:
+    st.session_state.pop("_auth_ok", None)
+    st.session_state.pop("_auth_ts", None)
+    st.warning("Sessione scaduta. Effettua nuovamente l'accesso.")
+    st.rerun()
 elif not st.session_state.get("_auth_ok"):
     st.title("🔒 Accesso protetto")
     pwd = st.text_input("Password", type="password")
@@ -64,6 +70,7 @@ elif not st.session_state.get("_auth_ok"):
         from database import verify_password as _verify_pwd, hash_password as _hash_pwd, salva_param as _salva_param_auth
         if _verify_pwd(pwd, _APP_PASSWORD):
             st.session_state["_auth_ok"] = True
+            st.session_state["_auth_ts"] = time.time()
             # Migrazione trasparente: se la password era in chiaro, re-hasha al primo login
             if not _APP_PASSWORD.startswith('pbkdf2$'):
                 _salva_param_auth("app_password", _hash_pwd(pwd))
@@ -1343,6 +1350,12 @@ elif sezione == "⚙️ Gestione Asset":
                 salva_btn = col_s.form_submit_button("💾 Salva modifiche")
                 elim_btn  = col_d.form_submit_button("🗑️ Elimina asset", type="secondary")
             if salva_btn:
+                if dr:
+                    try:
+                        date.fromisoformat(dr)
+                    except ValueError:
+                        st.error("Data ref non valida. Usa il formato YYYY-MM-DD (es. 2026-09-25).")
+                        st.stop()
                 ok = salva_asset({
                     'isin': isin_sel, 'nome': nome_f, 'tipo': 'fondo',
                     'ter': ter_f, 'valore_quota_ref': vqr, 'data_ref': dr or None,

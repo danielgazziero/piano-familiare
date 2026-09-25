@@ -192,7 +192,7 @@ def salva_snapshot_patrimonio(snapshot: dict, note: str = None) -> bool:
         client.table('patrimonio_log').upsert(record, on_conflict='data').execute()
         return True
     except Exception as e:
-        print(f"  [!] Errore salvataggio patrimonio: {e}")
+        print(f"  [!] Errore salvataggio patrimonio: {type(e).__name__}")
         return False
 
 
@@ -219,7 +219,7 @@ def carica_patrimonio_log(giorni: int = 365) -> pd.DataFrame:
                 df[c] = pd.to_numeric(df[c], errors='coerce')
         return df
     except Exception as e:
-        print(f"  [!] Errore caricamento log patrimonio: {e}")
+        print(f"  [!] Errore caricamento log patrimonio: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -246,7 +246,7 @@ def salva_quote_fondi(righe: List[dict], fonte: str = 'manuale') -> bool:
         client.table('quote_fondi').upsert(records, on_conflict='data,isin').execute()
         return True
     except Exception as e:
-        print(f"  [!] Errore salvataggio quote fondi: {e}")
+        print(f"  [!] Errore salvataggio quote fondi: {type(e).__name__}")
         return False
 
 
@@ -273,7 +273,7 @@ def carica_ultime_quote_fondi() -> pd.DataFrame:
         df = df.groupby('isin').first().reset_index()
         return df
     except Exception as e:
-        print(f"  [!] Errore caricamento quote fondi: {e}")
+        print(f"  [!] Errore caricamento quote fondi: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -296,7 +296,7 @@ def storico_quote_fondo(isin: str, giorni: int = 180) -> pd.DataFrame:
         df['valore'] = pd.to_numeric(df['valore'], errors='coerce')
         return df
     except Exception as e:
-        print(f"  [!] Errore storico fondo {isin}: {e}")
+        print(f"  [!] Errore storico fondo {isin}: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -316,7 +316,7 @@ def salva_transazioni(df_tx: pd.DataFrame) -> int:
         for _, row in df_tx.iterrows():
             # Hash univoco per deduplicazione
             hash_str = f"{row['date'].date()}_{row['amount']}_{row['description'][:500]}_{row['account']}"
-            hash_tx = hashlib.md5(hash_str.encode()).hexdigest()
+            hash_tx = hashlib.sha256(hash_str.encode()).hexdigest()
             records.append({
                 'data': row['date'].date().isoformat(),
                 'importo': float(row['amount']),
@@ -333,7 +333,7 @@ def salva_transazioni(df_tx: pd.DataFrame) -> int:
         resp = client.table('transazioni').insert(records, ignore_duplicates=True).execute()
         return len(resp.data) if resp.data else 0
     except Exception as e:
-        print(f"  [!] Errore salvataggio transazioni: {e}")
+        print(f"  [!] Errore salvataggio transazioni: {type(e).__name__}")
         return 0
 
 
@@ -360,7 +360,7 @@ def carica_transazioni(mesi: int = 12) -> pd.DataFrame:
         df['expense'] = df['amount'].clip(upper=0).abs()
         return df
     except Exception as e:
-        print(f"  [!] Errore caricamento transazioni: {e}")
+        print(f"  [!] Errore caricamento transazioni: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -379,7 +379,7 @@ def salva_param(chiave: str, valore: Any) -> bool:
         }, on_conflict='chiave').execute()
         return True
     except Exception as e:
-        print(f"  [!] Errore salvataggio param {chiave}: {e}")
+        print(f"  [!] Errore salvataggio param {chiave}: {type(e).__name__}")
         return False
 
 
@@ -399,7 +399,7 @@ def carica_param(chiave: str, default: Any = None) -> Any:
                 return raw  # valore inserito manualmente senza encoding JSON
         return default
     except Exception as e:
-        print(f"  [!] carica_param({chiave!r}): {type(e).__name__}: {e}")
+        print(f"  [!] carica_param({chiave!r}): {type(e).__name__}")
         return default
 
 
@@ -419,7 +419,7 @@ def carica_tutti_params() -> dict:
                 result[r['chiave']] = raw
         return result
     except Exception as e:
-        print(f"  [!] carica_tutti_params: {type(e).__name__}: {e}")
+        print(f"  [!] carica_tutti_params: {type(e).__name__}")
         return {}
 
 
@@ -462,7 +462,7 @@ def salva_params_batch(params: dict) -> bool:
         client.table('config_params').upsert(records, on_conflict='chiave').execute()
         return True
     except Exception as e:
-        print(f"  [!] Errore salvataggio params batch: {e}")
+        print(f"  [!] Errore salvataggio params batch: {type(e).__name__}")
         return False
 
 
@@ -506,7 +506,7 @@ def carica_asset_catalog() -> pd.DataFrame:
                 lambda x: x if isinstance(x, list) else (json.loads(x) if x else []))
         return df
     except Exception as e:
-        print(f"  [!] Errore caricamento asset_catalog: {e}")
+        print(f"  [!] Errore caricamento asset_catalog: {type(e).__name__}")
         return pd.DataFrame()
 
 
@@ -521,7 +521,7 @@ def upsert_asset(asset: dict) -> bool:
         client.table('asset_catalog').upsert(record, on_conflict='isin').execute()
         return True
     except Exception as e:
-        print(f"  [!] Errore upsert asset {asset.get('isin')}: {e}")
+        print(f"  [!] Errore upsert asset {asset.get('isin')}: {type(e).__name__}")
         return False
 
 
@@ -532,7 +532,7 @@ def elimina_asset(isin: str) -> bool:
         client.table('asset_catalog').delete().eq('isin', isin).execute()
         return True
     except Exception as e:
-        print(f"  [!] Errore eliminazione asset {isin}: {e}")
+        print(f"  [!] Errore eliminazione asset {isin}: {type(e).__name__}")
         return False
 
 
@@ -616,7 +616,7 @@ def inizializza_asset_catalog_da_config() -> bool:
             print(f"  [+] asset_catalog: {len(records)} asset inizializzati da config.yaml")
         return True
     except Exception as e:
-        print(f"  [!] Errore inizializzazione asset_catalog: {e}")
+        print(f"  [!] Errore inizializzazione asset_catalog: {type(e).__name__}")
         return False
 
 
@@ -632,7 +632,7 @@ def test_connessione() -> bool:
         print("  [+] Connessione Supabase OK")
         return True
     except Exception as e:
-        print(f"  [!] Connessione Supabase FALLITA: {e}")
+        print(f"  [!] Connessione Supabase FALLITA: {type(e).__name__}")
         return False
 
 
