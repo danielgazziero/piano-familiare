@@ -45,15 +45,28 @@ _BORDER  = 'rgba(255,255,255,0.12)'
 _GRID    = 'rgba(255,255,255,0.07)'
 
 def _plotly_chart(fig, **kwargs):
-    """Wrapper st.plotly_chart: forza bgcolor e bypassa il tema Streamlit.
-    theme=None evita che Streamlit sovrascriva title position, modebar e colori
-    con il suo sistema di theming, lasciando il pieno controllo al nostro layout.
+    """Wrapper st.plotly_chart: bgcolor + titolo come elemento Streamlit separato.
+    Il titolo viene estratto dal figure, azzerato, e renderizzato come st.markdown
+    centrato — così layout e stile sono identici in dark e light mode.
     """
     dark = st.session_state.get('_dark_mode_toggle', True)
     if dark:
         fig.update_layout(paper_bgcolor=_BG3, plot_bgcolor=_BG2, font_color=_TEXT)
     else:
         fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', font_color='#31333F')
+
+    title_text = None
+    if fig.layout.title and fig.layout.title.text:
+        title_text = fig.layout.title.text
+        fig.update_layout(title_text='', margin_t=20)
+
+    if title_text:
+        st.markdown(
+            f"<div style='text-align:center;font-weight:600;font-size:1em;"
+            f"padding-bottom:2px'>{title_text}</div>",
+            unsafe_allow_html=True,
+        )
+
     kwargs['theme'] = None
     st.plotly_chart(fig, **kwargs)
 
