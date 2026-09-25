@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.io as pio
 from pathlib import Path
 from datetime import date, datetime, timedelta
 import time
@@ -37,8 +38,22 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
                    initial_sidebar_state="expanded")
 
 def _inject_theme():
-    """Inietta CSS dark/light in base a session_state['dark_mode']."""
+    """Inietta CSS dark/light e imposta template Plotly globale."""
     dark = st.session_state.get('dark_mode', False)
+    # Plotly: template globale — ereditato da tutti i go.Figure / px.*
+    pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
+        paper_bgcolor='#1e1f28',
+        plot_bgcolor='#262730',
+        font=dict(color='#FAFAFA'),
+        xaxis=dict(gridcolor='rgba(255,255,255,0.08)', linecolor='rgba(255,255,255,0.15)',
+                   zerolinecolor='rgba(255,255,255,0.15)'),
+        yaxis=dict(gridcolor='rgba(255,255,255,0.08)', linecolor='rgba(255,255,255,0.15)',
+                   zerolinecolor='rgba(255,255,255,0.15)'),
+        legend=dict(bgcolor='rgba(38,39,48,0.8)', bordercolor='rgba(255,255,255,0.15)'),
+        hoverlabel=dict(bgcolor='#1e1f28', bordercolor='rgba(255,255,255,0.2)',
+                        font=dict(color='#FAFAFA')),
+    ))
+    pio.templates.default = '_app_dark' if dark else 'plotly_white'
     if dark:
         css = """
         <style>
