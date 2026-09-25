@@ -45,10 +45,13 @@ _BORDER  = 'rgba(255,255,255,0.12)'
 _GRID    = 'rgba(255,255,255,0.07)'
 
 def _inject_theme():
-    """Imposta template Plotly globale e scrive config.toml per il tema Streamlit nativo."""
+    """
+    Imposta template Plotly globale e inietta CSS custom properties di Streamlit.
+    Nessuna scrittura su disco → nessun riavvio server → session_state preservato.
+    """
     dark = st.session_state.get('dark_mode', False)
 
-    # ── Plotly: template custom coordinato con i colori dark ────────────────
+    # ── Plotly: template custom ──────────────────────────────────────────────
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
         paper_bgcolor=_BG3,
         plot_bgcolor=_BG2,
@@ -64,18 +67,103 @@ def _inject_theme():
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
-    # ── config.toml: tema Streamlit nativo ──────────────────────────────────
-    _toml = Path(__file__).parent / '.streamlit' / 'config.toml'
+    # ── CSS: sovrascrive le CSS custom properties che Streamlit usa internamente
+    # Questo approccio non scrive su disco e non causa riavvii del server.
     if dark:
-        _toml.write_text(
-            '[theme]\nbase = "dark"\nprimaryColor = "#1F5C8B"\n',
-            encoding='utf-8')
+        css = f"""<style>
+:root, body, .stApp {{
+    --background-color: {_BG} !important;
+    --secondary-background-color: {_BG2} !important;
+    --text-color: {_TEXT} !important;
+    --primary-color: #1F5C8B !important;
+    --font: "Source Sans Pro", sans-serif;
+}}
+/* App e sidebar */
+.stApp, .stApp > .main {{
+    background-color: {_BG} !important;
+    color: {_TEXT} !important;
+}}
+[data-testid="stSidebar"] > div:first-child {{
+    background-color: {_BG2} !important;
+}}
+/* Header */
+[data-testid="stHeader"] {{
+    background-color: {_BG} !important;
+    border-bottom: 1px solid {_BORDER} !important;
+}}
+/* Testo generale */
+p, h1, h2, h3, h4, label, span, div {{
+    color: {_TEXT} !important;
+}}
+/* Metriche */
+[data-testid="stMetricValue"] {{ color: {_TEXT} !important; }}
+[data-testid="stMetricLabel"] {{ color: rgba(250,250,250,0.65) !important; }}
+[data-testid="metric-container"] {{ background-color: {_BG2} !important; border-radius:8px; padding:8px; }}
+/* Expander */
+[data-testid="stExpander"] {{ background-color: {_BG2} !important; border-color: {_BORDER} !important; }}
+/* Input, textarea, select */
+input, textarea, [data-baseweb="input"] input, [data-baseweb="textarea"] textarea {{
+    background-color: {_BG2} !important;
+    color: {_TEXT} !important;
+    border-color: {_BORDER} !important;
+}}
+/* Select */
+[data-baseweb="select"] > div {{
+    background-color: {_BG2} !important;
+    border-color: {_BORDER} !important;
+    color: {_TEXT} !important;
+}}
+[data-baseweb="popover"], [data-baseweb="menu"], [role="listbox"] {{
+    background-color: {_BG2} !important;
+    border-color: {_BORDER} !important;
+}}
+[role="option"], [data-baseweb="option"] {{
+    background-color: {_BG2} !important;
+    color: {_TEXT} !important;
+}}
+[role="option"]:hover, [data-baseweb="option"]:hover {{
+    background-color: #3a3b45 !important;
+}}
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {{ background-color: {_BG} !important; border-color: {_BORDER} !important; }}
+.stTabs [data-baseweb="tab"] {{ color: rgba(250,250,250,0.65) !important; }}
+.stTabs [aria-selected="true"] {{ color: {_TEXT} !important; border-bottom-color: #1F5C8B !important; }}
+.stTabs [data-baseweb="tab-panel"] {{ background-color: {_BG} !important; }}
+/* Bottoni */
+.stButton > button {{
+    background-color: {_BG2} !important;
+    color: {_TEXT} !important;
+    border-color: {_BORDER} !important;
+}}
+.stButton > button:hover {{ background-color: #3a3b45 !important; }}
+/* Dataframe */
+[data-testid="stDataFrame"] {{ background-color: {_BG2} !important; }}
+[data-testid="stDataFrame"] iframe {{ filter: invert(0.9) hue-rotate(180deg); }}
+/* Caption */
+[data-testid="stCaptionContainer"], .stCaption {{ color: rgba(250,250,250,0.55) !important; }}
+/* Alert / info / warning */
+[data-testid="stAlert"] {{ background-color: {_BG2} !important; border-color: {_BORDER} !important; }}
+/* Divider */
+hr {{ border-color: {_BORDER} !important; }}
+/* Number input */
+[data-testid="stNumberInput"] input {{ background-color: {_BG2} !important; color: {_TEXT} !important; }}
+/* Plotly SVG background — guardia extra in caso theme=None non bastasse */
+.js-plotly-plot .plotly .bg {{ fill: {_BG2} !important; }}
+</style>"""
     else:
-        _toml.write_text(
-            '[theme]\nbase = "light"\nprimaryColor = "#1F5C8B"\n'
-            'backgroundColor = "#FFFFFF"\nsecondaryBackgroundColor = "#F0F2F6"\n'
-            'textColor = "#31333F"\n',
-            encoding='utf-8')
+        css = """<style>
+:root, body, .stApp {
+    --background-color: #FFFFFF !important;
+    --secondary-background-color: #F0F2F6 !important;
+    --text-color: #31333F !important;
+    --primary-color: #1F5C8B !important;
+}
+.stApp { background-color: #FFFFFF !important; color: #31333F !important; }
+[data-testid="stSidebar"] > div:first-child { background-color: #F0F2F6 !important; }
+[data-testid="metric-container"] { background-color: #F0F2F6 !important; border-radius:8px; padding:8px; }
+[data-testid="stDataFrame"] iframe { filter: none; }
+</style>"""
+    st.markdown(css, unsafe_allow_html=True)
 
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
@@ -365,12 +453,7 @@ with st.sidebar:
     )
     if _dark_toggle != st.session_state.get('dark_mode', False):
         st.session_state['dark_mode'] = _dark_toggle
-        _inject_theme()   # scrive subito config.toml con nuovo tema
-        # Streamlit rileva il cambio di config.toml e ricarica il server;
-        # il page reload lato browser si aggancia alla nuova sessione col tema corretto.
-        st.markdown('<meta http-equiv="refresh" content="1">', unsafe_allow_html=True)
-        st.info("Cambio tema in corso…")
-        st.stop()
+        st.rerun()
     if st.session_state.get('nuove_tx'):
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
     if st.session_state.get('backfill_nuovi'):
