@@ -216,6 +216,15 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 
 > **Nota E7**: il codice usa il fallback automaticamente finché non viene creata la funzione RPC su Supabase. SQL da eseguire una volta nel SQL Editor (documentato inline in `src/database.py:~260`).
 
+### ✅ Fix tecnici completati (25/09/2026 — round 2)
+
+| # | Fix | File |
+|---|---|---|
+| S7 ✅ | `{e}` → `type(e).__name__` in `portfolio.py` (`_batch_download`, `get_etf_data`) e `parser.py` (`parse_all_inputs`) — esclusi dall'S4 batch fix precedente | `src/portfolio.py`, `src/parser.py` |
+| E10 ✅ | `_APP_PASSWORD` cacheato in `session_state['_app_pwd_cache']` — evita una chiamata Supabase ad ogni rerun Streamlit (ogni click/slider); aggiornato al cambio password, svuotato con "🔄 Aggiorna tutto" | `app.py` |
+| E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
+| E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
+
 ### 🔴 Alta priorità — Feature
 
 | # | Feature | Moduli coinvolti | Note |
