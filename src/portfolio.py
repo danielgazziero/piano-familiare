@@ -258,16 +258,19 @@ def get_azioni_snapshot(config: dict,
     for az in azioni:
         ticker = az.get('ticker_yf') or az.get('ticker')
         quantita = az.get('quantita', 0)
-        hist_ytd = get_etf_data(ticker, period="ytd")
         hist_1y = get_etf_data(ticker, period="1y")
-
         prezzo_attuale = valore_attuale = perf_ytd = perf_1y = None
-        if not hist_ytd.empty:
-            prezzo_attuale = round(float(hist_ytd['price'].iloc[-1]), 2)
-            valore_attuale = round(prezzo_attuale * quantita, 2)
-            perf_ytd = round((hist_ytd['price'].iloc[-1] / hist_ytd['price'].iloc[0] - 1) * 100, 2)
         if not hist_1y.empty:
+            prezzo_attuale = round(float(hist_1y['price'].iloc[-1]), 2)
+            valore_attuale = round(prezzo_attuale * quantita, 2)
             perf_1y = round((hist_1y['price'].iloc[-1] / hist_1y['price'].iloc[0] - 1) * 100, 2)
+            # YTD: subset da 1 gennaio — evita una seconda chiamata yfinance
+            year_start = pd.Timestamp(date.today().year, 1, 1)
+            idx = hist_1y.index
+            ys = year_start.tz_localize(idx.tz) if idx.tz is not None else year_start
+            hist_ytd = hist_1y[idx >= ys]
+            if not hist_ytd.empty:
+                perf_ytd = round((hist_ytd['price'].iloc[-1] / hist_ytd['price'].iloc[0] - 1) * 100, 2)
 
         rows.append({
             'nome': az['nome'], 'ticker': ticker, 'isin': az.get('isin', ''),

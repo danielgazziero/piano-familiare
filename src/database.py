@@ -39,20 +39,18 @@ def _make_client() -> Client:
     return create_client(url, secret)
 
 
-def _cached_client():
-    try:
-        import streamlit as st
-        @st.cache_resource
-        def _build():
-            return _make_client()
-        return _build()
-    except Exception:
+try:
+    import streamlit as _st_db
+    @_st_db.cache_resource
+    def _build_client() -> Client:
         return _make_client()
+except Exception:
+    _build_client = _make_client
 
 
 def get_client() -> Client:
     """Client Supabase con service key (singleton per sessione Streamlit)."""
-    return _cached_client()
+    return _build_client()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -257,8 +255,24 @@ def carica_ultime_quote_fondi() -> pd.DataFrame:
     """
     try:
         client = get_client()
-        # Filtra ultimi 365 giorni: garantisce di trovare ogni ISIN aggiornato
-        # nell'ultimo anno indipendentemente dal numero totale di righe in tabella.
+        # Prova prima via RPC get_latest_quotes() (DISTINCT ON lato DB — più efficiente)
+        # SQL da creare su Supabase:
+        #   CREATE OR REPLACE FUNCTION get_latest_quotes()
+        #   RETURNS TABLE(isin text, nome text, quota numeric, valore numeric,
+        #                 quantita numeric, data date, fonte text)
+        #   LANGUAGE sql SECURITY INVOKER AS $$
+        #     SELECT DISTINCT ON (isin) isin, nome, quota, valore, quantita, data, fonte
+        #     FROM quote_fondi ORDER BY isin, data DESC;
+        #   $$;
+        try:
+            res = client.rpc('get_latest_quotes', {}).execute()
+            if res.data:
+                df = pd.DataFrame(res.data)
+                df['data'] = pd.to_datetime(df['data'])
+                return df
+        except Exception:
+            pass
+        # Fallback: query standard con groupby in Python
         data_dal = (date.today() - pd.Timedelta(days=365)).isoformat()
         res = (client.table('quote_fondi')
                .select('isin, nome, quota, valore, quantita, data, fonte')
@@ -313,8 +327,7 @@ def salva_transazioni(df_tx: pd.DataFrame) -> int:
         import hashlib
         client = get_client()
         records = []
-        for _, row in df_tx.iterrows():
-            # Hash univoco per deduplicazione
+        for row in df_tx.to_dict('records'):
             hash_str = f"{row['date'].date()}_{row['amount']}_{row['description'][:500]}_{row['account']}"
             hash_tx = hashlib.sha256(hash_str.encode()).hexdigest()
             records.append({

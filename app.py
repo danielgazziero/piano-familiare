@@ -135,38 +135,45 @@ _catalog = st.session_state.get('asset_catalog', pd.DataFrame())
 if 'quote_map' not in st.session_state:
     st.session_state['quote_map'] = carica_quote_fondi_persistenti(config)
 
-# Carica fondi con quote aggiornate dal DB — non cacheata (dipende da quote_map/catalog in session_state)
+def _get_posizioni():
+    """Carica posizioni dal DB con caching in session_state (evita 2× chiamate per rerun)."""
+    if 'pos_df_cache' not in st.session_state:
+        from positions import carica_posizioni as _cp
+        st.session_state['pos_df_cache'] = _cp()
+    return st.session_state['pos_df_cache']
+
+
 def get_fondi():
-    if _DEMO:
-        from demo_data import demo_get_fondi_snapshot
-        return demo_get_fondi_snapshot()
-    cat = st.session_state.get('asset_catalog', pd.DataFrame())
-    fondi_data = None
-    if not cat.empty and 'tipo' in cat.columns:
-        # Costruisce la lista fondi unendo catalog + quote correnti + quantità da posizioni
-        fondi_cat = cat[cat['tipo'] == 'fondo'].copy()
-        # Merge quantità da posizioni (asset_catalog non ha quantita)
-        try:
-            from positions import carica_posizioni
-            pos_df = carica_posizioni()
-            if not pos_df.empty and 'isin' in pos_df.columns:
-                pos_fondi = pos_df[pos_df['isin'].isin(fondi_cat['isin'])][['isin', 'quantita']]
-                fondi_cat = fondi_cat.merge(pos_fondi, on='isin', how='left')
-                fondi_cat['quantita'] = fondi_cat['quantita'].fillna(0)
-            else:
-                fondi_cat['quantita'] = fondi_cat.get('quantita', pd.Series(0, index=fondi_cat.index))
-        except Exception:
-            if 'quantita' not in fondi_cat.columns:
-                fondi_cat['quantita'] = 0
-        fondi_list = fondi_cat.to_dict('records')
-        qm = st.session_state.get('quote_map', {})
-        for f in fondi_list:
-            if f['isin'] in qm:
-                f['quota_aggiornata'] = qm[f['isin']]
-        if fondi_list:
-            fondi_data = fondi_list
-    return get_fondi_snapshot(get_config(), st.session_state.get('quote_map', {}),
-                               fondi_data=fondi_data)
+    if 'fondi_df_cache' not in st.session_state:
+        if _DEMO:
+            from demo_data import demo_get_fondi_snapshot
+            st.session_state['fondi_df_cache'] = demo_get_fondi_snapshot()
+        else:
+            cat = st.session_state.get('asset_catalog', pd.DataFrame())
+            fondi_data = None
+            if not cat.empty and 'tipo' in cat.columns:
+                fondi_cat = cat[cat['tipo'] == 'fondo'].copy()
+                try:
+                    pos_df = _get_posizioni()
+                    if not pos_df.empty and 'isin' in pos_df.columns:
+                        pos_fondi = pos_df[pos_df['isin'].isin(fondi_cat['isin'])][['isin', 'quantita']]
+                        fondi_cat = fondi_cat.merge(pos_fondi, on='isin', how='left')
+                        fondi_cat['quantita'] = fondi_cat['quantita'].fillna(0)
+                    else:
+                        fondi_cat['quantita'] = fondi_cat.get('quantita', pd.Series(0, index=fondi_cat.index))
+                except Exception:
+                    if 'quantita' not in fondi_cat.columns:
+                        fondi_cat['quantita'] = 0
+                fondi_list = fondi_cat.to_dict('records')
+                qm = st.session_state.get('quote_map', {})
+                for f in fondi_list:
+                    if f['isin'] in qm:
+                        f['quota_aggiornata'] = qm[f['isin']]
+                if fondi_list:
+                    fondi_data = fondi_list
+            st.session_state['fondi_df_cache'] = get_fondi_snapshot(
+                get_config(), st.session_state.get('quote_map', {}), fondi_data=fondi_data)
+    return st.session_state['fondi_df_cache']
 
 
 def get_etf_perf():
@@ -181,11 +188,9 @@ def get_azioni():
     az_cat = cat[cat['tipo'] == 'azione'].copy()
     if az_cat.empty:
         return get_azioni_snapshot(get_config())
-    # Merge quantità da posizioni (asset_catalog non ha quantita)
     if 'quantita' not in az_cat.columns:
         try:
-            from positions import carica_posizioni
-            pos_df = carica_posizioni()
+            pos_df = _get_posizioni()
             if not pos_df.empty and 'isin' in pos_df.columns:
                 pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
                 az_cat = az_cat.merge(pos_az, on='isin', how='left')
@@ -299,7 +304,8 @@ with st.sidebar:
     if st.button("🔄 Aggiorna tutto"):
         st.cache_data.clear()
         for k in ['params','quote_map','xls_importati','saved_today',
-                  'backfill_done','backfill_nuovi','nuove_tx','asset_catalog']:
+                  'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
+                  'pos_df_cache','fondi_df_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     if st.session_state.get('nuove_tx'):

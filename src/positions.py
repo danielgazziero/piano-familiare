@@ -266,7 +266,7 @@ def salva_prezzi(df: pd.DataFrame) -> int:
             'data': str(r['data']),
             'prezzo': float(r['prezzo']),
             'fonte': str(r.get('fonte', 'yahoo'))
-        } for _, r in df.iterrows()]
+        } for r in df.to_dict('records')]
 
         inseriti = 0
         # Upsert a batch di 100
@@ -336,40 +336,42 @@ def backfill_prezzi(isins: List[str], verbose: bool = True) -> Dict[str, int]:
     except Exception:
         checkpoint_map = {}
 
+    # Raggruppa ISIN per data_da — batch download per gruppo (riduce N→1 chiamata yfinance)
+    da_scaricare: dict = {}
     for isin in isins:
         ultima = checkpoint_map.get(isin)
-
         if ultima is None:
-            # Prima volta — scarica dall'inizio
             data_da = data_default_inizio
         elif ultima >= oggi:
-            # Già aggiornato oggi
             if verbose:
                 print(f"  [=] {isin}: già aggiornato a oggi")
             risultati[isin] = 0
             continue
         else:
-            # Scarica dal giorno dopo l'ultima data
             data_da = ultima + timedelta(days=1)
-
         giorni_mancanti = (oggi - data_da).days
         if verbose:
-            print(f"  [↓] {isin}: scarico {giorni_mancanti} giorni ({data_da} → {oggi})")
+            print(f"  [↓] {isin}: {giorni_mancanti} giorni da scaricare ({data_da} → {oggi})")
+        da_scaricare.setdefault(data_da, []).append(isin)
 
-        from prices import scarica_storico
-        df = scarica_storico(isin, data_da, oggi)
-
-        if not df.empty:
-            n = salva_prezzi(df)
-            ultima_scaricata = df['data'].max()
-            set_ultima_data_scaricata(isin, ultima_scaricata)
-            risultati[isin] = n
-            if verbose:
-                print(f"  [+] {isin}: {n} prezzi salvati")
-        else:
-            risultati[isin] = 0
-            if verbose:
-                print(f"  [!] {isin}: nessun prezzo disponibile")
+    from prices import scarica_tutti_storici
+    for data_da, gruppo in da_scaricare.items():
+        if verbose:
+            print(f"  [batch] {len(gruppo)} ISIN da {data_da}")
+        df_batch = scarica_tutti_storici(gruppo, data_da, oggi)
+        for isin in gruppo:
+            df_isin = df_batch[df_batch['isin'] == isin] if not df_batch.empty else pd.DataFrame()
+            if not df_isin.empty:
+                n = salva_prezzi(df_isin)
+                ultima_scaricata = df_isin['data'].max()
+                set_ultima_data_scaricata(isin, ultima_scaricata)
+                risultati[isin] = n
+                if verbose:
+                    print(f"  [+] {isin}: {n} prezzi salvati")
+            else:
+                risultati[isin] = 0
+                if verbose:
+                    print(f"  [!] {isin}: nessun prezzo disponibile")
 
     return risultati
 
