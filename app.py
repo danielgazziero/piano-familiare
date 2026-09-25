@@ -44,10 +44,10 @@ _TEXT    = '#FAFAFA'
 _BORDER  = 'rgba(255,255,255,0.12)'
 _GRID    = 'rgba(255,255,255,0.07)'
 
-def _plotly_chart(fig, **kwargs):
+def _plotly_chart(fig, _title=None, **kwargs):
     """Wrapper st.plotly_chart: bgcolor + titolo come elemento Streamlit separato.
-    Il titolo viene estratto dal figure, azzerato, e renderizzato come st.markdown
-    centrato — così layout e stile sono identici in dark e light mode.
+    Passa _title esplicitamente per garantire che il titolo sia sempre quello corrente;
+    se non passato, lo legge dal figure via to_dict() come fallback.
     """
     dark = st.session_state.get('_dark_mode_toggle', True)
     if dark:
@@ -55,15 +55,16 @@ def _plotly_chart(fig, **kwargs):
     else:
         fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', font_color='#31333F')
 
-    title_text = None
-    if fig.layout.title and fig.layout.title.text:
-        title_text = fig.layout.title.text
-        fig.update_layout(title_text='', margin_t=20)
+    if _title is None:
+        _layout = fig.to_dict().get('layout', {})
+        _t = _layout.get('title', {})
+        _title = (_t.get('text') if isinstance(_t, dict) else str(_t or '')) or None
 
-    if title_text:
+    if _title:
+        fig.update_layout(title_text='', margin=dict(t=20))
         st.markdown(
             f"<div style='text-align:center;font-weight:600;font-size:1em;"
-            f"padding-bottom:2px'>{title_text}</div>",
+            f"padding-bottom:2px'>{_title}</div>",
             unsafe_allow_html=True,
         )
 
@@ -544,9 +545,8 @@ if sezione == "🏠 Stato di famiglia":
         cat_df = mese_df[mese_df['amount']<0].groupby('category')['expense'].sum().sort_values()
         fig_cat = go.Figure(go.Bar(x=cat_df.values, y=cat_df.index,
                                     orientation='h', marker_color=COLORS['blu']))
-        fig_cat.update_layout(title=f"Uscite per categoria — {mese_sel}",
-                               height=max(280,len(cat_df)*28), margin=dict(t=40,b=0,l=0,r=0))
-        _plotly_chart(fig_cat, use_container_width=True, theme=None)
+        fig_cat.update_layout(height=max(280,len(cat_df)*28), margin=dict(t=40,b=0,l=0,r=0))
+        _plotly_chart(fig_cat, _title=f"Uscite per categoria — {mese_sel}", use_container_width=True, theme=None)
         with st.expander("Dettaglio transazioni"):
             show = mese_df[['date','account','description','amount','category']].copy()
             show['date']   = show['date'].dt.strftime('%d/%m/%Y')
@@ -706,7 +706,6 @@ elif sezione == "📉 Portafoglio storico":
                     yaxis='y2'
                 ))
                 fig_asset.update_layout(
-                    title=f"{asset_sel} — prezzo quota e valore posizione",
                     height=380,
                     yaxis=dict(title="Prezzo quota €", side='left'),
                     yaxis2=dict(title="Valore € posizione",
@@ -714,7 +713,7 @@ elif sezione == "📉 Portafoglio storico":
                     legend=dict(orientation="h", y=1.08),
                     margin=dict(t=60,b=0)
                 )
-                _plotly_chart(fig_asset, use_container_width=True, theme=None)
+                _plotly_chart(fig_asset, _title=f"{asset_sel} — prezzo quota e valore posizione", use_container_width=True, theme=None)
 
                 # Storico quantità (variazioni)
                 st.subheader("Storico variazioni quantità")
@@ -784,9 +783,8 @@ elif sezione == "📈 ETF & mercato":
                 fig.add_trace(go.Scatter(x=h.index, y=h['indexed'].round(2),
                                           name=nome, line=dict(color=pal[i%len(pal)],width=2)))
         fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
-        fig.update_layout(title=f"Performance relativa (base 100) · {periodo}",
-                           height=400, legend=dict(orientation="h",y=1.08))
-        _plotly_chart(fig, use_container_width=True, theme=None)
+        fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
+        _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}", use_container_width=True, theme=None)
 
     # ── SIMULATORE PAC ETF — tabella editabile ────────────────
     st.subheader("Simulatore PAC — portafoglio ETF personalizzabile")
@@ -903,11 +901,10 @@ elif sezione == "📈 ETF & mercato":
         vf_best = sc_etf['best']['valore'].iloc[-1]
 
         fig_etf_sc.update_layout(
-            title=f"Portafoglio ETF — €{tot_pac:,.0f}/mese · partenza €{tot_ini:,.0f} · {anni_pac} anni",
             height=420, xaxis_title="Anni", yaxis_title="€",
             legend=dict(orientation="h", y=1.08)
         )
-        _plotly_chart(fig_etf_sc, use_container_width=True, theme=None)
+        _plotly_chart(fig_etf_sc, _title=f"Portafoglio ETF — €{tot_pac:,.0f}/mese · partenza €{tot_ini:,.0f} · {anni_pac} anni", use_container_width=True, theme=None)
 
         c1,c2,c3,c4 = st.columns(4)
         c1.metric("PAC totale/mese", f"€ {tot_pac:,.0f}")
@@ -1066,12 +1063,12 @@ elif sezione == "🏦 Fondi bancari":
                 opacity=0.5
             ))
 
+        _fig_f_title = f"{fondo_sel} — {int(pct*100)}% · scenari worst/base/best"
         fig_f.update_layout(
-            title=f"{fondo_sel} — {int(pct*100)}% · scenari worst/base/best",
             height=400, xaxis_title="Anni", yaxis_title="€",
             legend=dict(orientation="h", y=1.08)
         )
-        _plotly_chart(fig_f, use_container_width=True, theme=None)
+        _plotly_chart(fig_f, _title=_fig_f_title, use_container_width=True, theme=None)
 
         # KPI anno scelto
         anno_kpi = st.slider("Mostra valori all'anno", 0, anni_f, min(3, anni_f), key="kpi_anno")
@@ -1189,9 +1186,8 @@ elif sezione == "📊 Azioni Accenture":
         fig_acn.add_trace(go.Scatter(x=hist_acn.index, y=hist_acn['price'].round(2),
                                       name='ACN', fill='tozeroy',
                                       line=dict(color=COLORS['blu'],width=2)))
-        fig_acn.update_layout(title=f"Accenture (ACN) — {periodo_acn}",
-                               yaxis_title="USD", height=360)
-        _plotly_chart(fig_acn, use_container_width=True, theme=None)
+        fig_acn.update_layout(yaxis_title="USD", height=360)
+        _plotly_chart(fig_acn, _title=f"Accenture (ACN) — {periodo_acn}", use_container_width=True, theme=None)
 
     st.subheader("Simulatore vendita — scenari worst/base/best")
     if not azioni_df.empty and azioni_df.iloc[0]['prezzo_attuale_usd']:
@@ -1215,9 +1211,8 @@ elif sezione == "📊 Azioni Accenture":
             fig_vend.add_trace(go.Scatter(x=anni_arr, y=[round(v,0) for v in valori],
                                            name=label, line=dict(color=col,width=2)))
 
-        fig_vend.update_layout(title=f"Valore {n_vend} azioni ACN — scenari",
-                                height=320, xaxis_title="Anni", yaxis_title="USD")
-        _plotly_chart(fig_vend, use_container_width=True, theme=None)
+        fig_vend.update_layout(height=320, xaxis_title="Anni", yaxis_title="USD")
+        _plotly_chart(fig_vend, _title=f"Valore {n_vend} azioni ACN — scenari", use_container_width=True, theme=None)
 
         anni_fraz = mesi_acn / 12
         for rend, label in [(rw_acn,'Worst'),(rb_acn,'Base'),(rb2_acn,'Best')]:
@@ -1391,10 +1386,10 @@ elif sezione == _SEZIONE_FIGLIO:
         fig_f.add_vline(x=eta,line_dash="dot",line_color="#ccc",opacity=0.6)
         fig_f.add_annotation(x=eta,y=sc_figlio['best']['valore'].iloc[-1]*0.85,
                                text=lbl,showarrow=False,font=dict(size=10,color="#888"))
-    fig_f.update_layout(title=f"Fondo {_NF} — €{pac_f}/mese · 18 anni",
-                         xaxis_title=f"Età {_NF}",yaxis_title="€",height=420,
-                         legend=dict(orientation="h",y=1.08))
-    _plotly_chart(fig_f, use_container_width=True, theme=None)
+    _fig_f_title2 = f"Fondo {_NF} — €{pac_f}/mese · 18 anni"
+    fig_f.update_layout(xaxis_title=f"Età {_NF}", yaxis_title="€", height=420,
+                        legend=dict(orientation="h", y=1.08))
+    _plotly_chart(fig_f, _title=_fig_f_title2, use_container_width=True, theme=None)
 
     c1,c2,c3 = st.columns(3)
     c1.metric("Worst (18 anni)", f"€ {sc_figlio['worst']['valore'].iloc[-1]:,.0f}")
