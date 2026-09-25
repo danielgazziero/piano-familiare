@@ -189,7 +189,46 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | T10 | RLS policy tutte le tabelle → `USING (auth.role() = 'service_role')` (anon/authenticated bloccati) | `setup_supabase.py`, `src/positions.py → POSITIONS_SCHEMA_SQL` |
 | T11 | `public.rls_auto_enable()` SECURITY DEFINER → SECURITY INVOKER (Supabase Security Advisor) | SQL Supabase: `ALTER FUNCTION public.rls_auto_enable() SECURITY INVOKER;` |
 
-### 🔴 Alta priorità
+### ✅ Fix tecnici completati (25/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| T12 | `KeyError: quantita` in `get_azioni`/`get_fondi` — merge quantità da `posizioni` nel layer app prima di passare al portfolio | `app.py`, `src/portfolio.py` |
+| T13 | Privacy repo pubblico: `flor` → `figlio`, `affitto_chiara` → `affitto_esterno`, tutti i valori finanziari reali azzerati in `config.yaml`, `etf_flor` → `etf_figlio` in DB | 9 file + `ALTER TABLE` su Supabase |
+| T14 | Auto-seeding `asset_catalog` da `config.yaml` disabilitato — catalogo parte vuoto, popolato manualmente via UI | `src/app_state.py`, `app.py` |
+| T15 | Crash `simula_costi_figlio` con `nascita_figlio: ""` — guard su stringa vuota, `df_costi` condizionale, slider PAC min=0 | `src/simulator.py`, `app.py` |
+| T16 | `nascita_figlio` rimossa da `config.yaml` (dato personale) — letta da Supabase `config_params` con form inline nella sezione Figlio/a | `app.py`, `config.yaml` |
+| T17 | `POSIZIONI_DEFAULT` non esisteva in `positions.py` — crash su "Portafoglio storico"; sostituito con `asset_catalog` da `session_state` | `app.py` |
+| T18 | `simula_scenario_completo` crashava con `KeyError: nascita_figlio` se chiave assente — guard con `return pd.DataFrame()` | `src/simulator.py` |
+| S1 ✅ | Password plaintext in Supabase: auto-hash PBKDF2 all'avvio dell'app, prima del form login — finestra vulnerabilità azzerata | `app.py` |
+| S2 ✅ | Glob metacharacter injection da Supabase: `nome_<account>` ora sanitizzato prima della sostituzione nel pattern template | `src/parser.py` |
+
+### 🔴🔴 Priorità MASSIMA — Audit sicurezza & efficienza (25/09/2026)
+
+Risultati dell'audit sistematico del codebase. S1 e S2 già risolti sopra.
+
+#### Sicurezza residua
+
+| ID | Sev | Problema | File | Fix |
+|---|---|---|---|---|
+| S3 | MEDIA | MD5 per deduplicazione transazioni — collisioni note possono causare perdita silente di transazioni | `src/database.py:319` | Sostituire `hashlib.md5` con `hashlib.sha256` nel calcolo di `hash_tx` |
+| S4 | BASSA | Exception completa (`str(e)`) stampata su stdout — espone nomi colonne DB e valori nei log Streamlit Cloud | `src/database.py`, `src/positions.py`, `src/prices.py` (~25 occorrenze) | Loggare solo `type(e).__name__` nelle eccezioni di produzione |
+| S5 | BASSA | Nessun timeout sessione auth — `_auth_ok` in session_state persiste indefinitamente | `app.py:56` | Salvare `_auth_ts = time.time()` al login; invalidare dopo 3600s ad ogni rerun |
+| S6 | BASSA | Campo `data_ref` in Gestione Asset non validato prima dell'upsert Supabase | `app.py:~1329` | `date.fromisoformat(dr)` con `st.error` + `st.stop()` se non valido |
+
+#### Efficienza residua
+
+| ID | Sev | Problema | File | Fix |
+|---|---|---|---|---|
+| E3 | ALTA | 2× chiamate yfinance per ogni azione (ytd + 1y separate) — raddoppia la latenza per ogni azione in portafoglio | `src/portfolio.py:261` | Scaricare solo `period="1y"` e filtrare il subset YTD per indice data |
+| E4 | ALTA | `carica_posizioni()` chiamata 2× per ogni rerun Streamlit (in `get_fondi` e `get_azioni`) — ~400ms di overhead evitabile | `app.py:140,177` | Caricare una volta in `session_state['pos_df_cache']`; svuotare nel bottone "🔄 Aggiorna tutto" |
+| E5 | MEDIA | Backfill prezzi: N chiamate HTTP sequenziali (una per ISIN) invece di 1 batch yfinance | `src/positions.py:360` | Raggruppare ISIN per `data_da` minima e chiamare `scarica_tutti_storici` per gruppo |
+| E6 | MEDIA | `iterrows()` in hot path scrittura prezzi e transazioni — lento su batch grandi | `src/positions.py:264`, `src/database.py:316` | Sostituire con `to_dict('records')` e vectorizzare il calcolo hash |
+| E7 | MEDIA | `carica_ultime_quote_fondi` scarica fino a 5000 righe e raggruppa in Python — crescerà nel tempo | `src/database.py:261` | Creare RPC Supabase `get_latest_quotes()` con `DISTINCT ON (isin) ORDER BY isin, data DESC` |
+| E8 | BASSA | `_cached_client` ridefinisce `_build` a ogni chiamata — pattern fragile con `@st.cache_resource` | `src/database.py:42` | Estrarre `_build_client` a livello di modulo |
+| E9 | BASSA | `get_fondi()` non cacheata — eseguita ad ogni rerun Streamlit (chiamata 3 volte per load completo) | `app.py:128` | Caching in `session_state['fondi_df_cache']`; svuotare nel bottone "🔄 Aggiorna tutto" |
+
+### 🔴 Alta priorità — Feature
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
