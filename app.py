@@ -54,15 +54,9 @@ def _plotly_chart(fig, **kwargs):
     st.plotly_chart(fig, **kwargs)
 
 
-def _inject_theme():
-    """
-    Dark mode = tema nativo Streamlit (config.toml base=dark), niente CSS injection.
-    Light mode = CSS override per riportare tutto al bianco.
-    Solo proprietà colore — niente padding/margin per evitare layout shift.
-    """
+def _init_plotly_template():
+    """Imposta il template Plotly globale in base al tema corrente."""
     dark = st.session_state.get('_dark_mode_toggle', True)
-
-    # ── Plotly template ──────────────────────────────────────────────────────
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
         paper_bgcolor=_BG3, plot_bgcolor=_BG2,
         font=dict(color=_TEXT, size=12),
@@ -77,13 +71,27 @@ def _inject_theme():
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
-    # ── CSS: solo per light mode override ───────────────────────────────────
-    # In dark mode il tema nativo Streamlit (base=dark in config.toml) gestisce tutto.
-    # In light mode iniettiamo CSS con !important per sovrascrivere il tema dark.
-    if not dark:
+
+@st.fragment
+def _theme_toggle_fragment():
+    """
+    Fragment isolato: solo questo si aggiorna al cambio tema, la pagina principale
+    resta ferma (nessun layout shift). Inietta CSS globale + toggle.
+    """
+    dark = st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
+
+    # CSS sempre iniettato: copre entrambe le modalità in regole separate.
+    # Il browser applica solo le regole che matchano lo stato corrente.
+    if dark:
+        # Dark mode: solo override per i grafici Plotly (il tema nativo gestisce il resto)
+        css = f"""<style>
+.js-plotly-plot .plotly .bg {{fill:{_BG3}!important}}
+</style>"""
+    else:
+        # Light mode: override completo del tema dark nativo
         css = """<style>
-body {background-color:#FFFFFF!important;color:#31333F!important;color-scheme:light}
-[data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important;color-scheme:light}
+body {background-color:#FFFFFF!important;color:#31333F!important}
+[data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important}
 [data-testid="stAppViewContainer"] {background-color:#FFFFFF!important}
 [data-testid="stHeader"] {background-color:#FFFFFF!important}
 [data-testid="stMain"] {background-color:#FFFFFF!important}
@@ -106,8 +114,9 @@ input,textarea {background-color:#FFFFFF!important;color:#31333F!important}
 .stButton>button {background-color:#F0F2F6!important;color:#31333F!important}
 small,[data-testid="stCaptionContainer"] {color:rgba(49,51,63,.5)!important}
 hr {border-color:rgba(49,51,63,0.2)!important}
+.js-plotly-plot .plotly .bg {fill:white!important}
 </style>"""
-        st.markdown(css, unsafe_allow_html=True)
+    st.markdown(css, unsafe_allow_html=True)
 
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
@@ -176,7 +185,7 @@ if _DEMO:
         demo_get_eventi_portafoglio        as get_eventi_portafoglio,
     )
 
-_inject_theme()
+_init_plotly_template()
 
 BASE_DIR  = Path(__file__).parent
 INPUT_DIR = BASE_DIR / 'data' / 'input'
@@ -390,11 +399,7 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
             st.session_state.pop(k, None)
         st.rerun()
-    st.toggle(
-        "🌙 Dark mode",
-        key="_dark_mode_toggle",
-        value=True,
-    )
+    _theme_toggle_fragment()
     if st.session_state.get('nuove_tx'):
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
     if st.session_state.get('backfill_nuovi'):
