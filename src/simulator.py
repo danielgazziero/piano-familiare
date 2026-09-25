@@ -219,8 +219,12 @@ def simula_scenario_completo(config, pac_persona1=None, pac_figlio=None,
     rend_fondi = p_cfg.get('rendimento_fondi_base', 0.04)
     ter_fondi = p_cfg.get('ter_default', 0.02)
     rend_gen = p_cfg.get('rendimento_generali', 0.03)
-    nascita_figlio = datetime.strptime(config['date']['nascita_figlio'], '%Y-%m-%d').date()
-    inizio_nido = datetime.strptime(config['date']['inizio_asilo_nido'], '%Y-%m-%d').date()
+    _nascita_str = config.get('date', {}).get('nascita_figlio', '')
+    _nido_str    = config.get('date', {}).get('inizio_asilo_nido', '')
+    if not _nascita_str or not _nido_str:
+        return pd.DataFrame()
+    nascita_figlio = datetime.strptime(_nascita_str, '%Y-%m-%d').date()
+    inizio_nido    = datetime.strptime(_nido_str,    '%Y-%m-%d').date()
     tasso = rendimento / 12
     data_inizio = date.today().replace(day=1)
     liquidita = (p['liquidita_persona1'] + p['liquidita_persona2'] +

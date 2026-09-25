@@ -431,7 +431,14 @@ elif sezione == "📉 Portafoglio storico":
     st.caption("Valori giornalieri reali: quantità × prezzo di ogni giorno, "
                "scaricati retroattivamente all'apertura dell'app.")
 
-    from positions import POSIZIONI_DEFAULT, ASSET_TICKERS, storico_posizioni
+    from positions import ASSET_TICKERS, storico_posizioni
+    _cat_pos = st.session_state.get('asset_catalog', pd.DataFrame())
+    _nomi_map_pos = ({row['isin']: row['nome'] for _, row in _cat_pos.iterrows()}
+                     if not _cat_pos.empty else {})
+    _tutti_asset_pos = ([{'isin': row['isin'], 'nome': row['nome']}
+                         for _, row in _cat_pos.iterrows()
+                         if row.get('stato', 'attivo') == 'attivo']
+                        if not _cat_pos.empty else [])
 
     # Periodo
     c1,c2 = st.columns(2)
@@ -500,7 +507,7 @@ elif sezione == "📉 Portafoglio storico":
                                   if c not in ['data','totale']
                                   and df_port[c].sum() > 0]
 
-            nomi_map = {p['isin']: p['nome'] for p in POSIZIONI_DEFAULT}
+            nomi_map = _nomi_map_pos
             pal_area = [COLORS['blu'], COLORS['verde'], COLORS['arancio'],
                         COLORS['rosso'], COLORS['azzurro'], COLORS['viola'],
                         COLORS['teal'], COLORS['grigio']]
@@ -524,7 +531,7 @@ elif sezione == "📉 Portafoglio storico":
     # ── Vista per asset ───────────────────────────────────────
     else:
         # Selezione asset
-        tutti_asset = [p for p in POSIZIONI_DEFAULT if p['quantita'] > 0]
+        tutti_asset = _tutti_asset_pos
         nomi_asset = [p['nome'] for p in tutti_asset]
         asset_sel = st.selectbox("Seleziona asset", nomi_asset)
         isin_sel = next((p['isin'] for p in tutti_asset if p['nome'] == asset_sel), None)
