@@ -46,10 +46,11 @@ _GRID    = 'rgba(255,255,255,0.07)'
 
 def _inject_theme():
     """
-    Imposta template Plotly e inietta CSS via st.markdown (confermato che funziona).
-    Solo proprietà colore — niente padding/margin/border-width per evitare layout shift.
+    Dark mode = tema nativo Streamlit (config.toml base=dark), niente CSS injection.
+    Light mode = CSS override per riportare tutto al bianco.
+    Solo proprietà colore — niente padding/margin per evitare layout shift.
     """
-    dark = st.session_state.get('dark_mode', False)
+    dark = st.session_state.get('dark_mode', True)
 
     # ── Plotly template ──────────────────────────────────────────────────────
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
@@ -66,45 +67,37 @@ def _inject_theme():
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
-    # ── CSS via st.markdown ──────────────────────────────────────────────────
-    # Verificato via browser: st.markdown() con <style> in body si applica globalmente.
-    # !important batte le regole Emotion (che non usano !important).
-    # Solo proprietà colore → nessun layout shift (padding/margin/border-width esclusi).
-    if dark:
-        css = f"""<style>
-body {{background-color:{_BG}!important;color:{_TEXT}!important;color-scheme:dark}}
-[data-testid="stApp"] {{background:{_BG}!important;color:{_TEXT}!important;color-scheme:dark}}
-[data-testid="stAppViewContainer"] {{background-color:{_BG}!important}}
-[data-testid="stHeader"] {{background-color:{_BG}!important}}
-[data-testid="stSidebar"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-testid="stSidebar"] * {{color:{_TEXT}!important}}
-[data-testid="stMetricValue"] {{color:{_TEXT}!important}}
-[data-testid="stMetricLabel"] {{color:rgba(250,250,250,.65)!important}}
-[data-testid="stMetricDelta"] {{color:#1baf7a!important}}
-[data-testid="metric-container"] {{background-color:{_BG2}!important}}
-[data-testid="stExpander"] {{background-color:{_BG2}!important}}
-[data-testid="stAlert"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-testid="stDataFrame"] {{background-color:{_BG2}!important}}
-input,textarea {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-baseweb="select"]>div {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"] {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-[data-baseweb="tab-list"] {{background-color:{_BG}!important}}
-[data-baseweb="tab"] {{color:rgba(250,250,250,.6)!important}}
-[aria-selected="true"][data-baseweb="tab"] {{color:{_TEXT}!important}}
-.stButton>button {{background-color:{_BG2}!important;color:{_TEXT}!important}}
-small,[data-testid="stCaptionContainer"] {{color:rgba(250,250,250,.5)!important}}
-hr {{border-color:{_BORDER}!important}}
-.js-plotly-plot .plotly .bg {{fill:{_BG2}!important}}
-</style>"""
-    else:
+    # ── CSS: solo per light mode override ───────────────────────────────────
+    # In dark mode il tema nativo Streamlit (base=dark in config.toml) gestisce tutto.
+    # In light mode iniettiamo CSS con !important per sovrascrivere il tema dark.
+    if not dark:
         css = """<style>
 body {background-color:#FFFFFF!important;color:#31333F!important;color-scheme:light}
-[data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important}
+[data-testid="stApp"] {background:#FFFFFF!important;color:#31333F!important;color-scheme:light}
+[data-testid="stAppViewContainer"] {background-color:#FFFFFF!important}
+[data-testid="stHeader"] {background-color:#FFFFFF!important}
+[data-testid="stMain"] {background-color:#FFFFFF!important}
+[data-testid="stMainBlockContainer"] {background-color:#FFFFFF!important}
 [data-testid="stSidebar"] {background-color:#F0F2F6!important;color:#31333F!important}
 [data-testid="stSidebar"] * {color:#31333F!important}
+[data-testid="stMetricValue"] {color:#31333F!important}
+[data-testid="stMetricLabel"] {color:rgba(49,51,63,.65)!important}
+[data-testid="stMetricDelta"] {color:#1F5C8B!important}
 [data-testid="metric-container"] {background-color:#F0F2F6!important}
+[data-testid="stExpander"] {background-color:#F0F2F6!important}
+[data-testid="stAlert"] {background-color:#F0F2F6!important;color:#31333F!important}
+[data-testid="stDataFrame"] {background-color:#FFFFFF!important}
+input,textarea {background-color:#FFFFFF!important;color:#31333F!important}
+[data-baseweb="select"]>div {background-color:#FFFFFF!important;color:#31333F!important}
+[data-baseweb="popover"],[data-baseweb="menu"],[role="listbox"] {background-color:#FFFFFF!important;color:#31333F!important}
+[data-baseweb="tab-list"] {background-color:#FFFFFF!important}
+[data-baseweb="tab"] {color:rgba(49,51,63,.6)!important}
+[aria-selected="true"][data-baseweb="tab"] {color:#31333F!important}
+.stButton>button {background-color:#F0F2F6!important;color:#31333F!important}
+small,[data-testid="stCaptionContainer"] {color:rgba(49,51,63,.5)!important}
+hr {border-color:rgba(49,51,63,0.2)!important}
 </style>"""
-    st.markdown(css, unsafe_allow_html=True)
+        st.markdown(css, unsafe_allow_html=True)
 
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
@@ -389,10 +382,10 @@ with st.sidebar:
         st.rerun()
     _dark_toggle = st.toggle(
         "🌙 Dark mode",
-        value=st.session_state.get('dark_mode', False),
+        value=st.session_state.get('dark_mode', True),
         key="_dark_mode_toggle",
     )
-    if _dark_toggle != st.session_state.get('dark_mode', False):
+    if _dark_toggle != st.session_state.get('dark_mode', True):
         st.session_state['dark_mode'] = _dark_toggle
         st.rerun()
     if st.session_state.get('nuove_tx'):
