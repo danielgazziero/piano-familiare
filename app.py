@@ -36,6 +36,77 @@ st.set_page_config(page_title="Piano Finanziario Familiare",
                    page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
+def _inject_theme():
+    """Inietta CSS dark/light in base a session_state['dark_mode']."""
+    dark = st.session_state.get('dark_mode', False)
+    if dark:
+        css = """
+        <style>
+        /* ── dark mode ─────────────────────────────────────── */
+        .stApp { background-color: #0E1117 !important; color: #FAFAFA !important; }
+        [data-testid="stSidebar"] { background-color: #262730 !important; }
+        [data-testid="stSidebar"] * { color: #FAFAFA !important; }
+        [data-testid="stHeader"] { background-color: #0E1117 !important; }
+        [data-testid="stToolbar"] { background-color: #0E1117 !important; }
+        /* Cards / expanders / metric */
+        [data-testid="stMetric"],
+        [data-testid="stExpander"],
+        div[data-testid="stForm"],
+        .stTabs [data-baseweb="tab-panel"] { background-color: #262730 !important; border-radius: 8px; }
+        [data-testid="stMetricValue"] { color: #FAFAFA !important; }
+        [data-testid="stMetricLabel"] { color: rgba(250,250,250,0.7) !important; }
+        [data-testid="stMetricDelta"] { color: #1baf7a !important; }
+        /* Inputs */
+        input, textarea, select,
+        [data-baseweb="input"] input,
+        [data-baseweb="textarea"] textarea,
+        [data-baseweb="select"] div {
+            background-color: #262730 !important;
+            color: #FAFAFA !important;
+            border-color: rgba(250,250,250,0.2) !important;
+        }
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] { background-color: #0E1117 !important; }
+        .stTabs [data-baseweb="tab"] { color: rgba(250,250,250,0.7) !important; }
+        .stTabs [aria-selected="true"] { color: #FAFAFA !important; border-bottom-color: #1F5C8B !important; }
+        /* Dataframe / table */
+        [data-testid="stDataFrame"] { background-color: #262730 !important; }
+        /* Dividers */
+        hr { border-color: rgba(250,250,250,0.15) !important; }
+        /* Caption / small text */
+        .stCaption, small, [data-testid="stCaption"] { color: rgba(250,250,250,0.6) !important; }
+        /* Alerts */
+        [data-testid="stAlert"] { border-color: rgba(250,250,250,0.15) !important; }
+        /* Buttons */
+        .stButton > button {
+            background-color: #262730 !important;
+            color: #FAFAFA !important;
+            border-color: rgba(250,250,250,0.2) !important;
+        }
+        .stButton > button:hover { background-color: #3a3b45 !important; }
+        /* Slider */
+        [data-testid="stSlider"] [data-baseweb="slider"] * { background-color: #1F5C8B !important; }
+        /* Number input */
+        [data-testid="stNumberInput"] input { background-color: #262730 !important; color: #FAFAFA !important; }
+        /* Select/multiselect */
+        [data-baseweb="popover"] { background-color: #262730 !important; color: #FAFAFA !important; }
+        [data-baseweb="menu"] { background-color: #262730 !important; }
+        [data-baseweb="option"] { color: #FAFAFA !important; background-color: #262730 !important; }
+        [data-baseweb="option"]:hover { background-color: #3a3b45 !important; }
+        /* Plotly charts — handled separately via template */
+        </style>
+        """
+    else:
+        css = """
+        <style>
+        /* ── light mode (reset esplicito) ──────────────────── */
+        .stApp { background-color: #FFFFFF !important; color: #31333F !important; }
+        [data-testid="stSidebar"] { background-color: #F0F2F6 !important; }
+        [data-testid="stHeader"] { background-color: #FFFFFF !important; }
+        </style>
+        """
+    st.markdown(css, unsafe_allow_html=True)
+
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
 
@@ -102,6 +173,8 @@ if _DEMO:
         demo_aggiorna_quantita_asset       as aggiorna_quantita_asset,
         demo_get_eventi_portafoglio        as get_eventi_portafoglio,
     )
+
+_inject_theme()
 
 BASE_DIR  = Path(__file__).parent
 INPUT_DIR = BASE_DIR / 'data' / 'input'
@@ -314,6 +387,14 @@ with st.sidebar:
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
                   'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
             st.session_state.pop(k, None)
+        st.rerun()
+    _dark_toggle = st.toggle(
+        "🌙 Dark mode",
+        value=st.session_state.get('dark_mode', False),
+        key="_dark_mode_toggle",
+    )
+    if _dark_toggle != st.session_state.get('dark_mode', False):
+        st.session_state['dark_mode'] = _dark_toggle
         st.rerun()
     if st.session_state.get('nuove_tx'):
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
