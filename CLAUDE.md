@@ -231,6 +231,9 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 |---|---|---|
 | S8 ✅ | `st.warning(f"... {e}")` → `{type(e).__name__}` per errori import XLS — esposto nell'UI a utenti autenticati | `app.py:221` |
 | E13 ✅ | `.limit(3000)` aggiunto a `carica_prezzi_db()` — fondi con storico dal 2020 superano il limite Supabase 1000 nel percorso "Per asset" | `src/positions.py` |
+| E14 ✅ | `.limit(100)` aggiunto a `storico_posizioni()` | `src/positions.py` |
+| E15 ✅ | `.limit(500)` aggiunto a `eventi_portafoglio()` | `src/positions.py` |
+| E16 ✅ | `.limit(giorni+10)` aggiunto a `carica_patrimonio_log()` — bound dinamico preciso | `src/database.py` |
 
 ### 🔴 Alta priorità — Feature
 
