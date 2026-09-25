@@ -74,11 +74,26 @@ def _init_plotly_template():
 
 def _inject_css():
     """
-    Inietta CSS solo per light mode (dark è nativo via config.toml base=dark).
-    Chiamata nel main script: session_state è già aggiornato prima del rerun automatico,
-    quindi legge il valore corretto al primo passaggio senza st.rerun() aggiuntivo.
+    Inietta CSS di base sempre (scrollbar stabile, transizioni smooth),
+    più overrides light mode quando il toggle è disattivato.
     """
     dark = st.session_state.get('_dark_mode_toggle', True)
+
+    # Sempre: scrollbar-gutter:stable evita lo spostamento del contenuto quando
+    # compare/scompare la scrollbar al cambio di tema o al caricamento di nuovi elementi.
+    # Le transizioni rendono il cambio colore meno brusco.
+    st.markdown("""<style>
+html { scrollbar-gutter: stable; overflow-y: scroll; }
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+[data-testid="stSidebar"],
+[data-testid="stHeader"] {
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+</style>""", unsafe_allow_html=True)
+
     if not dark:
         st.markdown("""<style>
 body {background-color:#FFFFFF!important;color:#31333F!important}
