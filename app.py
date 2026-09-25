@@ -67,101 +67,109 @@ def _inject_theme():
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
 
-    # ── CSS: sovrascrive le CSS custom properties che Streamlit usa internamente
-    # Questo approccio non scrive su disco e non causa riavvii del server.
+    # ── CSS injection ────────────────────────────────────────────────────────
+    # Specificità: Emotion usa .st-emotion-cache-xxx (0,1,0).
+    # Usiamo selettori (0,2,0) — attributo + classe — per batterlo sempre.
     if dark:
         css = f"""<style>
-:root, body, .stApp {{
-    --background-color: {_BG} !important;
-    --secondary-background-color: {_BG2} !important;
-    --text-color: {_TEXT} !important;
-    --primary-color: #1F5C8B !important;
-    --font: "Source Sans Pro", sans-serif;
-}}
-/* App e sidebar */
-.stApp, .stApp > .main {{
+/* ── contenitori principali: specificità (0,2,0) > Emotion (0,1,0) ── */
+body {{
     background-color: {_BG} !important;
     color: {_TEXT} !important;
+    color-scheme: dark;
 }}
-[data-testid="stSidebar"] > div:first-child {{
-    background-color: {_BG2} !important;
+[data-testid="stApp"].stApp {{
+    background: {_BG} !important;
+    color: {_TEXT} !important;
+    color-scheme: dark;
 }}
-/* Header */
+[data-testid="stHeader"].stAppHeader,
 [data-testid="stHeader"] {{
-    background-color: {_BG} !important;
+    background: {_BG} !important;
     border-bottom: 1px solid {_BORDER} !important;
 }}
-/* Testo generale */
-p, h1, h2, h3, h4, label, span, div {{
+[data-testid="stAppViewContainer"],
+section.main, .main .block-container {{
+    background-color: {_BG} !important;
+}}
+/* sidebar — eredita colore testo */
+[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div:first-child {{
+    background-color: {_BG2} !important;
     color: {_TEXT} !important;
 }}
-/* Metriche */
+/* metriche */
+[data-testid="metric-container"] {{
+    background-color: {_BG2} !important;
+    border-radius: 8px; padding: 8px;
+}}
 [data-testid="stMetricValue"] {{ color: {_TEXT} !important; }}
 [data-testid="stMetricLabel"] {{ color: rgba(250,250,250,0.65) !important; }}
-[data-testid="metric-container"] {{ background-color: {_BG2} !important; border-radius:8px; padding:8px; }}
-/* Expander */
-[data-testid="stExpander"] {{ background-color: {_BG2} !important; border-color: {_BORDER} !important; }}
-/* Input, textarea, select */
-input, textarea, [data-baseweb="input"] input, [data-baseweb="textarea"] textarea {{
+[data-testid="stMetricDelta"] {{ color: #1baf7a !important; }}
+/* expander */
+[data-testid="stExpander"] {{
+    background-color: {_BG2} !important;
+    border-color: {_BORDER} !important;
+}}
+/* input / textarea */
+input, textarea {{
     background-color: {_BG2} !important;
     color: {_TEXT} !important;
     border-color: {_BORDER} !important;
 }}
-/* Select */
+/* select / dropdown BaseUI */
 [data-baseweb="select"] > div {{
     background-color: {_BG2} !important;
     border-color: {_BORDER} !important;
     color: {_TEXT} !important;
 }}
-[data-baseweb="popover"], [data-baseweb="menu"], [role="listbox"] {{
+[data-baseweb="popover"],
+[data-baseweb="menu"],
+[role="listbox"] {{
     background-color: {_BG2} !important;
     border-color: {_BORDER} !important;
-}}
-[role="option"], [data-baseweb="option"] {{
-    background-color: {_BG2} !important;
     color: {_TEXT} !important;
 }}
 [role="option"]:hover, [data-baseweb="option"]:hover {{
     background-color: #3a3b45 !important;
 }}
-/* Tabs */
-.stTabs [data-baseweb="tab-list"] {{ background-color: {_BG} !important; border-color: {_BORDER} !important; }}
-.stTabs [data-baseweb="tab"] {{ color: rgba(250,250,250,0.65) !important; }}
-.stTabs [aria-selected="true"] {{ color: {_TEXT} !important; border-bottom-color: #1F5C8B !important; }}
-.stTabs [data-baseweb="tab-panel"] {{ background-color: {_BG} !important; }}
-/* Bottoni */
+/* tabs */
+[data-baseweb="tab-list"] {{ background-color: {_BG} !important; }}
+[data-baseweb="tab"] {{ color: rgba(250,250,250,0.6) !important; }}
+[aria-selected="true"][data-baseweb="tab"] {{
+    color: {_TEXT} !important;
+    border-bottom-color: #1F5C8B !important;
+}}
+/* bottoni */
 .stButton > button {{
     background-color: {_BG2} !important;
     color: {_TEXT} !important;
     border-color: {_BORDER} !important;
 }}
 .stButton > button:hover {{ background-color: #3a3b45 !important; }}
-/* Dataframe */
+/* dataframe */
 [data-testid="stDataFrame"] {{ background-color: {_BG2} !important; }}
-[data-testid="stDataFrame"] iframe {{ filter: invert(0.9) hue-rotate(180deg); }}
-/* Caption */
-[data-testid="stCaptionContainer"], .stCaption {{ color: rgba(250,250,250,0.55) !important; }}
-/* Alert / info / warning */
-[data-testid="stAlert"] {{ background-color: {_BG2} !important; border-color: {_BORDER} !important; }}
-/* Divider */
+/* caption / help */
+small, [data-testid="stCaptionContainer"] {{ color: rgba(250,250,250,0.5) !important; }}
+/* alert */
+[data-testid="stAlert"] {{
+    background-color: {_BG2} !important;
+    border-color: {_BORDER} !important;
+    color: {_TEXT} !important;
+}}
+/* divider */
 hr {{ border-color: {_BORDER} !important; }}
-/* Number input */
-[data-testid="stNumberInput"] input {{ background-color: {_BG2} !important; color: {_TEXT} !important; }}
-/* Plotly SVG background — guardia extra in caso theme=None non bastasse */
+/* Plotly SVG — guardia extra */
 .js-plotly-plot .plotly .bg {{ fill: {_BG2} !important; }}
 </style>"""
     else:
         css = """<style>
-:root, body, .stApp {
-    --background-color: #FFFFFF !important;
-    --secondary-background-color: #F0F2F6 !important;
-    --text-color: #31333F !important;
-    --primary-color: #1F5C8B !important;
+body { color-scheme: light; }
+[data-testid="stApp"].stApp { background: #FFFFFF !important; color: #31333F !important; }
+[data-testid="stSidebar"], section[data-testid="stSidebar"] > div:first-child {
+    background-color: #F0F2F6 !important; color: #31333F !important;
 }
-.stApp { background-color: #FFFFFF !important; color: #31333F !important; }
-[data-testid="stSidebar"] > div:first-child { background-color: #F0F2F6 !important; }
 [data-testid="metric-container"] { background-color: #F0F2F6 !important; border-radius:8px; padding:8px; }
-[data-testid="stDataFrame"] iframe { filter: none; }
 </style>"""
     st.markdown(css, unsafe_allow_html=True)
 
