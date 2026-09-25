@@ -46,7 +46,7 @@ _GRID    = 'rgba(255,255,255,0.07)'
 
 def _plotly_chart(fig, **kwargs):
     """Wrapper st.plotly_chart: forza bgcolor della figura in base al tema corrente."""
-    dark = st.session_state.get('dark_mode', True)
+    dark = st.session_state.get('_dark_mode_toggle', True)
     if dark:
         fig.update_layout(paper_bgcolor=_BG3, plot_bgcolor=_BG2, font_color=_TEXT)
     else:
@@ -60,7 +60,7 @@ def _inject_theme():
     Light mode = CSS override per riportare tutto al bianco.
     Solo proprietà colore — niente padding/margin per evitare layout shift.
     """
-    dark = st.session_state.get('dark_mode', True)
+    dark = st.session_state.get('_dark_mode_toggle', True)
 
     # ── Plotly template ──────────────────────────────────────────────────────
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
@@ -390,14 +390,11 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
             st.session_state.pop(k, None)
         st.rerun()
-    _dark_toggle = st.toggle(
+    st.toggle(
         "🌙 Dark mode",
-        value=st.session_state.get('dark_mode', True),
         key="_dark_mode_toggle",
+        value=True,
     )
-    if _dark_toggle != st.session_state.get('dark_mode', True):
-        st.session_state['dark_mode'] = _dark_toggle
-        st.rerun()
     if st.session_state.get('nuove_tx'):
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
     if st.session_state.get('backfill_nuovi'):
