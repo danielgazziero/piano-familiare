@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import date, datetime, timedelta
 import time
 import sys
+import html as _html
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
@@ -64,7 +65,7 @@ def _plotly_chart(fig, _title=None, **kwargs):
         fig.update_layout(title_text='', margin=dict(t=20))
         st.markdown(
             f"<div style='text-align:center;font-weight:600;font-size:1em;"
-            f"padding-bottom:2px'>{_title}</div>",
+            f"padding-bottom:2px'>{_html.escape(_title)}</div>",
             unsafe_allow_html=True,
         )
 
@@ -289,29 +290,37 @@ def get_fondi():
 
 
 def get_etf_perf():
-    cat = st.session_state.get('asset_catalog', pd.DataFrame())
-    return get_portfolio_performance(get_config(), catalog_df=cat if not cat.empty else None)
+    if 'etf_perf_cache' not in st.session_state:
+        cat = st.session_state.get('asset_catalog', pd.DataFrame())
+        st.session_state['etf_perf_cache'] = get_portfolio_performance(
+            get_config(), catalog_df=cat if not cat.empty else None)
+    return st.session_state['etf_perf_cache']
 
 
 def get_azioni():
-    cat = st.session_state.get('asset_catalog', pd.DataFrame())
-    if cat.empty or 'tipo' not in cat.columns:
-        return get_azioni_snapshot(get_config())
-    az_cat = cat[cat['tipo'] == 'azione'].copy()
-    if az_cat.empty:
-        return get_azioni_snapshot(get_config())
-    if 'quantita' not in az_cat.columns:
-        try:
-            pos_df = _get_posizioni()
-            if not pos_df.empty and 'isin' in pos_df.columns:
-                pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
-                az_cat = az_cat.merge(pos_az, on='isin', how='left')
-                az_cat['quantita'] = az_cat['quantita'].fillna(0)
+    if 'azioni_df_cache' not in st.session_state:
+        cat = st.session_state.get('asset_catalog', pd.DataFrame())
+        if cat.empty or 'tipo' not in cat.columns:
+            result = get_azioni_snapshot(get_config())
+        else:
+            az_cat = cat[cat['tipo'] == 'azione'].copy()
+            if az_cat.empty:
+                result = get_azioni_snapshot(get_config())
             else:
-                az_cat['quantita'] = 0
-        except Exception:
-            az_cat['quantita'] = 0
-    return get_azioni_snapshot(get_config(), catalog_df=az_cat)
+                if 'quantita' not in az_cat.columns:
+                    try:
+                        pos_df = _get_posizioni()
+                        if not pos_df.empty and 'isin' in pos_df.columns:
+                            pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
+                            az_cat = az_cat.merge(pos_az, on='isin', how='left')
+                            az_cat['quantita'] = az_cat['quantita'].fillna(0)
+                        else:
+                            az_cat['quantita'] = 0
+                    except Exception:
+                        az_cat['quantita'] = 0
+                result = get_azioni_snapshot(get_config(), catalog_df=az_cat)
+        st.session_state['azioni_df_cache'] = result
+    return st.session_state['azioni_df_cache']
 
 # Importa automaticamente eventuali nuovi XLS in data/input/
 if 'xls_importati' not in st.session_state:
@@ -419,7 +428,9 @@ with st.sidebar:
         st.cache_data.clear()
         for k in ['params','quote_map','xls_importati','saved_today',
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
-                  'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
+                  'pos_df_cache','fondi_df_cache','_app_pwd_cache',
+                  'etf_perf_cache','azioni_df_cache','tx_db_cache',
+                  'patrimonio_log_cache','port_storico_cache','eventi_storico_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -493,7 +504,9 @@ if sezione == "🏠 Stato di famiglia":
     _plotly_chart(fig_pat, use_container_width=True, theme=None)
 
     # Storico patrimonio da Supabase
-    log_df = get_storico_patrimonio(giorni=730)
+    if 'patrimonio_log_cache' not in st.session_state:
+        st.session_state['patrimonio_log_cache'] = get_storico_patrimonio(giorni=730)
+    log_df = st.session_state['patrimonio_log_cache']
     if not log_df.empty and 'totale_eur' in log_df.columns:
         st.subheader("Andamento patrimonio nel tempo")
         periodo_log = st.select_slider("Periodo storico",
@@ -526,8 +539,9 @@ if sezione == "🏠 Stato di famiglia":
         st.info("Lo storico si costruirà automaticamente giorno per giorno aprendo l'app.")
 
     st.subheader("Entrate & uscite bancarie")
-    # Usa transazioni dal DB (più complete) o fallback su XLS locali
-    df = carica_transazioni_db(mesi=12)
+    if 'tx_db_cache' not in st.session_state:
+        st.session_state['tx_db_cache'] = carica_transazioni_db(mesi=12)
+    df = st.session_state['tx_db_cache']
     if df.empty:
         st.info("Nessuna transazione nel DB. Copia gli XLS in data/input/ e premi 🔄 Aggiorna tutto.")
     else:
@@ -586,8 +600,12 @@ elif sezione == "📉 Portafoglio storico":
 
     # ── Vista aggregata ───────────────────────────────────────
     if vista == "Aggregato":
+        if 'port_storico_cache' not in st.session_state:
+            st.session_state['port_storico_cache'] = {}
         with st.spinner("Caricamento storico portafoglio..."):
-            df_port = get_storico_portafoglio(data_da)
+            if data_da not in st.session_state['port_storico_cache']:
+                st.session_state['port_storico_cache'][data_da] = get_storico_portafoglio(data_da)
+            df_port = st.session_state['port_storico_cache'][data_da]
 
         if df_port.empty:
             st.info("Nessun dato storico disponibile. "
@@ -614,7 +632,11 @@ elif sezione == "📉 Portafoglio storico":
             ))
 
             # Evidenzia eventi (acquisti/vendite)
-            eventi = get_eventi_portafoglio(data_da)
+            if 'eventi_storico_cache' not in st.session_state:
+                st.session_state['eventi_storico_cache'] = {}
+            if data_da not in st.session_state['eventi_storico_cache']:
+                st.session_state['eventi_storico_cache'][data_da] = get_eventi_portafoglio(data_da)
+            eventi = st.session_state['eventi_storico_cache'][data_da]
             if not eventi.empty:
                 for _, ev in eventi.iterrows():
                     fig_tot.add_vline(
