@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import date, datetime, timedelta
 import time
 import sys
+import html as _html
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
@@ -64,7 +65,7 @@ def _plotly_chart(fig, _title=None, **kwargs):
         fig.update_layout(title_text='', margin=dict(t=20))
         st.markdown(
             f"<div style='text-align:center;font-weight:600;font-size:1em;"
-            f"padding-bottom:2px'>{_title}</div>",
+            f"padding-bottom:2px'>{_html.escape(_title)}</div>",
             unsafe_allow_html=True,
         )
 
@@ -73,8 +74,10 @@ def _plotly_chart(fig, _title=None, **kwargs):
 
 
 def _init_plotly_template():
-    """Imposta il template Plotly globale in base al tema corrente."""
+    """Imposta il template Plotly globale in base al tema corrente. Skip se tema invariato."""
     dark = st.session_state.get('_dark_mode_toggle', True)
+    if st.session_state.get('_plotly_tpl_dark') == dark:
+        return
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
         paper_bgcolor=_BG3, plot_bgcolor=_BG2,
         font=dict(color=_TEXT, size=12),
@@ -88,6 +91,7 @@ def _init_plotly_template():
         colorway=['#1F5C8B','#1baf7a','#E9C46A','#E63946','#A8DADC','#7B2D8B','#2EC4B6','#FF9F1C'],
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
+    st.session_state['_plotly_tpl_dark'] = dark
 
 
 def _inject_css():
@@ -289,29 +293,37 @@ def get_fondi():
 
 
 def get_etf_perf():
-    cat = st.session_state.get('asset_catalog', pd.DataFrame())
-    return get_portfolio_performance(get_config(), catalog_df=cat if not cat.empty else None)
+    if 'etf_perf_cache' not in st.session_state:
+        cat = st.session_state.get('asset_catalog', pd.DataFrame())
+        st.session_state['etf_perf_cache'] = get_portfolio_performance(
+            get_config(), catalog_df=cat if not cat.empty else None)
+    return st.session_state['etf_perf_cache']
 
 
 def get_azioni():
-    cat = st.session_state.get('asset_catalog', pd.DataFrame())
-    if cat.empty or 'tipo' not in cat.columns:
-        return get_azioni_snapshot(get_config())
-    az_cat = cat[cat['tipo'] == 'azione'].copy()
-    if az_cat.empty:
-        return get_azioni_snapshot(get_config())
-    if 'quantita' not in az_cat.columns:
-        try:
-            pos_df = _get_posizioni()
-            if not pos_df.empty and 'isin' in pos_df.columns:
-                pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
-                az_cat = az_cat.merge(pos_az, on='isin', how='left')
-                az_cat['quantita'] = az_cat['quantita'].fillna(0)
+    if 'azioni_df_cache' not in st.session_state:
+        cat = st.session_state.get('asset_catalog', pd.DataFrame())
+        if cat.empty or 'tipo' not in cat.columns:
+            result = get_azioni_snapshot(get_config())
+        else:
+            az_cat = cat[cat['tipo'] == 'azione'].copy()
+            if az_cat.empty:
+                result = get_azioni_snapshot(get_config())
             else:
-                az_cat['quantita'] = 0
-        except Exception:
-            az_cat['quantita'] = 0
-    return get_azioni_snapshot(get_config(), catalog_df=az_cat)
+                if 'quantita' not in az_cat.columns:
+                    try:
+                        pos_df = _get_posizioni()
+                        if not pos_df.empty and 'isin' in pos_df.columns:
+                            pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
+                            az_cat = az_cat.merge(pos_az, on='isin', how='left')
+                            az_cat['quantita'] = az_cat['quantita'].fillna(0)
+                        else:
+                            az_cat['quantita'] = 0
+                    except Exception:
+                        az_cat['quantita'] = 0
+                result = get_azioni_snapshot(get_config(), catalog_df=az_cat)
+        st.session_state['azioni_df_cache'] = result
+    return st.session_state['azioni_df_cache']
 
 # Importa automaticamente eventuali nuovi XLS in data/input/
 if 'xls_importati' not in st.session_state:
@@ -350,10 +362,6 @@ if db_ok and 'backfill_done' not in st.session_state:
         st.session_state['backfill_done'] = True
         if res['n_prezzi_scaricati'] > 0:
             st.session_state['backfill_nuovi'] = res['n_prezzi_scaricati']
-        # Ricarica il catalog dopo il seeding iniziale (prima esecuzione)
-        if 'asset_catalog' not in st.session_state or st.session_state['asset_catalog'].empty:
-            st.session_state['asset_catalog'] = get_asset_catalog()
-            _catalog = st.session_state['asset_catalog']
     except Exception:
         st.session_state['backfill_done'] = True
 
@@ -419,7 +427,10 @@ with st.sidebar:
         st.cache_data.clear()
         for k in ['params','quote_map','xls_importati','saved_today',
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
-                  'pos_df_cache','fondi_df_cache','_app_pwd_cache']:
+                  'pos_df_cache','fondi_df_cache','_app_pwd_cache',
+                  'etf_perf_cache','azioni_df_cache','tx_db_cache',
+                  'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
+                  '_plotly_tpl_dark']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -493,7 +504,9 @@ if sezione == "🏠 Stato di famiglia":
     _plotly_chart(fig_pat, use_container_width=True, theme=None)
 
     # Storico patrimonio da Supabase
-    log_df = get_storico_patrimonio(giorni=730)
+    if 'patrimonio_log_cache' not in st.session_state:
+        st.session_state['patrimonio_log_cache'] = get_storico_patrimonio(giorni=730)
+    log_df = st.session_state['patrimonio_log_cache']
     if not log_df.empty and 'totale_eur' in log_df.columns:
         st.subheader("Andamento patrimonio nel tempo")
         periodo_log = st.select_slider("Periodo storico",
@@ -526,8 +539,9 @@ if sezione == "🏠 Stato di famiglia":
         st.info("Lo storico si costruirà automaticamente giorno per giorno aprendo l'app.")
 
     st.subheader("Entrate & uscite bancarie")
-    # Usa transazioni dal DB (più complete) o fallback su XLS locali
-    df = carica_transazioni_db(mesi=12)
+    if 'tx_db_cache' not in st.session_state:
+        st.session_state['tx_db_cache'] = carica_transazioni_db(mesi=12)
+    df = st.session_state['tx_db_cache']
     if df.empty:
         st.info("Nessuna transazione nel DB. Copia gli XLS in data/input/ e premi 🔄 Aggiorna tutto.")
     else:
@@ -586,8 +600,12 @@ elif sezione == "📉 Portafoglio storico":
 
     # ── Vista aggregata ───────────────────────────────────────
     if vista == "Aggregato":
+        if 'port_storico_cache' not in st.session_state:
+            st.session_state['port_storico_cache'] = {}
         with st.spinner("Caricamento storico portafoglio..."):
-            df_port = get_storico_portafoglio(data_da)
+            if data_da not in st.session_state['port_storico_cache']:
+                st.session_state['port_storico_cache'][data_da] = get_storico_portafoglio(data_da)
+            df_port = st.session_state['port_storico_cache'][data_da]
 
         if df_port.empty:
             st.info("Nessun dato storico disponibile. "
@@ -614,7 +632,11 @@ elif sezione == "📉 Portafoglio storico":
             ))
 
             # Evidenzia eventi (acquisti/vendite)
-            eventi = get_eventi_portafoglio(data_da)
+            if 'eventi_storico_cache' not in st.session_state:
+                st.session_state['eventi_storico_cache'] = {}
+            if data_da not in st.session_state['eventi_storico_cache']:
+                st.session_state['eventi_storico_cache'][data_da] = get_eventi_portafoglio(data_da)
+            eventi = st.session_state['eventi_storico_cache'][data_da]
             if not eventi.empty:
                 for _, ev in eventi.iterrows():
                     fig_tot.add_vline(
@@ -1344,26 +1366,25 @@ elif sezione == _SEZIONE_FIGLIO:
     sc_figlio = simula_pac_scenari(pac_f, 18, rend_base=rf/100,
                                     rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
                                     rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
-    # Prova a leggere nascita_figlio da Supabase (fonte di verità) e iniettalo nel config
-    if not config.get('date', {}).get('nascita_figlio'):
-        try:
-            from database import carica_param as _cp
-            _nb = _cp('nascita_figlio')
-            if _nb:
-                config.setdefault('date', {})['nascita_figlio'] = str(_nb)
-        except Exception:
-            pass
+    # Legge nascita_figlio da session_state['params'] (già caricato), poi da config come fallback.
+    # Non muta mai config (è oggetto @st.cache_data condiviso tra rerun).
+    _nb = (st.session_state['params'].get('nascita_figlio')
+           or config.get('date', {}).get('nascita_figlio'))
+    _config_figlio = dict(config)
+    if _nb:
+        _config_figlio['date'] = dict(config.get('date', {}))
+        _config_figlio['date']['nascita_figlio'] = str(_nb)
 
-    df_costi = simula_costi_figlio(config, eta_max=22)
+    df_costi = simula_costi_figlio(_config_figlio, eta_max=22)
 
     if df_costi.empty:
         with st.expander("📅 Imposta data di nascita", expanded=True):
             nascita_input = st.date_input("Data di nascita", value=None, min_value=date(2000,1,1), max_value=date.today())
             if st.button("💾 Salva") and nascita_input:
                 from app_state import salva_param as _sp
-                _sp('nascita_figlio', nascita_input.strftime('%Y-%m-%d'))
-                config.setdefault('date', {})['nascita_figlio'] = nascita_input.strftime('%Y-%m-%d')
-                df_costi = simula_costi_figlio(config, eta_max=22)
+                _nb_str = nascita_input.strftime('%Y-%m-%d')
+                _sp('nascita_figlio', _nb_str)
+                st.session_state['params']['nascita_figlio'] = _nb_str
                 st.success("Data salvata.")
                 st.rerun()
 
@@ -1423,8 +1444,11 @@ elif sezione == "⚙️ Gestione Asset":
         st.error("DB non disponibile — impossibile gestire gli asset.")
         st.stop()
 
-    # Ricarica sempre dal DB in questa sezione
-    cat_df = get_asset_catalog()
+    # Usa il catalog già in cache (sessione); si ricarica solo dopo modifiche (pop + rerun)
+    cat_df = st.session_state.get('asset_catalog', pd.DataFrame())
+    if cat_df.empty:
+        cat_df = get_asset_catalog()
+        st.session_state['asset_catalog'] = cat_df
 
     if cat_df.empty:
         st.info("Nessun asset nel catalogo. Aggiungi il primo qui sotto.")

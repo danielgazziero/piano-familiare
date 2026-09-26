@@ -563,7 +563,7 @@ def carica_asset_tickers() -> tuple:
         return {}, {}
     tickers: dict = {}
     fallbacks: dict = {}
-    for _, row in df.iterrows():
+    for row in df.to_dict('records'):
         isin = row.get('isin')
         if not isin:
             continue

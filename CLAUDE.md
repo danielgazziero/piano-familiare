@@ -225,6 +225,20 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
 | E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
 
+### ✅ Fix tecnici completati (26/09/2026 — round 5)
+
+| # | Fix | File |
+|---|---|---|
+| P07 ✅ | `_init_plotly_template()` skip rebuild se tema invariato — `_plotly_tpl_dark` in session_state | `app.py` |
+| P08 ✅ | `nascita_figlio` letto da `session_state['params']` invece di chiamata Supabase diretta; rimossa mutazione di `config` (@st.cache_data) | `app.py` |
+| P09 ✅ | Gestione Asset usa `session_state['asset_catalog']` invece di `get_asset_catalog()` fresca ad ogni rerun | `app.py` |
+| P10 ✅ | Rimosso reload ridondante di `asset_catalog` dopo backfill (già caricato a inizio sessione) | `app.py` |
+| P11 ✅ | `piano_uscita_ottimale()`: `iterrows()` + `.at[]` sostituiti con loop su `to_dict('records')` — `aliquota`/`etf_dest` spostati fuori dai loop annidati | `src/portfolio.py` |
+| P12 ✅ | `get_etf_history_chart()` unificata su `_batch_download` (stesso meccanismo cache di `get_portfolio_performance`) | `src/portfolio.py` |
+| P13 ✅ | `carica_quote_fondi_persistenti()`: `iterrows()` → `.set_index().to_dict()` vettoriale | `src/app_state.py` |
+| P14 ✅ | `aggiorna_quote_fondi()`: `iterrows()` → `to_dict('records')` per fondi_meta | `src/app_state.py` |
+| P15 ✅ | `carica_asset_tickers()` in `database.py`: `iterrows()` → `to_dict('records')` | `src/database.py` |
+
 ### ✅ Fix tecnici completati (25/09/2026 — round 4)
 
 | # | Fix | File |
