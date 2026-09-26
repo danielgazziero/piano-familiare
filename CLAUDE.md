@@ -27,9 +27,9 @@ App disponibile su http://localhost:8501 — si ricarica automaticamente ad ogni
 ## Stack tecnico
 
 - **Frontend:** Streamlit — navigazione via `st.sidebar.radio`, un unico `app.py`
-- **Grafici:** Plotly (go.Figure / px)
+- **Grafici:** Plotly (go.Figure / px) — wrapper `_plotly_chart()` forza bgcolor e titoli come elementi Streamlit separati (uniforme dark/light)
 - **Database:** Supabase (Postgres hosted) — credenziali in `.streamlit/secrets.toml` (gitignored) via `st.secrets`
-- **Prezzi ETF/azioni:** yfinance — ticker in `config.yaml` e `src/prices.py`
+- **Prezzi ETF/azioni:** yfinance — ticker in `config.yaml` e `src/prices.py`; batch download via `_batch_download(tickers_tuple, period)` con `@st.cache_data(ttl=1800)`
 - **Prezzi fondi bancari:** manuali — nessun ticker Yahoo, valorizzati da `quote_fondi` su Supabase
 - **Parsing XLS banca:** xlrd 1.2.0 (BIFF8, formato vecchio conto Persona 1) + openpyxl (formato nuovo)
 
@@ -52,25 +52,43 @@ app.py
 
 ### Sequenza di avvio (ogni sessione Streamlit)
 
-1. `load_config()` — carica `config.yaml` (@st.cache_data ttl=3600)
+1. `load_config()` — carica `config.yaml` (`@st.cache_data ttl=3600`)
 2. `init_db_connection()` — verifica Supabase; l'app funziona anche offline
-3. Carica `params` da `config_params` (DB) o fallback da config.yaml
-4. Carica `quote_map` `{isin: quota}` da `quote_fondi` (DB) o fallback da config.yaml
-5. Auto-import XLS da `data/input/` → `salva_transazioni()` (deduplicato via MD5)
-6. Auto-save snapshot patrimonio odierno (upsert su `patrimonio_log`)
-7. Backfill silenzioso: scarica prezzi mancanti per tutti gli ISIN noti
+3. Auth — password PBKDF2 da `config_params.app_password`; cacheata in `session_state['_app_pwd_cache']`
+4. Carica `params` da `config_params` → `session_state['params']`
+5. Carica `asset_catalog` da DB → `session_state['asset_catalog']`
+6. Carica `quote_map` da `quote_fondi` → `session_state['quote_map']`
+7. Auto-import XLS da `data/input/` → `salva_transazioni()` (deduplicato via SHA-256)
+8. Auto-save snapshot patrimonio odierno (upsert su `patrimonio_log`)
+9. Backfill silenzioso: scarica prezzi mancanti per tutti gli ISIN noti
+
+### Caching session_state
+
+Tutte le chiamate Supabase/yfinance costose sono messe in cache la prima volta e riusate per ogni rerun della sessione. La chiave di invalidazione è il pulsante "🔄 Aggiorna tutto" che svuota:
+
+```python
+['params', 'quote_map', 'xls_importati', 'saved_today', 'backfill_done',
+ 'backfill_nuovi', 'nuove_tx', 'asset_catalog', 'pos_df_cache',
+ 'fondi_df_cache', '_app_pwd_cache', 'etf_perf_cache', 'azioni_df_cache',
+ 'tx_db_cache', 'patrimonio_log_cache', 'port_storico_cache',
+ 'eventi_storico_cache', '_plotly_tpl_dark']
+```
+
+Per `port_storico_cache` e `eventi_storico_cache` la cache è un dict keyed per `data_da`.
 
 ### Valorizzazione asset
 
-- **ETF / azioni ACN:** prezzi in tempo reale via yfinance — `src/prices.py` + `src/portfolio.py`
-- **Fondi bancari italiani:** `ticker_yf: null` in config — prezzi non disponibili su Yahoo. Il valore viene da `quote_map` (`quote_fondi` su Supabase, aggiornato manualmente via XLS o UI). Il fallback è `valore_quota_ref` in config.yaml.
-- **Portafoglio storico:** prezzi giornalieri in `prezzi_storici` (Supabase), quantità in `posizioni` con date di inizio/fine — `positions.py` ricostruisce `valore = quantità(giorno) × prezzo(giorno)` con forward-fill per weekend/festivi.
+- **ETF / azioni ACN:** batch download `_batch_download(tickers, period)` con cache `@st.cache_data(ttl=1800)`. `get_etf_history_chart()` usa lo stesso `_batch_download` (non più `yf.Ticker` separato).
+- **Fondi bancari italiani:** prezzi da `quote_map` (Supabase `quote_fondi`). Fallback a `valore_quota_ref` in `asset_catalog` o `config.yaml`.
+- **Portafoglio storico:** prezzi giornalieri in `prezzi_storici`, quantità in `posizioni` — `positions.py` ricostruisce `valore = quantità(giorno) × prezzo(giorno)` con forward-fill per weekend/festivi. Gli ISIN sono passati da `session_state['asset_catalog']` per evitare query ridondante.
 
 ### Parsing XLS bancari
 
 `src/parser.py` legge `config.yaml → banche[].formato` e delega a `src/adapters.py`:
 - `bper_xls` → xlrd 1.2.0 BIFF8 (estratti vecchio formato, conto Persona 1)
 - `bper_xls_new` → openpyxl (estratti nuovo formato, conto Persona 2 e recenti Persona 1)
+
+Le keyword per escludere i bonifici interni (`transfer_keywords` da Supabase) vengono passate come parametro `keywords=` a `adapter.parse()` e poi a `is_internal_transfer()` — **non** più come mutazione globale di `TRANSFER_KEYWORDS`.
 
 File XLS da mettere in `data/input/` — vengono importati automaticamente all'avvio.
 
@@ -83,63 +101,68 @@ La password di accesso viene **esclusivamente** da Supabase `config_params` → 
 
 Comportamento fail-secure: se Supabase non raggiungibile o `app_password` non presente → `st.stop()`. Mai accesso libero. `APP_PASSWORD` non esiste e non va aggiunto ai secrets Streamlit Cloud.
 
-`carica_param()` in `src/database.py` prova `json.loads()` sul valore, poi fallback a raw string — consente inserimento manuale in Supabase senza encoding JSON.
+Password hashed PBKDF2-HMAC-SHA256. `verify_password()` tronca l'input a 1024 char prima di hashare (guard DoS).
+
+`carica_param()` in `src/database.py` prova `json.loads()` sul valore, poi fallback a raw string.
+
+### Dark / Light mode
+
+- `config.toml` → `base = "dark"` (tema di default)
+- Toggle "🌙 Dark mode" in sidebar → `session_state['_dark_mode_toggle']`
+- `_inject_css()` — inietta sempre `scrollbar-gutter: stable; overflow-y: scroll` + transizioni; aggiunge overrides light mode se tema chiaro
+- `_plotly_chart(fig, _title=None)` — wrapper che: (1) imposta bgcolor in base al tema, (2) estrae il titolo e lo renderizza come `st.markdown` centered (`html.escape` obbligatorio), (3) forza `theme=None` per bypassare l'override Streamlit
+- `_init_plotly_template()` — skip se tema non è cambiato (`session_state['_plotly_tpl_dark']`)
 
 ## Schema Supabase
-
-Tabelle principali (SQL completo in `src/database.py` e `src/positions.py`):
 
 | Tabella | Contenuto |
 |---|---|
 | `patrimonio_log` | Snapshot giornaliero patrimonio totale per componente (upsert per `data`) |
 | `quote_fondi` | Quote fondi bancari nel tempo (upsert per `data, isin`) |
-| `transazioni` | Movimenti bancari da XLS (deduplicati via `hash_tx` MD5) |
+| `transazioni` | Movimenti bancari da XLS (deduplicati via `hash_tx` SHA-256) |
 | `config_params` | Key-value store per valori manuali (liquidità, conto comune, ecc.) |
 | `posizioni` | Quantità asset per intervallo date (`data_inizio`, `data_fine` NULL=attiva) |
 | `prezzi_storici` | Prezzi giornalieri ETF/azioni (upsert per `isin, data`) |
 | `backfill_stato` | Ultima data scaricata per ISIN (checkpoint backfill) |
+| `asset_catalog` | Metadati asset (ISIN, nome, tipo, ticker, TER, proprietario, stato) |
 
-Schema da creare su Supabase SQL Editor: vedere `docs/setup_supabase_schema.sql`. Le tabelle `posizioni`, `prezzi_storici`, `backfill_stato` sono in `src/positions.py → POSITIONS_SCHEMA_SQL`.
+Schema SQL in `docs/setup_supabase_schema.sql`. Le tabelle `posizioni`, `prezzi_storici`, `backfill_stato` sono anche in `src/positions.py → POSITIONS_SCHEMA_SQL`.
+
+> **Nota E7**: `carica_ultime_quote_fondi()` prova prima la RPC `get_latest_quotes()` (DISTINCT ON lato DB), poi fallback query standard. SQL da eseguire una volta nel SQL Editor (documentato inline in `src/database.py:~260`).
 
 ## Convenzioni di codice
 
 ### Nomi generici (privacy — repo pubblico)
 
 Non usare mai nomi reali delle persone nel codice, config o DB. Usa sempre:
-- `persona1` al posto del nome reale della Persona 1
-- `persona2` al posto del nome reale della Persona 2
+- `persona1` / `persona2` per le persone
+- `figlio` per il figlio/a
 
-**Esempi corretti:** `liquidita_persona1`, `etf_persona1`, `pac_persona1_ora`, `intestatario: "persona1"`
+I valori reali (keyword bonifici, pattern file XLS, nascita_figlio) vengono **esclusivamente da Supabase** `config_params`.
 
-I valori reali legati alle persone (keyword bonifici interni, pattern nomi file XLS) vengono **esclusivamente da Supabase** `config_params` — vedi sezione "Riconciliazione dati personali" qui sotto.
+### Riconciliazione dati personali
 
-### Riconciliazione dati personali (pattern file e keyword bonifici)
-
-Il codice è completamente agnostico rispetto alle persone. I valori specifici vengono da Supabase:
-
-| Chiave Supabase (`config_params`) | Contenuto | Usato in |
-|---|---|---|
-| `nome_persona1` | Nome dell'intestatario conto Persona 1 | `src/parser.py` → pattern file XLS |
-| `nome_persona2` | Nome dell'intestatario conto Persona 2 | `src/parser.py` → pattern file XLS |
-| `transfer_keywords` | JSON array di stringhe per escludere bonifici interni tra conti di famiglia | `src/parser.py` → `src/adapters.py` |
-
-**Come funziona la riconciliazione file XLS:**
-`config.yaml` contiene `pattern_template: "Lista_Movimenti_{nome}*"` per ogni banca. A runtime, `parser.py` legge `nome_<account>` da Supabase e costruisce il pattern reale (`_risolvi_pattern()`). Il codice non conosce mai i nomi delle persone.
-
-`TRANSFER_KEYWORDS` in `adapters.py` è `[]` di default e viene popolata a runtime da `transfer_keywords` in Supabase.
+| Chiave Supabase (`config_params`) | Usato in |
+|---|---|
+| `nome_persona1` | `src/parser.py` → pattern file XLS |
+| `nome_persona2` | `src/parser.py` → pattern file XLS |
+| `transfer_keywords` | `src/parser.py` → `src/adapters.py` (come parametro, non globale) |
+| `nascita_figlio` | `app.py` sezione figlio — letto da `session_state['params']` |
 
 ### Altre convenzioni
 
 - Colori come costanti dict in cima ad `app.py`: `COLORS`, `SC_COLORS`, `SC_DASH`
-- Cache con `@st.cache_data(ttl=1800)` per chiamate yfinance; `ttl=3600` per config
-- `st.cache_data.clear()` + pulizia `st.session_state` nel pulsante "🔄 Aggiorna tutto"
+- `@st.cache_data(ttl=1800)` per chiamate yfinance; `ttl=3600` per config
+- `iterrows()` è bandito — usare sempre `to_dict('records')` o operazioni vettoriali
+- Non mutare oggetti restituiti da `@st.cache_data` (es. `config`) — costruire copie locali
+- Le funzioni in `src/simulator.py` sono pure (no side-effect, no DB, no yfinance)
+- ISIN validati con regex `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` prima di scrivere su Supabase
 - Valori monetari in EUR (eccetto ACN in USD — `valore_attuale_usd`)
 - Date: formato italiano `DD/MM/YYYY` nell'UI, ISO `YYYY-MM-DD` internamente e in DB
-- Le funzioni in `src/simulator.py` sono pure (no side-effect, no DB, no yfinance)
 
 ## Asset in portafoglio
 
-Metadati pubblici (ISIN, ticker) in `config.yaml`. Quantità, valori e quote reali esclusivamente in Supabase (`asset_catalog`, `posizioni`, `quote_fondi`).
+Metadati pubblici (ISIN, ticker) in `config.yaml`. Quantità, valori e quote reali esclusivamente in Supabase.
 
 ### Fondi bancari BPER (prezzi manuali)
 
@@ -168,145 +191,123 @@ Metadati pubblici (ISIN, ticker) in `config.yaml`. Quantità, valori e quote rea
 
 I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config_params` e non sono mai nel codice o nel repo.
 
+---
+
+## Stato tecnico al 26/09/2026
+
+### Ultimo commit su main: `ac70efc` — Sicurezza e performance completati
+
+Tutti i fix tecnici identificati da due cicli completi di scansione sicurezza + performance sono stati implementati. Il codebase è attualmente in uno stato pulito su entrambi i branch (`dev` = `main`).
+
+**Commit principali della sessione del 26/09/2026:**
+
+| Commit | Contenuto |
+|---|---|
+| `df92d8f` | fix: scrollbar-gutter stable + transizioni CSS (layout shift dark/light) |
+| `3d2aa9d` | fix: titolo grafico come elemento Streamlit separato |
+| `504e249` | fix: sicurezza S-01 + performance HIGH P-01..P-06 |
+| `b9d62bc` | perf: fix MEDIUM + LOW P-07..P-15 |
+| `0ce7e46` | fix: sicurezza S-NEW-01..04 (2° scansione) |
+| `0cc41f6` | perf: fix performance P-NEW-01..05 (2° scansione) |
+
+---
+
+## Roadmap — Fix tecnici completati
+
+### ✅ Fix UX/UI (26/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| U1 | Dark/light mode: `base="dark"` in config.toml, `scrollbar-gutter:stable`, transizioni CSS | `app.py`, `.streamlit/config.toml` |
+| U2 | Titoli grafici Plotly come `st.markdown` centrato — uniformi in dark e light mode | `app.py:_plotly_chart()` |
+| U3 | `theme=None` nel wrapper Plotly — bypassa override Streamlit su posizionamento assi | `app.py:_plotly_chart()` |
+| U4 | Tutti i titoli dinamici passati esplicitamente via `_title=` (non estratti da fig post-render) | `app.py` (8 call site) |
+
+### ✅ Fix sicurezza (24-26/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| S1 | Password plaintext in Supabase: auto-hash PBKDF2 all'avvio | `app.py` |
+| S2 | Glob metacharacter injection: `nome_<account>` sanitizzato prima del pattern | `src/parser.py` |
+| S3 | MD5 → SHA-256 per `hash_tx` deduplicazione transazioni | `src/database.py` |
+| S4 | `str(e)` → `type(e).__name__` in ~25 print eccezione | `src/database.py`, `src/positions.py`, `src/prices.py`, `src/portfolio.py`, `src/parser.py` |
+| S5 | Timeout sessione auth 3600s con redirect automatico | `app.py` |
+| S6 | `data_ref` validata con `date.fromisoformat()` prima dell'upsert | `app.py` |
+| S7 | `st.warning(f"...{e}")` → `type(e).__name__` (UI visibile a utenti auth) | `app.py` |
+| S-NEW-01 | DoS PBKDF2 pre-auth: `pwd = pwd[:1024]` in `verify_password` + `max_chars=1024` su tutti i campi password | `src/database.py`, `app.py` |
+| S-NEW-02 | Race condition `TRANSFER_KEYWORDS` globale: eliminata mutazione modulo, keywords passate come parametro `keywords=` | `src/adapters.py`, `src/parser.py` |
+| S-NEW-03 | ISIN non validato: `max_chars=12` + regex `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` | `app.py` |
+| S-NEW-04 | Input nomi persona: `max_chars=100` | `app.py` |
+
+### ✅ Fix performance (24-26/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| E1 | N+1 INSERT → batch `insert(records, ignore_duplicates=True)` | `src/database.py` |
+| E2 | `get_client()` → singleton `@st.cache_resource` | `src/database.py` |
+| E3 | `get_azioni_snapshot()`: 2× yfinance → 1 (YTD come subset di 1y) | `src/portfolio.py` |
+| E4 | `carica_posizioni()` cacheata in `session_state['pos_df_cache']` | `app.py` |
+| E5 | Backfill: ISIN raggruppati per `data_da` → `scarica_tutti_storici()` batch | `src/positions.py` |
+| E6 | `iterrows()` → `to_dict('records')` in `salva_prezzi()` e `salva_transazioni()` | `src/positions.py`, `src/database.py` |
+| E7 | `carica_ultime_quote_fondi()`: RPC `get_latest_quotes()` con fallback | `src/database.py` |
+| E8 | `_build_client` a livello modulo con `@cache_resource` | `src/database.py` |
+| E9 | `get_fondi()` cacheata in `session_state['fondi_df_cache']` | `app.py` |
+| E10 | `_APP_PASSWORD` cacheato in `session_state['_app_pwd_cache']` | `app.py` |
+| E11-E21 | `.limit()` su tutte le query Supabase (evita troncamento silenzioso a 1000 righe) | `src/positions.py`, `src/database.py` |
+| P01-P06 | Cache session_state per ETF perf, azioni, transazioni, patrimonio log, portafoglio storico, eventi storico | `app.py` |
+| P07 | `_init_plotly_template()` skip rebuild se tema invariato | `app.py` |
+| P08 | `nascita_figlio` da `session_state['params']`; no mutazione di `config` cached | `app.py` |
+| P09 | Gestione Asset usa `session_state['asset_catalog']` (no query fresca) | `app.py` |
+| P10 | Rimosso reload ridondante `asset_catalog` dopo backfill | `app.py` |
+| P11 | `piano_uscita_ottimale()`: `iterrows()+.at[]` → `to_dict('records')`; costanti fuori dai loop | `src/portfolio.py` |
+| P12 | `get_etf_history_chart()` unificata su `_batch_download` | `src/portfolio.py` |
+| P13-P15 | `iterrows()` → vettoriale in `carica_quote_fondi_persistenti`, `aggiorna_quote_fondi`, `carica_asset_tickers` | `src/app_state.py`, `src/database.py` |
+| P-NEW-01 | Grafico confronto ETF: N download separati → 1 batch + `_extract_series` per ticker | `app.py` |
+| P-NEW-02 | `simula_uscita_fondo_data_x()` e `piano_uscita_ottimale()`: parametro `fondi_df=` da cache | `src/portfolio.py`, `app.py` |
+| P-NEW-03 | `iterrows()` → `to_dict('records')` in entrambi gli adapter bancari | `src/adapters.py` |
+| P-NEW-04 | Due `iterrows()` separati su `asset_catalog` in Portafoglio storico → 1 `to_dict('records')` | `app.py` |
+| P-NEW-05 | `get_storico_portafoglio()` riceve `isins=` da `session_state['asset_catalog']` | `src/app_state.py`, `app.py` |
+
+### ✅ Fix infrastruttura (24-25/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| T1-T11 | Credenziali Supabase, RLS, nomi generici persona1/persona2, auth fail-secure | vari |
+| T12-T18 | KeyError quantita, privacy `figlio`, auto-seeding disabilitato, crash simulator | vari |
+
+---
+
 ## Roadmap — Feature da implementare
 
-Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 2026).
-
-### ✅ Fix tecnici completati (24/09/2026)
-
-| # | Fix | File |
-|---|---|---|
-| T1 | Credenziali Supabase → `st.secrets` + `.streamlit/secrets.toml` (non committato) | `src/database.py`, `.gitignore` |
-| T2 | N+1 INSERT → batch `insert(records, ignore_duplicates=True)` | `src/database.py:salva_transazioni()` |
-| T3 | `get_client()` → singleton `@st.cache_resource` | `src/database.py` |
-| T4 | Full table scan `quote_fondi` → query con `.limit(500)` | `src/database.py:carica_ultime_quote_fondi()` |
-| T5 | Date re-parsate per ogni giorno → pre-parse una sola volta in `_posizioni_parsed` | `src/positions.py:calcola_valore_giornaliero()` |
-| T6 | `NuovaBancaAdapter` stub rimosso da `ADAPTER_REGISTRY` | `src/adapters.py` |
-| — | `timedelta` aggiunto agli import mancanti | `app.py:11` |
-| T7 | Auth fail-secure — password solo da `config_params.app_password` su Supabase, `APP_PASSWORD` rimosso da Streamlit Cloud secrets; dev protetto anche in DEMO mode | `app.py` |
-| T8 | `carica_param` fallback a raw string se valore non è JSON valido (consente inserimento manuale senza encoding) | `src/database.py:carica_param()` |
-| T9 | Nomi generici `persona1`/`persona2` in tutto il codice, `config.yaml` e schema DB; migrazione colonne Supabase | tutti i file `src/`, `config.yaml`, `setup_supabase.py`, `docs/setup_supabase_schema.sql` |
-| T10 | RLS policy tutte le tabelle → `USING (auth.role() = 'service_role')` (anon/authenticated bloccati) | `setup_supabase.py`, `src/positions.py → POSITIONS_SCHEMA_SQL` |
-| T11 | `public.rls_auto_enable()` SECURITY DEFINER → SECURITY INVOKER (Supabase Security Advisor) | SQL Supabase: `ALTER FUNCTION public.rls_auto_enable() SECURITY INVOKER;` |
-
-### ✅ Fix tecnici completati (25/09/2026)
-
-| # | Fix | File |
-|---|---|---|
-| T12 | `KeyError: quantita` in `get_azioni`/`get_fondi` — merge quantità da `posizioni` nel layer app prima di passare al portfolio | `app.py`, `src/portfolio.py` |
-| T13 | Privacy repo pubblico: `flor` → `figlio`, `affitto_chiara` → `affitto_esterno`, tutti i valori finanziari reali azzerati in `config.yaml`, `etf_flor` → `etf_figlio` in DB | 9 file + `ALTER TABLE` su Supabase |
-| T14 | Auto-seeding `asset_catalog` da `config.yaml` disabilitato — catalogo parte vuoto, popolato manualmente via UI | `src/app_state.py`, `app.py` |
-| T15 | Crash `simula_costi_figlio` con `nascita_figlio: ""` — guard su stringa vuota, `df_costi` condizionale, slider PAC min=0 | `src/simulator.py`, `app.py` |
-| T16 | `nascita_figlio` rimossa da `config.yaml` (dato personale) — letta da Supabase `config_params` con form inline nella sezione Figlio/a | `app.py`, `config.yaml` |
-| T17 | `POSIZIONI_DEFAULT` non esisteva in `positions.py` — crash su "Portafoglio storico"; sostituito con `asset_catalog` da `session_state` | `app.py` |
-| T18 | `simula_scenario_completo` crashava con `KeyError: nascita_figlio` se chiave assente — guard con `return pd.DataFrame()` | `src/simulator.py` |
-| S1 ✅ | Password plaintext in Supabase: auto-hash PBKDF2 all'avvio dell'app, prima del form login — finestra vulnerabilità azzerata | `app.py` |
-| S2 ✅ | Glob metacharacter injection da Supabase: `nome_<account>` ora sanitizzato prima della sostituzione nel pattern template | `src/parser.py` |
-| S3 ✅ | MD5 → SHA-256 per `hash_tx` in `salva_transazioni()` — elimina rischio collisioni nella deduplicazione | `src/database.py` |
-| S4 ✅ | `str(e)` → `type(e).__name__` in tutti i print di eccezione (~25 occorrenze) — evita esposizione nomi colonne DB nei log | `src/database.py`, `src/positions.py`, `src/prices.py` |
-| S5 ✅ | Timeout sessione auth 3600s — `_auth_ts` salvato al login, verificato ad ogni rerun; avviso e redirect se scaduta | `app.py` |
-| S6 ✅ | `data_ref` validata con `date.fromisoformat()` prima dell'upsert Supabase — errore visibile in UI se formato errato | `app.py` |
-| E3 ✅ | `get_azioni_snapshot()` usa solo `period="1y"` — YTD calcolato come subset con filtro indice data (era 2× chiamate yfinance) | `src/portfolio.py` |
-| E4 ✅ | `carica_posizioni()` cacheata in `session_state['pos_df_cache']` via `_get_posizioni()` — evita 2× chiamate Supabase per rerun | `app.py` |
-| E5 ✅ | Backfill prezzi: ISIN raggruppati per `data_da` → `scarica_tutti_storici()` per gruppo (era N chiamate HTTP sequenziali) | `src/positions.py` |
-| E6 ✅ | `iterrows()` → `to_dict('records')` in `salva_prezzi()` e `salva_transazioni()` | `src/positions.py`, `src/database.py` |
-| E7 ✅ | `carica_ultime_quote_fondi()`: prova RPC `get_latest_quotes()` (DISTINCT ON lato DB) con fallback query standard — SQL inline nel codice | `src/database.py` |
-| E8 ✅ | `_build_client` estratta a livello di modulo con `@cache_resource` — elimina ridefinizione di `_build()` ad ogni chiamata | `src/database.py` |
-| E9 ✅ | `get_fondi()` cacheata in `session_state['fondi_df_cache']`; svuotata con `pos_df_cache` nel bottone "🔄 Aggiorna tutto" | `app.py` |
-
-> **Nota E7**: il codice usa il fallback automaticamente finché non viene creata la funzione RPC su Supabase. SQL da eseguire una volta nel SQL Editor (documentato inline in `src/database.py:~260`).
-
-### ✅ Fix tecnici completati (25/09/2026 — round 2)
-
-| # | Fix | File |
-|---|---|---|
-| S7 ✅ | `{e}` → `type(e).__name__` in `portfolio.py` (`_batch_download`, `get_etf_data`) e `parser.py` (`parse_all_inputs`) — esclusi dall'S4 batch fix precedente | `src/portfolio.py`, `src/parser.py` |
-| E10 ✅ | `_APP_PASSWORD` cacheato in `session_state['_app_pwd_cache']` — evita una chiamata Supabase ad ogni rerun Streamlit (ogni click/slider); aggiornato al cambio password, svuotato con "🔄 Aggiorna tutto" | `app.py` |
-| E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
-| E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
-
-### ✅ Fix tecnici completati (26/09/2026 — round 7)
-
-| # | Fix | File |
-|---|---|---|
-| P-NEW-01 ✅ | Grafico confronto ETF: N `_batch_download((ticker,), period)` → 1 batch unico + `_extract_series` per ticker | `app.py` |
-| P-NEW-02 ✅ | `simula_uscita_fondo_data_x()` e `piano_uscita_ottimale()`: parametro `fondi_df=` per ricevere snapshot precomputato da cache; call site in app.py passa `get_fondi()` | `src/portfolio.py`, `app.py` |
-| P-NEW-03 ✅ | `iterrows()` → `to_dict('records')` in entrambi gli adapter bancari (`BperPersona1Adapter`, `BperPersona2Adapter`) | `src/adapters.py` |
-| P-NEW-04 ✅ | Due `iterrows()` separati su `asset_catalog` in "Portafoglio storico" → un solo `to_dict('records')` condiviso | `app.py` |
-| P-NEW-05 ✅ | `get_storico_portafoglio()` riceve `isins=` da `session_state['asset_catalog']`; `calcola_portafoglio_storico()` salta la query ridondante su `asset_catalog` | `src/app_state.py`, `app.py` |
-
-### ✅ Fix tecnici completati (26/09/2026 — round 6)
-
-| # | Fix | File |
-|---|---|---|
-| S-NEW-01 ✅ | DoS pre-auth su PBKDF2: `max_chars=1024` su tutti i `text_input` password + `pwd = pwd[:1024]` guard server-side in `verify_password` | `app.py`, `src/database.py` |
-| S-NEW-02 ✅ | Race condition `TRANSFER_KEYWORDS` globale: eliminata mutazione del modulo; keywords passate come parametro `keywords=` a `parse()` e `is_internal_transfer()` | `src/adapters.py`, `src/parser.py` |
-| S-NEW-03 ✅ | ISIN non validato: `max_chars=12` + regex `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` prima di `salva_asset()` | `app.py` |
-| S-NEW-04 ✅ | Input nomi persona senza limite: `max_chars=100` sui tre campi nome sidebar | `app.py` |
-
-### ✅ Fix tecnici completati (26/09/2026 — round 5)
-
-| # | Fix | File |
-|---|---|---|
-| P07 ✅ | `_init_plotly_template()` skip rebuild se tema invariato — `_plotly_tpl_dark` in session_state | `app.py` |
-| P08 ✅ | `nascita_figlio` letto da `session_state['params']` invece di chiamata Supabase diretta; rimossa mutazione di `config` (@st.cache_data) | `app.py` |
-| P09 ✅ | Gestione Asset usa `session_state['asset_catalog']` invece di `get_asset_catalog()` fresca ad ogni rerun | `app.py` |
-| P10 ✅ | Rimosso reload ridondante di `asset_catalog` dopo backfill (già caricato a inizio sessione) | `app.py` |
-| P11 ✅ | `piano_uscita_ottimale()`: `iterrows()` + `.at[]` sostituiti con loop su `to_dict('records')` — `aliquota`/`etf_dest` spostati fuori dai loop annidati | `src/portfolio.py` |
-| P12 ✅ | `get_etf_history_chart()` unificata su `_batch_download` (stesso meccanismo cache di `get_portfolio_performance`) | `src/portfolio.py` |
-| P13 ✅ | `carica_quote_fondi_persistenti()`: `iterrows()` → `.set_index().to_dict()` vettoriale | `src/app_state.py` |
-| P14 ✅ | `aggiorna_quote_fondi()`: `iterrows()` → `to_dict('records')` per fondi_meta | `src/app_state.py` |
-| P15 ✅ | `carica_asset_tickers()` in `database.py`: `iterrows()` → `to_dict('records')` | `src/database.py` |
-
-### ✅ Fix tecnici completati (25/09/2026 — round 4)
-
-| # | Fix | File |
-|---|---|---|
-| E17 ✅ | `.limit(200)` a `carica_asset_catalog()` | `src/database.py` |
-| E18 ✅ | `.limit(giorni+5)` a `storico_quote_fondo()` | `src/database.py` |
-| E19 ✅ | `.limit(500)` a `calcola_valore_giornaliero()` — query `posizioni` per ISIN | `src/positions.py` |
-| E20 ✅ | `.limit(500)` a `calcola_portafoglio_storico()` — query `posizioni` bulk | `src/positions.py` |
-| E21 ✅ | `.limit(200)` a `backfill_prezzi()` — query `backfill_stato` | `src/positions.py` |
-
-### ✅ Fix tecnici completati (25/09/2026 — round 3)
-
-| # | Fix | File |
-|---|---|---|
-| S8 ✅ | `st.warning(f"... {e}")` → `{type(e).__name__}` per errori import XLS — esposto nell'UI a utenti autenticati | `app.py:221` |
-| E13 ✅ | `.limit(3000)` aggiunto a `carica_prezzi_db()` — fondi con storico dal 2020 superano il limite Supabase 1000 nel percorso "Per asset" | `src/positions.py` |
-| E14 ✅ | `.limit(100)` aggiunto a `storico_posizioni()` | `src/positions.py` |
-| E15 ✅ | `.limit(500)` aggiunto a `eventi_portafoglio()` | `src/positions.py` |
-| E16 ✅ | `.limit(giorni+10)` aggiunto a `carica_patrimonio_log()` — bound dinamico preciso | `src/database.py` |
-
-### 🔴 Alta priorità — Feature
+### 🔴 Alta priorità
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE con barra avanzamento, anni mancanti proiettati e rendimento assunto | `app.py`, `simulator.py`, `config.yaml` | Attualmente assente. Il Coast FIRE è già vicino al target stimato. |
-| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi nella sezione "Stato di famiglia" | `app.py`, `app_state.py` | Facile: derivabile da `carica_transazioni_db()` già disponibile. |
-| 3 | **Rebalancing alert ETF** — tabella target/attuale/drift (pp) e importo € da comprare/vendere per rientrare in policy (es. 80/20 World/EM) | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
-| 4 | **Liabilities nel net worth** — dedurre debiti dal patrimonio totale e includerli nello storico `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
-| 5 | **Onboarding wizard + cloud storage** — procedura guidata al primo avvio (o da sidebar) per compilare tutti i parametri fondamentali (asset, PAC, redditi, debiti) tramite un template Excel multi-sheet o form in-app. I dati vengono salvati su storage cloud (Google Drive via API OAuth2 o Dropbox) anziché su file locale, così sono disponibili su qualsiasi dispositivo e la dashboard li carica automaticamente alle sessioni successive. | `app.py`, `app_state.py`, `config.yaml`, nuovo `src/cloud_storage.py` | Prerequisiti: credenziali OAuth Google Drive o Dropbox API token in `st.secrets`. Template Excel: un foglio per tab (Profilo, Asset, ETF, Fondi, Debiti, Spese). Opzione alternativa: salvare il `config.yaml` compilato direttamente su Supabase Storage (già nel progetto, zero nuove dipendenze). |
-| 6 ✅ | **Aggiornamento automatico docs al deploy** — `.github/workflows/build-docs.yml` per GitHub Actions (si attiva su push a main se cambiano `.md` o `build_html_docs.py`). Hook git locale tramite `scripts/install_hooks.bat` (Windows) o `scripts/install_hooks.sh` (Mac/Linux) — eseguire una volta dopo `git init`. | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml`, `scripts/install_hooks.*` | — |
-| 7 | **Demo data / dati campione** — set di dati fittizi e realistici (config, posizioni, transazioni, prezzi storici) che popolano interamente l'app senza dati reali. Serve per condividere l'app con altri utenti, fare screenshot, o fare onboarding senza esporre informazioni personali. I dummy data devono coprire ogni tab e ogni KPI della dashboard. | `app.py`, nuovo `src/demo_data.py`, `config_demo.yaml`, `docs/demo_seed.sql` | Implementazione: `config_demo.yaml` con nomi generici (es. "Utente A", banca "Banca Esempio"), `demo_seed.sql` con INSERT su tutte le tabelle Supabase, flag `DEMO_MODE=true` in `st.secrets` che carica i demo data invece del DB reale. I valori devono avere senso finanziario (es. PAC mensile coerente con il patrimonio simulato) per fungere da guida alla compilazione. |
+| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Il Coast FIRE è già vicino al target stimato. |
+| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py`, `app_state.py` | Derivabile da `carica_transazioni_db()` già disponibile. |
+| 3 | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
+| 4 | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale e inclusi in `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
+| 5 | **Onboarding wizard** — procedura guidata al primo avvio per compilare i parametri fondamentali | `app.py`, `app_state.py`, nuovo `src/cloud_storage.py` | Opzione: salvare `config.yaml` su Supabase Storage (zero nuove dipendenze). |
+| 6 ✅ | Aggiornamento automatico docs al deploy via GitHub Actions | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml` | Completato. |
+| 7 | **Demo data** — set dati fittizi per screenshot, onboarding e condivisione | `app.py`, `src/demo_data.py`, `docs/demo_seed.sql` | `src/demo_data.py` esiste ma le funzioni demo non coprono tutti i tab. |
 
 ### 🟡 Media priorità
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 8 | **XIRR stimato** — rendimento annualizzato usando net cash flow come proxy dei flussi esterni al portafoglio | `simulator.py`, `app.py` | Richiede `scipy.optimize` o implementazione manuale XIRR. |
-| 9 | **Bollo threshold alert** — avviso se cash reserve > €5.000 (soglia imposta di bollo €34,20/anno) con azione suggerita | `app.py` | Soglia configurabile in `config.yaml`. |
-| 10 | **YoY cash flow** — colonna delta vs anno precedente per inflows, expenses, net CF | `app.py`, `app_state.py` | Estensione della sezione transazioni esistente. |
-| 11 | **Blocked Assets storico** — tabella aggiornabile per valorizzazioni periodiche di asset illiquidi (immobili, previdenza), separata dal portafoglio liquido | `database.py`, `app_state.py`, `app.py` | Nuova tabella Supabase `blocked_assets_log`. |
+| 8 | **XIRR stimato** — rendimento annualizzato via net cash flow | `simulator.py`, `app.py` | Richiede `scipy.optimize` o XIRR manuale. |
+| 9 | **Bollo threshold alert** — avviso se cash > €5.000 | `app.py` | Soglia configurabile in `config.yaml`. |
+| 10 | **YoY cash flow** — delta vs anno precedente per inflows/expenses/net CF | `app.py`, `app_state.py` | Estensione sezione transazioni. |
+| 11 | **Blocked Assets storico** — valorizzazioni periodiche asset illiquidi (immobili, previdenza) | `database.py`, `app_state.py`, `app.py` | Nuova tabella Supabase `blocked_assets_log`. |
 
-### 🟢 Bassa priorità / nice to have
+### 🟢 Bassa priorità
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 12 | **Geo/sector ETF** — breakdown geografico aggiornabile manualmente ogni trimestre dai factsheet | `app.py`, `config.yaml` | Dati statici, nessuna automazione possibile. |
-| 13 | **Data freshness indicator** — riepilogo allineamento dati (ultima data chiusa per ogni dataset) nella sidebar | `app.py`, `app_state.py` | UX improvement. |
-| 14 | **Month-end checklist** — pannello guidato 4 passi con stato Aperto/Chiuso per validare il mese | `app.py` | Migliora consistenza dati nel tempo. |
-| 15 | **Gestione Asset — elimina per nome** — il form di eliminazione asset usa attualmente l'ISIN come selettore; sostituire con selectbox che mostra `nome (ISIN)` per maggiore usabilità | `app.py` sezione "⚙️ Gestione Asset" | UX improvement segnalato dall'utente. |
+| 12 | **Geo/sector ETF** — breakdown geografico aggiornabile dai factsheet | `app.py`, `config.yaml` | Dati statici, nessuna automazione. |
+| 13 | **Data freshness indicator** — riepilogo allineamento dati nella sidebar | `app.py`, `app_state.py` | UX improvement. |
+| 14 | **Month-end checklist** — pannello guidato 4 passi per validare il mese | `app.py` | UX improvement. |
+| 15 | **Gestione Asset — elimina per nome** — selectbox mostra `nome (ISIN)` invece del solo ISIN | `app.py` | UX improvement segnalato dall'utente. |
 
 ---
 
@@ -315,9 +316,10 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 - **xlrd==1.2.0** — fissato a questa versione, NON aggiornare (rompe il parsing BIFF8)
 - **config.yaml** — non sovrascrivere quando si aggiorna il codice
 - **data/** — non sovrascrivere quando si aggiorna il codice
-- Le credenziali Supabase vanno in `.streamlit/secrets.toml` (gitignored) o variabili d'ambiente `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SECRET` — mai hardcodate nel codice
-- `inizializza_posizioni()` va chiamata solo una volta (inserisce le posizioni default nel DB se vuoto)
-- **Non usare nomi personali** nel codice, config.yaml o DB — usare `persona1`/`persona2`. I valori sensibili (keyword bonifici, pattern file XLS) vanno in Supabase `config_params`
-- **Non aggiungere `APP_PASSWORD`** a Streamlit Cloud secrets — la password app viene esclusivamente da Supabase `config_params.app_password`
+- Le credenziali Supabase vanno in `.streamlit/secrets.toml` (gitignored) o variabili d'ambiente — mai hardcodate
+- `inizializza_posizioni()` va chiamata solo una volta
+- **Non usare nomi personali** nel codice, config.yaml o DB — usare `persona1`/`persona2`
+- **Non aggiungere `APP_PASSWORD`** a Streamlit Cloud secrets — la password viene esclusivamente da Supabase `config_params.app_password`
 - **Non bypassare auth in DEMO mode** — `_DEMO` controlla i dati mostrati, non l'autenticazione
-- **Supabase Security Advisor — `rls_auto_enable()`**: funzione interna Supabase, non nel codice. Se il Security Advisor segnala "Public/Signed-In Users Can Execute SECURITY DEFINER Function", eseguire nel SQL Editor: `ALTER FUNCTION public.rls_auto_enable() SECURITY INVOKER;` — il semplice `REVOKE EXECUTE` non basta perché Supabase ha grant a livello di schema
+- **Non mutare `config`** (oggetto `@st.cache_data`) — costruire copie locali con `dict(config)` o `.copy()`
+- **Supabase Security Advisor — `rls_auto_enable()`**: se segnala SECURITY DEFINER, eseguire: `ALTER FUNCTION public.rls_auto_enable() SECURITY INVOKER;`
