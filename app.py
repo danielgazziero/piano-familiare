@@ -178,7 +178,7 @@ elif st.session_state.get("_auth_ok") and time.time() - st.session_state.get("_a
     st.rerun()
 elif not st.session_state.get("_auth_ok"):
     st.title("🔒 Accesso protetto")
-    pwd = st.text_input("Password", type="password")
+    pwd = st.text_input("Password", type="password", max_chars=1024)
     if st.button("Accedi"):
         from database import verify_password as _verify_pwd, hash_password as _hash_pwd, salva_param as _salva_param_auth
         if _verify_pwd(pwd, _APP_PASSWORD):
@@ -390,9 +390,9 @@ with st.sidebar:
         "⚙️ Gestione Asset",
     ])
     with st.expander("✏️ Nomi"):
-        n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1")
-        n2_inp = st.text_input("Persona 2", value=_N2, key="edit_n2")
-        nf_inp = st.text_input("Figlio/a",  value=_NF, key="edit_nf")
+        n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1", max_chars=100)
+        n2_inp = st.text_input("Persona 2", value=_N2, key="edit_n2", max_chars=100)
+        nf_inp = st.text_input("Figlio/a",  value=_NF, key="edit_nf", max_chars=100)
         if st.button("💾 Salva nomi"):
             st.session_state['params']['nome_persona1'] = n1_inp
             st.session_state['params']['nome_persona2'] = n2_inp
@@ -403,8 +403,8 @@ with st.sidebar:
             st.rerun()
     if _APP_PASSWORD:
         with st.expander("🔑 Password"):
-            new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1")
-            new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2")
+            new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1", max_chars=1024)
+            new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2", max_chars=1024)
             if st.button("💾 Cambia password"):
                 if not new_pwd1:
                     st.error("Inserisci una password.")
@@ -1623,7 +1623,8 @@ elif sezione == "⚙️ Gestione Asset":
         with st.form("nuovo_asset"):
             c1, c2, c3 = st.columns(3)
             tipo_n   = c1.selectbox("Tipo", ['etf','fondo','azione'])
-            isin_n   = c2.text_input("ISIN *")
+            isin_n   = c2.text_input("ISIN *", max_chars=12,
+                                     help="Formato: 2 lettere + 9 alfanumerici + 1 cifra (es. IE00B5BMR087)")
             nome_n   = c3.text_input("Nome *")
             tyk_n    = c1.text_input("Ticker Yahoo Finance")
             tbi_n    = c2.text_input("Ticker BI (solo ETF)")
@@ -1636,11 +1637,15 @@ elif sezione == "⚙️ Gestione Asset":
             submit_n = st.form_submit_button("➕ Aggiungi al catalogo")
 
         if submit_n:
+            import re as _re
+            _isin_clean = isin_n.strip().upper()
             if not isin_n or not nome_n:
                 st.error("ISIN e Nome sono obbligatori.")
+            elif not _re.match(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$', _isin_clean):
+                st.error("ISIN non valido. Formato atteso: 2 lettere + 9 alfanumerici + 1 cifra (es. IE00B5BMR087).")
             else:
                 asset_dict = {
-                    'isin': isin_n.strip().upper(), 'nome': nome_n.strip(),
+                    'isin': _isin_clean, 'nome': nome_n.strip(),
                     'tipo': tipo_n, 'ticker_yf': tyk_n.strip() or None,
                     'ticker_bi': tbi_n.strip() or None,
                     'ter': ter_n, 'proprietario': prop_n, 'stato': stato_n,

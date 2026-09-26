@@ -454,6 +454,7 @@ def verify_password(pwd: str, stored: str) -> bool:
     per consentire la migrazione trasparente al primo login.
     """
     import hashlib, hmac as _hmac
+    pwd = pwd[:1024]  # guard DoS: PBKDF2 scala con la lunghezza dell'input
     if stored and stored.startswith('pbkdf2$'):
         parts = stored.split('$')
         if len(parts) != 4:

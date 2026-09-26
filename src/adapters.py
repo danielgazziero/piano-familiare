@@ -46,16 +46,18 @@ def parse_date_it(s: str) -> Optional[datetime]:
         return None
 
 
-def is_internal_transfer(description: str) -> bool:
+def is_internal_transfer(description: str, keywords: list = None) -> bool:
+    kw_list = keywords if keywords is not None else TRANSFER_KEYWORDS
     desc_upper = str(description).upper()
-    return any(kw.upper() in desc_upper for kw in TRANSFER_KEYWORDS)
+    return any(kw.upper() in desc_upper for kw in kw_list)
 
 
 class BankAdapter:
     """Classe base — ogni banca eredita da questa."""
     bank_id = "base"
 
-    def parse(self, filepath: Path, account: str) -> List[Transaction]:
+    def parse(self, filepath: Path, account: str,
+              keywords: list = None) -> List[Transaction]:
         raise NotImplementedError
 
     def _categorize(self, raw_cat: str, description: str) -> str:
@@ -110,7 +112,8 @@ class BperPersona1Adapter(BankAdapter):
     """
     bank_id = "bper_xls"
 
-    def parse(self, filepath: Path, account: str = "persona1") -> List[Transaction]:
+    def parse(self, filepath: Path, account: str = "persona1",
+              keywords: list = None) -> List[Transaction]:
         import xlrd
 
         wb = xlrd.open_workbook(str(filepath))
@@ -178,7 +181,7 @@ class BperPersona1Adapter(BankAdapter):
         transactions = []
         for _, row in df.iterrows():
             desc = str(row['descrizione'])
-            if is_internal_transfer(desc):
+            if is_internal_transfer(desc, keywords):
                 continue
             amount  = row['entrate'] + row['uscite']
             raw_cat = str(row['categoria']) if row['categoria'] else ''
@@ -201,7 +204,8 @@ class BperPersona2Adapter(BankAdapter):
     """
     bank_id = "bper_xls_new"
 
-    def parse(self, filepath: Path, account: str = "persona2") -> List[Transaction]:
+    def parse(self, filepath: Path, account: str = "persona2",
+              keywords: list = None) -> List[Transaction]:
         df = pd.read_excel(filepath, engine='openpyxl',
                            header=None, skiprows=21)
         df = df.iloc[:, :9]
@@ -216,7 +220,7 @@ class BperPersona2Adapter(BankAdapter):
         transactions = []
         for _, row in df.iterrows():
             desc = str(row['descrizione'])
-            if is_internal_transfer(desc):
+            if is_internal_transfer(desc, keywords):
                 continue
             amount = row['entrate'] + row['uscite']
             raw_cat = str(row['categoria']) if pd.notna(row['categoria']) else ''

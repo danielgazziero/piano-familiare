@@ -225,6 +225,15 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
 | E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
 
+### ✅ Fix tecnici completati (26/09/2026 — round 6)
+
+| # | Fix | File |
+|---|---|---|
+| S-NEW-01 ✅ | DoS pre-auth su PBKDF2: `max_chars=1024` su tutti i `text_input` password + `pwd = pwd[:1024]` guard server-side in `verify_password` | `app.py`, `src/database.py` |
+| S-NEW-02 ✅ | Race condition `TRANSFER_KEYWORDS` globale: eliminata mutazione del modulo; keywords passate come parametro `keywords=` a `parse()` e `is_internal_transfer()` | `src/adapters.py`, `src/parser.py` |
+| S-NEW-03 ✅ | ISIN non validato: `max_chars=12` + regex `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` prima di `salva_asset()` | `app.py` |
+| S-NEW-04 ✅ | Input nomi persona senza limite: `max_chars=100` sui tre campi nome sidebar | `app.py` |
+
 ### ✅ Fix tecnici completati (26/09/2026 — round 5)
 
 | # | Fix | File |
