@@ -178,7 +178,7 @@ elif st.session_state.get("_auth_ok") and time.time() - st.session_state.get("_a
     st.rerun()
 elif not st.session_state.get("_auth_ok"):
     st.title("🔒 Accesso protetto")
-    pwd = st.text_input("Password", type="password")
+    pwd = st.text_input("Password", type="password", max_chars=1024)
     if st.button("Accedi"):
         from database import verify_password as _verify_pwd, hash_password as _hash_pwd, salva_param as _salva_param_auth
         if _verify_pwd(pwd, _APP_PASSWORD):
@@ -390,9 +390,9 @@ with st.sidebar:
         "⚙️ Gestione Asset",
     ])
     with st.expander("✏️ Nomi"):
-        n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1")
-        n2_inp = st.text_input("Persona 2", value=_N2, key="edit_n2")
-        nf_inp = st.text_input("Figlio/a",  value=_NF, key="edit_nf")
+        n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1", max_chars=100)
+        n2_inp = st.text_input("Persona 2", value=_N2, key="edit_n2", max_chars=100)
+        nf_inp = st.text_input("Figlio/a",  value=_NF, key="edit_nf", max_chars=100)
         if st.button("💾 Salva nomi"):
             st.session_state['params']['nome_persona1'] = n1_inp
             st.session_state['params']['nome_persona2'] = n2_inp
@@ -403,8 +403,8 @@ with st.sidebar:
             st.rerun()
     if _APP_PASSWORD:
         with st.expander("🔑 Password"):
-            new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1")
-            new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2")
+            new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1", max_chars=1024)
+            new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2", max_chars=1024)
             if st.button("💾 Cambia password"):
                 if not new_pwd1:
                     st.error("Inserisci una password.")
@@ -578,12 +578,14 @@ elif sezione == "📉 Portafoglio storico":
 
     from positions import ASSET_TICKERS, storico_posizioni
     _cat_pos = st.session_state.get('asset_catalog', pd.DataFrame())
-    _nomi_map_pos = ({row['isin']: row['nome'] for _, row in _cat_pos.iterrows()}
-                     if not _cat_pos.empty else {})
-    _tutti_asset_pos = ([{'isin': row['isin'], 'nome': row['nome']}
-                         for _, row in _cat_pos.iterrows()
-                         if row.get('stato', 'attivo') == 'attivo']
-                        if not _cat_pos.empty else [])
+    if not _cat_pos.empty:
+        _cat_pos_rows = _cat_pos.to_dict('records')
+        _nomi_map_pos    = {r['isin']: r['nome'] for r in _cat_pos_rows}
+        _tutti_asset_pos = [{'isin': r['isin'], 'nome': r['nome']}
+                            for r in _cat_pos_rows if r.get('stato', 'attivo') == 'attivo']
+    else:
+        _nomi_map_pos    = {}
+        _tutti_asset_pos = []
 
     # Periodo
     c1,c2 = st.columns(2)
@@ -604,7 +606,10 @@ elif sezione == "📉 Portafoglio storico":
             st.session_state['port_storico_cache'] = {}
         with st.spinner("Caricamento storico portafoglio..."):
             if data_da not in st.session_state['port_storico_cache']:
-                st.session_state['port_storico_cache'][data_da] = get_storico_portafoglio(data_da)
+                _cat_isins = (st.session_state['asset_catalog']['isin'].tolist()
+                              if not st.session_state.get('asset_catalog', pd.DataFrame()).empty else None)
+                st.session_state['port_storico_cache'][data_da] = get_storico_portafoglio(
+                    data_da, isins=_cat_isins)
             df_port = st.session_state['port_storico_cache'][data_da]
 
         if df_port.empty:
@@ -792,18 +797,25 @@ elif sezione == "📈 ETF & mercato":
     # Grafico storico
     st.subheader("Performance storica")
     periodo = st.select_slider("Periodo", ["1mo","3mo","6mo","ytd","1y","2y"], value="1y")
-    tutti_ticker = {r['ticker']: r['ticker_yf'] for _,r in etf_df.iterrows() if r['ticker_yf']}
+    tutti_ticker = {r['ticker']: r['ticker_yf'] for r in etf_df.to_dict('records') if r.get('ticker_yf')}
     tutti_ticker['ACN'] = 'ACN'
     sel = st.multiselect("Titoli da confrontare", list(tutti_ticker.keys()),
                           default=list(tutti_ticker.keys())[:3])
     if sel:
+        from portfolio import _batch_download, _extract_series
         fig = go.Figure()
         pal = list(COLORS.values())
+        _sel_tickers = tuple(tutti_ticker[n] for n in sel if n in tutti_ticker)
+        _raw_batch   = _batch_download(_sel_tickers, periodo)
         for i, nome in enumerate(sel):
-            h = get_etf_history_chart(tutti_ticker.get(nome, nome), periodo)
-            if not h.empty:
-                fig.add_trace(go.Scatter(x=h.index, y=h['indexed'].round(2),
-                                          name=nome, line=dict(color=pal[i%len(pal)],width=2)))
+            _tk = tutti_ticker.get(nome, nome)
+            _series = _extract_series(_raw_batch, _tk, len(_sel_tickers))
+            if _series.empty:
+                continue
+            first = _series.iloc[0]
+            _indexed = (_series / first * 100).round(2) if first else _series
+            fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
+                                      name=nome, line=dict(color=pal[i%len(pal)],width=2)))
         fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
         fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
         _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}", use_container_width=True, theme=None)
@@ -1156,7 +1168,8 @@ elif sezione == "🏦 Fondi bancari":
     with c2: rend_uscita = st.slider("Rendimento fondi (%)", 1.0, 8.0, 4.0, step=0.5, key="ru")
 
     quote_map = {r['ISIN']: r['Quota €'] for _,r in df_fondi_edit.iterrows() if r['Includi']}
-    df_uscita = simula_uscita_fondo_data_x(config, data_uscita, rend_uscita/100, quote_map)
+    df_uscita = simula_uscita_fondo_data_x(config, data_uscita, rend_uscita/100, quote_map,
+                                            fondi_df=get_fondi())
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("Attesa", f"{df_uscita['mesi_attesa'].iloc[0]:.0f} mesi")
     c2.metric("Valore proiettato", f"€ {df_uscita['valore_proiettato'].sum():,.0f}")
@@ -1171,7 +1184,7 @@ elif sezione == "🏦 Fondi bancari":
 
     # ── Piano uscita ottimale ─────────────────────────────────
     st.subheader("Piano di uscita ottimale")
-    piano_df = piano_uscita_ottimale(config, quote_map)
+    piano_df = piano_uscita_ottimale(config, quote_map, fondi_df=get_fondi())
     if not piano_df.empty:
         fig_piano = px.bar(piano_df, x='anno', y='netto_in_etf', color='fondo',
                             title="Netto reinvestito in ETF per anno e per fondo",
@@ -1623,7 +1636,8 @@ elif sezione == "⚙️ Gestione Asset":
         with st.form("nuovo_asset"):
             c1, c2, c3 = st.columns(3)
             tipo_n   = c1.selectbox("Tipo", ['etf','fondo','azione'])
-            isin_n   = c2.text_input("ISIN *")
+            isin_n   = c2.text_input("ISIN *", max_chars=12,
+                                     help="Formato: 2 lettere + 9 alfanumerici + 1 cifra (es. IE00B5BMR087)")
             nome_n   = c3.text_input("Nome *")
             tyk_n    = c1.text_input("Ticker Yahoo Finance")
             tbi_n    = c2.text_input("Ticker BI (solo ETF)")
@@ -1636,11 +1650,15 @@ elif sezione == "⚙️ Gestione Asset":
             submit_n = st.form_submit_button("➕ Aggiungi al catalogo")
 
         if submit_n:
+            import re as _re
+            _isin_clean = isin_n.strip().upper()
             if not isin_n or not nome_n:
                 st.error("ISIN e Nome sono obbligatori.")
+            elif not _re.match(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$', _isin_clean):
+                st.error("ISIN non valido. Formato atteso: 2 lettere + 9 alfanumerici + 1 cifra (es. IE00B5BMR087).")
             else:
                 asset_dict = {
-                    'isin': isin_n.strip().upper(), 'nome': nome_n.strip(),
+                    'isin': _isin_clean, 'nome': nome_n.strip(),
                     'tipo': tipo_n, 'ticker_yf': tyk_n.strip() or None,
                     'ticker_bi': tbi_n.strip() or None,
                     'ter': ter_n, 'proprietario': prop_n, 'stato': stato_n,

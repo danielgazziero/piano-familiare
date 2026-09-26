@@ -78,10 +78,9 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
     banche = config.get('banche', [])
     all_transactions: List[Transaction] = []
 
-    # Inietta keyword trasferimenti interni da Supabase
-    kw = _carica_da_db('transfer_keywords')
-    if isinstance(kw, list) and kw:
-        _adapters_mod.TRANSFER_KEYWORDS = kw
+    # Carica keyword trasferimenti interni da Supabase (passate ai parser, no global mutation)
+    _kw_raw = _carica_da_db('transfer_keywords')
+    transfer_keywords = _kw_raw if isinstance(_kw_raw, list) and _kw_raw else []
 
     for banca in banche:
         bank_id = banca['formato']
@@ -106,7 +105,7 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
         for i, filepath in enumerate(files, 1):
             print(f"  [+] Parsing [{account}] file {i}/{len(files)} ({banca['nome']})...")
             try:
-                txns = adapter.parse(filepath, account)
+                txns = adapter.parse(filepath, account, keywords=transfer_keywords)
                 all_transactions.extend(txns)
                 print(f"      → {len(txns)} transazioni caricate")
             except Exception as e:
