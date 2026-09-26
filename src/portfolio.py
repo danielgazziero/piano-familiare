@@ -55,9 +55,11 @@ def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
 
 
 def get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
-    hist = get_etf_data(ticker, period)
-    if hist.empty:
-        return hist
+    raw = _batch_download((ticker,), period)
+    series = _extract_series(raw, ticker, 1)
+    if series.empty:
+        return pd.DataFrame()
+    hist = series.to_frame(name='price')
     first_price = hist['price'].iloc[0]
     if not first_price or first_price == 0:
         return hist
@@ -213,36 +215,37 @@ def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = Non
     df['priorita'] = df['costo_annuo_stimato'] * df['valore_attuale']
     df = df.sort_values('priorita', ascending=False).reset_index(drop=True)
 
+    aliquota = config.get('parametri', {}).get(
+        'aliquota_capital_gain',
+        config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
+    etf_dest = config.get('parametri', {}).get('etf_destinazione_migrazione', 'IWDA / VWCE')
+
     piano_rows = []
-    fondi_residui = df.copy()
+    fondi_residui = df[['nome', 'isin', 'valore_attuale', 'plusvalenza_stimata',
+                         'costo_annuo_stimato']].to_dict('records')
 
     for anno_cfg in piano_cfg:
-        budget = anno_cfg['rimborso_lordo']
+        budget_residuo = anno_cfg['rimborso_lordo']
         anno_num = anno_cfg['anno']
-        budget_residuo = budget
 
-        for idx, row in fondi_residui.iterrows():
-            if budget_residuo <= 0 or row['valore_attuale'] <= 0:
+        for r in fondi_residui:
+            if budget_residuo <= 0 or r['valore_attuale'] <= 0:
                 continue
-            importo = min(row['valore_attuale'], budget_residuo)
-            quota_pv = (importo / row['valore_attuale']) * row['plusvalenza_stimata'] if row['valore_attuale'] > 0 else 0
-            aliquota = config.get('parametri', {}).get(
-                'aliquota_capital_gain',
-                config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
-            etf_dest = config.get('parametri', {}).get('etf_destinazione_migrazione', 'IWDA / VWCE')
+            importo = min(r['valore_attuale'], budget_residuo)
+            quota_pv = (importo / r['valore_attuale']) * r['plusvalenza_stimata'] if r['valore_attuale'] > 0 else 0
             tassa = round(quota_pv * aliquota, 2)
             netto = round(importo - tassa, 2)
             budget_residuo -= importo
-            fondi_residui.at[idx, 'valore_attuale'] = max(row['valore_attuale'] - importo, 0)
-            fondi_residui.at[idx, 'plusvalenza_stimata'] = max(row['plusvalenza_stimata'] - quota_pv, 0)
+            r['valore_attuale'] = max(r['valore_attuale'] - importo, 0)
+            r['plusvalenza_stimata'] = max(r['plusvalenza_stimata'] - quota_pv, 0)
 
             piano_rows.append({
-                'anno': anno_num, 'fondo': row['nome'], 'isin': row['isin'],
+                'anno': anno_num, 'fondo': r['nome'], 'isin': r['isin'],
                 'rimborso_lordo': round(importo, 0),
                 'tassa_26pct': round(tassa, 0),
                 'netto_in_etf': round(netto, 0),
                 'etf_destinazione': etf_dest,
-                'motivo': f"TER ~{row['costo_annuo_stimato']*100:.1f}%"
+                'motivo': f"TER ~{r['costo_annuo_stimato']*100:.1f}%"
             })
 
     return pd.DataFrame(piano_rows)

@@ -73,15 +73,15 @@ def carica_quote_fondi_persistenti(config: dict) -> dict:
     """
     df = carica_ultime_quote_fondi()
     if not df.empty:
-        return {row['isin']: float(row['quota']) for _, row in df.iterrows()}
+        return df.set_index('isin')['quota'].astype(float).to_dict()
 
     # Fallback: usa le quote ref dall'asset_catalog
     catalog = carica_asset_catalog()
     if not catalog.empty and 'tipo' in catalog.columns:
-        fondi = catalog[catalog['tipo'] == 'fondo']
+        fondi = catalog[(catalog['tipo'] == 'fondo') & catalog['valore_quota_ref'].notna()
+                        & (catalog['valore_quota_ref'] != 0)]
         if not fondi.empty:
-            return {str(r['isin']): float(r.get('valore_quota_ref') or 0)
-                    for _, r in fondi.iterrows() if r.get('valore_quota_ref')}
+            return fondi.set_index('isin')['valore_quota_ref'].astype(float).to_dict()
 
     # Ultimo fallback: config.yaml
     return {f['isin']: f['valore_quota_ref']
@@ -132,8 +132,8 @@ def aggiorna_quote_fondi(quote_map: dict, config: dict,
     """
     if catalog_df is not None and not catalog_df.empty:
         fondi_meta = {
-            row['isin']: row
-            for _, row in catalog_df[catalog_df['tipo'] == 'fondo'].iterrows()
+            r['isin']: r
+            for r in catalog_df[catalog_df['tipo'] == 'fondo'].to_dict('records')
         }
     else:
         fondi_meta = {f['isin']: f for f in config.get('fondi_bancari', {}).get('titoli', [])}

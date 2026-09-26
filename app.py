@@ -74,8 +74,10 @@ def _plotly_chart(fig, _title=None, **kwargs):
 
 
 def _init_plotly_template():
-    """Imposta il template Plotly globale in base al tema corrente."""
+    """Imposta il template Plotly globale in base al tema corrente. Skip se tema invariato."""
     dark = st.session_state.get('_dark_mode_toggle', True)
+    if st.session_state.get('_plotly_tpl_dark') == dark:
+        return
     pio.templates['_app_dark'] = go.layout.Template(layout=go.Layout(
         paper_bgcolor=_BG3, plot_bgcolor=_BG2,
         font=dict(color=_TEXT, size=12),
@@ -89,6 +91,7 @@ def _init_plotly_template():
         colorway=['#1F5C8B','#1baf7a','#E9C46A','#E63946','#A8DADC','#7B2D8B','#2EC4B6','#FF9F1C'],
     ))
     pio.templates.default = '_app_dark' if dark else 'plotly_white'
+    st.session_state['_plotly_tpl_dark'] = dark
 
 
 def _inject_css():
@@ -359,10 +362,6 @@ if db_ok and 'backfill_done' not in st.session_state:
         st.session_state['backfill_done'] = True
         if res['n_prezzi_scaricati'] > 0:
             st.session_state['backfill_nuovi'] = res['n_prezzi_scaricati']
-        # Ricarica il catalog dopo il seeding iniziale (prima esecuzione)
-        if 'asset_catalog' not in st.session_state or st.session_state['asset_catalog'].empty:
-            st.session_state['asset_catalog'] = get_asset_catalog()
-            _catalog = st.session_state['asset_catalog']
     except Exception:
         st.session_state['backfill_done'] = True
 
@@ -430,7 +429,8 @@ with st.sidebar:
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
                   'pos_df_cache','fondi_df_cache','_app_pwd_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
-                  'patrimonio_log_cache','port_storico_cache','eventi_storico_cache']:
+                  'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
+                  '_plotly_tpl_dark']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -1366,26 +1366,25 @@ elif sezione == _SEZIONE_FIGLIO:
     sc_figlio = simula_pac_scenari(pac_f, 18, rend_base=rf/100,
                                     rend_worst=max(rf/100 - _p6.get('scenario_spread_worst', 0.04), 0.01),
                                     rend_best=rf/100 + _p6.get('scenario_spread_best', 0.03))
-    # Prova a leggere nascita_figlio da Supabase (fonte di verità) e iniettalo nel config
-    if not config.get('date', {}).get('nascita_figlio'):
-        try:
-            from database import carica_param as _cp
-            _nb = _cp('nascita_figlio')
-            if _nb:
-                config.setdefault('date', {})['nascita_figlio'] = str(_nb)
-        except Exception:
-            pass
+    # Legge nascita_figlio da session_state['params'] (già caricato), poi da config come fallback.
+    # Non muta mai config (è oggetto @st.cache_data condiviso tra rerun).
+    _nb = (st.session_state['params'].get('nascita_figlio')
+           or config.get('date', {}).get('nascita_figlio'))
+    _config_figlio = dict(config)
+    if _nb:
+        _config_figlio['date'] = dict(config.get('date', {}))
+        _config_figlio['date']['nascita_figlio'] = str(_nb)
 
-    df_costi = simula_costi_figlio(config, eta_max=22)
+    df_costi = simula_costi_figlio(_config_figlio, eta_max=22)
 
     if df_costi.empty:
         with st.expander("📅 Imposta data di nascita", expanded=True):
             nascita_input = st.date_input("Data di nascita", value=None, min_value=date(2000,1,1), max_value=date.today())
             if st.button("💾 Salva") and nascita_input:
                 from app_state import salva_param as _sp
-                _sp('nascita_figlio', nascita_input.strftime('%Y-%m-%d'))
-                config.setdefault('date', {})['nascita_figlio'] = nascita_input.strftime('%Y-%m-%d')
-                df_costi = simula_costi_figlio(config, eta_max=22)
+                _nb_str = nascita_input.strftime('%Y-%m-%d')
+                _sp('nascita_figlio', _nb_str)
+                st.session_state['params']['nascita_figlio'] = _nb_str
                 st.success("Data salvata.")
                 st.rerun()
 
@@ -1445,8 +1444,11 @@ elif sezione == "⚙️ Gestione Asset":
         st.error("DB non disponibile — impossibile gestire gli asset.")
         st.stop()
 
-    # Ricarica sempre dal DB in questa sezione
-    cat_df = get_asset_catalog()
+    # Usa il catalog già in cache (sessione); si ricarica solo dopo modifiche (pop + rerun)
+    cat_df = st.session_state.get('asset_catalog', pd.DataFrame())
+    if cat_df.empty:
+        cat_df = get_asset_catalog()
+        st.session_state['asset_catalog'] = cat_df
 
     if cat_df.empty:
         st.info("Nessun asset nel catalogo. Aggiungi il primo qui sotto.")
