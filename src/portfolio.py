@@ -181,11 +181,12 @@ def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
 
 def simula_uscita_fondo_data_x(config: dict, data_uscita: date,
                                 rendimento_annuo: float = 0.04,
-                                quote_aggiornate: Dict[str, float] = None) -> pd.DataFrame:
+                                quote_aggiornate: Dict[str, float] = None,
+                                fondi_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
     aliquota = config.get('parametri', {}).get(
         'aliquota_capital_gain',
         config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
-    df = get_fondi_snapshot(config, quote_aggiornate)
+    df = fondi_df if (fondi_df is not None and not fondi_df.empty) else get_fondi_snapshot(config, quote_aggiornate)
     oggi = date.today()
     giorni = max((data_uscita - oggi).days, 0)
     anni_fraz = giorni / 365.25
@@ -205,8 +206,9 @@ def simula_uscita_fondo_data_x(config: dict, data_uscita: date,
                     'mesi_attesa', 'data_uscita']]
 
 
-def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = None) -> pd.DataFrame:
-    df = get_fondi_snapshot(config, quote_aggiornate)
+def piano_uscita_ottimale(config: dict, quote_aggiornate: Dict[str, float] = None,
+                           fondi_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
+    df = fondi_df if (fondi_df is not None and not fondi_df.empty) else get_fondi_snapshot(config, quote_aggiornate)
     piano_cfg = config['migrazione_fondi']['piano_annuale']
 
     ter_map = {f['nome']: f.get('ter', 0.02)

@@ -578,12 +578,14 @@ elif sezione == "📉 Portafoglio storico":
 
     from positions import ASSET_TICKERS, storico_posizioni
     _cat_pos = st.session_state.get('asset_catalog', pd.DataFrame())
-    _nomi_map_pos = ({row['isin']: row['nome'] for _, row in _cat_pos.iterrows()}
-                     if not _cat_pos.empty else {})
-    _tutti_asset_pos = ([{'isin': row['isin'], 'nome': row['nome']}
-                         for _, row in _cat_pos.iterrows()
-                         if row.get('stato', 'attivo') == 'attivo']
-                        if not _cat_pos.empty else [])
+    if not _cat_pos.empty:
+        _cat_pos_rows = _cat_pos.to_dict('records')
+        _nomi_map_pos    = {r['isin']: r['nome'] for r in _cat_pos_rows}
+        _tutti_asset_pos = [{'isin': r['isin'], 'nome': r['nome']}
+                            for r in _cat_pos_rows if r.get('stato', 'attivo') == 'attivo']
+    else:
+        _nomi_map_pos    = {}
+        _tutti_asset_pos = []
 
     # Periodo
     c1,c2 = st.columns(2)
@@ -604,7 +606,10 @@ elif sezione == "📉 Portafoglio storico":
             st.session_state['port_storico_cache'] = {}
         with st.spinner("Caricamento storico portafoglio..."):
             if data_da not in st.session_state['port_storico_cache']:
-                st.session_state['port_storico_cache'][data_da] = get_storico_portafoglio(data_da)
+                _cat_isins = (st.session_state['asset_catalog']['isin'].tolist()
+                              if not st.session_state.get('asset_catalog', pd.DataFrame()).empty else None)
+                st.session_state['port_storico_cache'][data_da] = get_storico_portafoglio(
+                    data_da, isins=_cat_isins)
             df_port = st.session_state['port_storico_cache'][data_da]
 
         if df_port.empty:
@@ -792,18 +797,25 @@ elif sezione == "📈 ETF & mercato":
     # Grafico storico
     st.subheader("Performance storica")
     periodo = st.select_slider("Periodo", ["1mo","3mo","6mo","ytd","1y","2y"], value="1y")
-    tutti_ticker = {r['ticker']: r['ticker_yf'] for _,r in etf_df.iterrows() if r['ticker_yf']}
+    tutti_ticker = {r['ticker']: r['ticker_yf'] for r in etf_df.to_dict('records') if r.get('ticker_yf')}
     tutti_ticker['ACN'] = 'ACN'
     sel = st.multiselect("Titoli da confrontare", list(tutti_ticker.keys()),
                           default=list(tutti_ticker.keys())[:3])
     if sel:
+        from portfolio import _batch_download, _extract_series
         fig = go.Figure()
         pal = list(COLORS.values())
+        _sel_tickers = tuple(tutti_ticker[n] for n in sel if n in tutti_ticker)
+        _raw_batch   = _batch_download(_sel_tickers, periodo)
         for i, nome in enumerate(sel):
-            h = get_etf_history_chart(tutti_ticker.get(nome, nome), periodo)
-            if not h.empty:
-                fig.add_trace(go.Scatter(x=h.index, y=h['indexed'].round(2),
-                                          name=nome, line=dict(color=pal[i%len(pal)],width=2)))
+            _tk = tutti_ticker.get(nome, nome)
+            _series = _extract_series(_raw_batch, _tk, len(_sel_tickers))
+            if _series.empty:
+                continue
+            first = _series.iloc[0]
+            _indexed = (_series / first * 100).round(2) if first else _series
+            fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
+                                      name=nome, line=dict(color=pal[i%len(pal)],width=2)))
         fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
         fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
         _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}", use_container_width=True, theme=None)
@@ -1156,7 +1168,8 @@ elif sezione == "🏦 Fondi bancari":
     with c2: rend_uscita = st.slider("Rendimento fondi (%)", 1.0, 8.0, 4.0, step=0.5, key="ru")
 
     quote_map = {r['ISIN']: r['Quota €'] for _,r in df_fondi_edit.iterrows() if r['Includi']}
-    df_uscita = simula_uscita_fondo_data_x(config, data_uscita, rend_uscita/100, quote_map)
+    df_uscita = simula_uscita_fondo_data_x(config, data_uscita, rend_uscita/100, quote_map,
+                                            fondi_df=get_fondi())
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("Attesa", f"{df_uscita['mesi_attesa'].iloc[0]:.0f} mesi")
     c2.metric("Valore proiettato", f"€ {df_uscita['valore_proiettato'].sum():,.0f}")
@@ -1171,7 +1184,7 @@ elif sezione == "🏦 Fondi bancari":
 
     # ── Piano uscita ottimale ─────────────────────────────────
     st.subheader("Piano di uscita ottimale")
-    piano_df = piano_uscita_ottimale(config, quote_map)
+    piano_df = piano_uscita_ottimale(config, quote_map, fondi_df=get_fondi())
     if not piano_df.empty:
         fig_piano = px.bar(piano_df, x='anno', y='netto_in_etf', color='fondo',
                             title="Netto reinvestito in ETF per anno e per fondo",

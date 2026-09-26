@@ -192,14 +192,16 @@ def rimuovi_asset(isin: str) -> bool:
     return elimina_asset(isin)
 
 
-def get_storico_portafoglio(data_inizio=None, data_fine=None) -> "pd.DataFrame":
+def get_storico_portafoglio(data_inizio=None, data_fine=None,
+                             isins: list = None) -> "pd.DataFrame":
     """Carica il valore storico aggregato del portafoglio."""
     from positions import calcola_portafoglio_storico
     from datetime import date
     if data_inizio is None:
         from datetime import timedelta
         data_inizio = date.today() - timedelta(days=365)
-    return calcola_portafoglio_storico(data_inizio=data_inizio, data_fine=data_fine)
+    # isins passati dall'esterno evita una query Supabase ridondante su asset_catalog
+    return calcola_portafoglio_storico(isins=isins, data_inizio=data_inizio, data_fine=data_fine)
 
 
 def get_storico_asset(isin: str, data_inizio=None, data_fine=None) -> "pd.DataFrame":

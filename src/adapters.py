@@ -179,7 +179,7 @@ class BperPersona1Adapter(BankAdapter):
         df = df[df['data'].notna()].copy()
 
         transactions = []
-        for _, row in df.iterrows():
+        for row in df.to_dict('records'):
             desc = str(row['descrizione'])
             if is_internal_transfer(desc, keywords):
                 continue
@@ -218,7 +218,7 @@ class BperPersona2Adapter(BankAdapter):
         df = df[df['data'].notna()].copy()
 
         transactions = []
-        for _, row in df.iterrows():
+        for row in df.to_dict('records'):
             desc = str(row['descrizione'])
             if is_internal_transfer(desc, keywords):
                 continue

@@ -225,6 +225,16 @@ Priorità derivata dall'analisi comparata con il Net Worth Tracker Excel (set 20
 | E11 ✅ | `.limit(50000)` aggiunto alla query `prezzi_storici` in `calcola_portafoglio_storico()` — evita troncamento silenzioso Supabase (default 1000) per storici lunghi | `src/positions.py` |
 | E12 ✅ | `.limit(5000)` aggiunto alla query `transazioni` in `carica_transazioni()` — stessa ragione, volume realistico 12 mesi × 2 persone | `src/database.py` |
 
+### ✅ Fix tecnici completati (26/09/2026 — round 7)
+
+| # | Fix | File |
+|---|---|---|
+| P-NEW-01 ✅ | Grafico confronto ETF: N `_batch_download((ticker,), period)` → 1 batch unico + `_extract_series` per ticker | `app.py` |
+| P-NEW-02 ✅ | `simula_uscita_fondo_data_x()` e `piano_uscita_ottimale()`: parametro `fondi_df=` per ricevere snapshot precomputato da cache; call site in app.py passa `get_fondi()` | `src/portfolio.py`, `app.py` |
+| P-NEW-03 ✅ | `iterrows()` → `to_dict('records')` in entrambi gli adapter bancari (`BperPersona1Adapter`, `BperPersona2Adapter`) | `src/adapters.py` |
+| P-NEW-04 ✅ | Due `iterrows()` separati su `asset_catalog` in "Portafoglio storico" → un solo `to_dict('records')` condiviso | `app.py` |
+| P-NEW-05 ✅ | `get_storico_portafoglio()` riceve `isins=` da `session_state['asset_catalog']`; `calcola_portafoglio_storico()` salta la query ridondante su `asset_catalog` | `src/app_state.py`, `app.py` |
+
 ### ✅ Fix tecnici completati (26/09/2026 — round 6)
 
 | # | Fix | File |
