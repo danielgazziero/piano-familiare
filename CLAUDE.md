@@ -94,23 +94,31 @@ File XLS da mettere in `data/input/` — vengono importati automaticamente all'a
 
 ### Autenticazione
 
-Auth basata su tabella `app_users` in Supabase (username + password PBKDF2-SHA256, ruolo admin/utente).
+Auth basata su tabella `app_users` in Supabase (username + password PBKDF2-SHA256, ruolo admin/utente, TOTP 2FA opzionale).
 
 - **dev:** `_DEMO = True` hardcoded — mostra dati fittizi, ma auth Supabase sempre richiesta
 - **main:** `_DEMO = bool(st.secrets.get("DEMO_MODE", False))` — con `DEMO_MODE = false` usa dati reali
 
 **Flussi:**
 - **Primo avvio** (app_users vuota): wizard crea account admin; offre di importare l'hash legacy da `config_params.app_password`
-- **Login**: username + password, brute-force guard con backoff esponenziale, timeout sessione 3600s
+- **Login**: username + password → se TOTP attivo, secondo step codice 6 cifre; brute-force guard con backoff esponenziale, timeout sessione 3600s
+- **2FA TOTP**: ogni utente attiva/disattiva da sidebar "🔐 Sicurezza (2FA)"; usa `pyotp` (Google Authenticator / Authy); disabilitazione richiede codice corrente
 - **Reset password**: link via email con token SHA-256 (15 min), SMTP provider-agnostico
 - **Invito utenti**: admin crea account inattivi + link attivazione 48 ore (`?invite_token=`)
-- **Admin panel** "👥 Utenti": visibile solo agli admin; lista, disattiva/riattiva, reset password
+- **Admin panel** "👥 Utenti": visibile solo agli admin; lista con badge 2FA, disattiva/riattiva, reset password
 
 Session_state auth keys: `_auth_ok`, `_auth_ts`, `_auth_user_id`, `_auth_username`, `_auth_is_admin`.
+Session_state TOTP pending (step intermedio): `_auth_pending_uid`, `_auth_pending_username`, `_auth_pending_is_admin`.
 
 Comportamento fail-secure: se Supabase non raggiungibile → `st.stop()`. Mai accesso libero.
 
 **SQL da eseguire una volta su Supabase SQL Editor** per creare la tabella (vedi `APP_USERS_SCHEMA_SQL` in `src/database.py`).
+
+**SQL aggiuntivo per 2FA** (se la tabella `app_users` esiste già):
+```sql
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE;
+```
 
 **SMTP** (per email reset/inviti): aggiungere in `.streamlit/secrets.toml`:
 ```toml
@@ -213,10 +221,18 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 27/09/2026
 
-### Ultimo commit su dev: `cd5a5cf` — Auth overhaul (username+password, reset email, admin panel)
+### Ultimo commit su main e dev: `4bdb245` — 2FA TOTP
 
-Su `dev`: sistema auth completamente riscritto (tabella `app_users`, wizard primo avvio, reset password via email, inviti, admin panel).
-Su `main`: ancora al commit `473ae4a` (fix sicurezza A-01/A-02). Allineare main dopo test.
+Entrambi i branch allineati. Sistema auth completo: username+password + TOTP 2FA opzionale per utente.
+
+**Commit principali della sessione del 27/09/2026:**
+
+| Commit | Contenuto |
+|---|---|
+| `cd5a5cf` | feat: auth a username+password — wizard primo avvio, reset email, admin panel |
+| `e85ce14` | feat: elimina utente inattivo nell'admin panel |
+| `54ac76f` | feat: autenticazione a 2 fattori (TOTP) — pyotp + qrcode |
+| `4bdb245` | merge: 2FA TOTP su main |
 
 **Commit principali della sessione del 26/09/2026:**
 
@@ -257,6 +273,7 @@ Su `main`: ancora al commit `473ae4a` (fix sicurezza A-01/A-02). Allineare main 
 | S-NEW-02 | Race condition `TRANSFER_KEYWORDS` globale: eliminata mutazione modulo, keywords passate come parametro `keywords=` | `src/adapters.py`, `src/parser.py` |
 | S-NEW-03 | ISIN non validato: `max_chars=12` + regex `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` | `app.py` |
 | S-NEW-04 | Input nomi persona: `max_chars=100` | `app.py` |
+| S-NEW-05 | **2FA TOTP** — secondo step login con codice 6 cifre (pyotp); setup QR code in sidebar; disabilitazione richiede codice corrente | `app.py`, `src/database.py` |
 
 ### ✅ Fix performance (24-26/09/2026)
 
