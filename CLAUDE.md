@@ -289,7 +289,7 @@ Tutti i fix tecnici identificati da due cicli completi di scansione sicurezza + 
 | 4 | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale e inclusi in `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
 | 5 | **Onboarding wizard** — procedura guidata al primo avvio per compilare i parametri fondamentali | `app.py`, `app_state.py`, nuovo `src/cloud_storage.py` | Opzione: salvare `config.yaml` su Supabase Storage (zero nuove dipendenze). |
 | 6 ✅ | Aggiornamento automatico docs al deploy via GitHub Actions | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml` | Completato. |
-| 7 | **Demo data** — set dati fittizi per screenshot, onboarding e condivisione | `app.py`, `src/demo_data.py`, `docs/demo_seed.sql` | `src/demo_data.py` esiste ma le funzioni demo non coprono tutti i tab. |
+| 7 ✅ | **Demo data completa** — tutti i tab coperti: asset catalog, ETF perf, azioni, prezzi yfinance, posizioni, CRUD no-op | `app.py`, `src/demo_data.py` | Completato 27/09/2026. Gestione Asset disabilitata in DEMO con placeholder. |
 
 ### 🟡 Media priorità
 
