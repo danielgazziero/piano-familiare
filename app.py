@@ -178,18 +178,40 @@ elif st.session_state.get("_auth_ok") and time.time() - st.session_state.get("_a
     st.rerun()
 elif not st.session_state.get("_auth_ok"):
     st.title("🔒 Accesso protetto")
+
+    # ── Brute-force guard ────────────────────────────────────
+    _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]  # secondi dopo N fallimenti
+    _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
+    _failures  = st.session_state.get("_auth_failures", 0)
+    _locked_until = st.session_state.get("_auth_locked_until", 0)
+    _now = time.time()
+
+    if _now < _locked_until:
+        _wait = int(_locked_until - _now) + 1
+        st.error(f"Troppi tentativi falliti. Riprova tra {_wait} secondi.")
+        st.stop()
+
     pwd = st.text_input("Password", type="password", max_chars=1024)
     if st.button("Accedi"):
         from database import verify_password as _verify_pwd, hash_password as _hash_pwd, salva_param as _salva_param_auth
         if _verify_pwd(pwd, _APP_PASSWORD):
-            st.session_state["_auth_ok"] = True
-            st.session_state["_auth_ts"] = time.time()
+            st.session_state["_auth_ok"]       = True
+            st.session_state["_auth_ts"]       = time.time()
+            st.session_state["_auth_failures"] = 0
+            st.session_state.pop("_auth_locked_until", None)
             # Migrazione trasparente: se la password era in chiaro, re-hasha al primo login
             if not _APP_PASSWORD.startswith('pbkdf2$'):
                 _salva_param_auth("app_password", _hash_pwd(pwd))
             st.rerun()
         else:
-            st.error("Password errata.")
+            _failures = min(_failures + 1, _MAX_FAILURES)
+            st.session_state["_auth_failures"] = _failures
+            _delay = _LOCKOUT_DELAYS[_failures]
+            if _delay > 0:
+                st.session_state["_auth_locked_until"] = time.time() + _delay
+                st.error(f"Password errata. Attendi {_delay} secondi prima del prossimo tentativo.")
+            else:
+                st.error("Password errata.")
     st.stop()
 
 if _DEMO:
