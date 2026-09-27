@@ -94,14 +94,32 @@ File XLS da mettere in `data/input/` — vengono importati automaticamente all'a
 
 ### Autenticazione
 
-La password di accesso viene **esclusivamente** da Supabase `config_params` → chiave `app_password`.
+Auth basata su tabella `app_users` in Supabase (username + password PBKDF2-SHA256, ruolo admin/utente).
 
 - **dev:** `_DEMO = True` hardcoded — mostra dati fittizi, ma auth Supabase sempre richiesta
 - **main:** `_DEMO = bool(st.secrets.get("DEMO_MODE", False))` — con `DEMO_MODE = false` usa dati reali
 
-Comportamento fail-secure: se Supabase non raggiungibile o `app_password` non presente → `st.stop()`. Mai accesso libero. `APP_PASSWORD` non esiste e non va aggiunto ai secrets Streamlit Cloud.
+**Flussi:**
+- **Primo avvio** (app_users vuota): wizard crea account admin; offre di importare l'hash legacy da `config_params.app_password`
+- **Login**: username + password, brute-force guard con backoff esponenziale, timeout sessione 3600s
+- **Reset password**: link via email con token SHA-256 (15 min), SMTP provider-agnostico
+- **Invito utenti**: admin crea account inattivi + link attivazione 48 ore (`?invite_token=`)
+- **Admin panel** "👥 Utenti": visibile solo agli admin; lista, disattiva/riattiva, reset password
 
-Password hashed PBKDF2-HMAC-SHA256. `verify_password()` tronca l'input a 1024 char prima di hashare (guard DoS).
+Session_state auth keys: `_auth_ok`, `_auth_ts`, `_auth_user_id`, `_auth_username`, `_auth_is_admin`.
+
+Comportamento fail-secure: se Supabase non raggiungibile → `st.stop()`. Mai accesso libero.
+
+**SQL da eseguire una volta su Supabase SQL Editor** per creare la tabella (vedi `APP_USERS_SCHEMA_SQL` in `src/database.py`).
+
+**SMTP** (per email reset/inviti): aggiungere in `.streamlit/secrets.toml`:
+```toml
+SMTP_HOST     = "smtp.gmail.com"   # o smtp.office365.com, smtp.sendgrid.net...
+SMTP_PORT     = 587
+SMTP_USER     = "..."
+SMTP_PASSWORD = "..."              # App Password, non la password account
+APP_BASE_URL  = "https://tua-app.streamlit.app"
+```
 
 `carica_param()` in `src/database.py` prova `json.loads()` sul valore, poi fallback a raw string.
 
@@ -193,11 +211,12 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 26/09/2026
+## Stato tecnico al 27/09/2026
 
-### Ultimo commit su main: `ac70efc` — Sicurezza e performance completati
+### Ultimo commit su dev: `cd5a5cf` — Auth overhaul (username+password, reset email, admin panel)
 
-Tutti i fix tecnici identificati da due cicli completi di scansione sicurezza + performance sono stati implementati. Il codebase è attualmente in uno stato pulito su entrambi i branch (`dev` = `main`).
+Su `dev`: sistema auth completamente riscritto (tabella `app_users`, wizard primo avvio, reset password via email, inviti, admin panel).
+Su `main`: ancora al commit `473ae4a` (fix sicurezza A-01/A-02). Allineare main dopo test.
 
 **Commit principali della sessione del 26/09/2026:**
 

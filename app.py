@@ -147,72 +147,254 @@ hr {border-color:rgba(49,51,63,0.2)!important}
 # ── DEMO MODE — controllato da DEMO_MODE in st.secrets (false in produzione)
 _DEMO = bool(st.secrets.get("DEMO_MODE", False))
 
-# ── AUTENTICAZIONE — richiesta sempre, password esclusivamente da Supabase
-_APP_PASSWORD = None
-_AUTH_ERR = None
-if '_app_pwd_cache' in st.session_state:
-    _APP_PASSWORD = st.session_state['_app_pwd_cache']
-else:
+# ── AUTENTICAZIONE ────────────────────────────────────────────
+
+def _auth_genera_token():
+    """Genera token casuale (raw URL-safe) + hash SHA-256 per DB."""
+    import secrets as _sec, hashlib as _hl
+    raw = _sec.token_urlsafe(32)
+    return raw, _hl.sha256(raw.encode()).hexdigest()
+
+
+def _auth_handle_reset(token_raw: str):
+    """Flow reset password — attivato da ?reset_token= in URL."""
+    import hashlib as _hl
+    from database import verifica_token as _vt, aggiorna_password_utente as _apw, hash_password as _hp
+    tok_hash = _hl.sha256(token_raw.encode()).hexdigest()
+    user = _vt(tok_hash, 'reset_token_hash', 'reset_token_expiry')
+    if not user:
+        st.error("Link non valido o scaduto. Richiedi un nuovo reset dalla schermata di login.")
+        if st.button("← Vai al login"):
+            st.query_params.clear()
+            st.rerun()
+        st.stop()
+    st.title("🔑 Nuova password")
+    st.caption(f"Account: **{user['username']}**")
+    p1 = st.text_input("Nuova password", type="password", max_chars=1024)
+    p2 = st.text_input("Conferma password", type="password", max_chars=1024)
+    if st.button("Salva password", type="primary"):
+        if not p1:
+            st.error("Inserisci una password.")
+        elif len(p1) < 8:
+            st.error("Minimo 8 caratteri.")
+        elif p1 != p2:
+            st.error("Le password non corrispondono.")
+        else:
+            if _apw(user['id'], _hp(p1)):
+                st.success("Password aggiornata! Accedi con le tue nuove credenziali.")
+                st.query_params.clear()
+                if st.button("Vai al login"):
+                    st.rerun()
+            else:
+                st.error("Errore durante l'aggiornamento. Riprova.")
+    st.stop()
+
+
+def _auth_handle_invite(token_raw: str):
+    """Flow attivazione invito — attivato da ?invite_token= in URL."""
+    import hashlib as _hl
+    from database import verifica_token as _vt, attiva_utente_invito as _aui, hash_password as _hp
+    tok_hash = _hl.sha256(token_raw.encode()).hexdigest()
+    user = _vt(tok_hash, 'invite_token_hash', 'invite_token_expiry')
+    if not user:
+        st.error("Link non valido o scaduto. Chiedi all'amministratore un nuovo invito.")
+        if st.button("← Vai al login"):
+            st.query_params.clear()
+            st.rerun()
+        st.stop()
+    st.title("👋 Attiva il tuo account")
+    st.caption(f"Username: **{user['username']}** · Email: {user['email']}")
+    p1 = st.text_input("Scegli una password", type="password", max_chars=1024)
+    p2 = st.text_input("Conferma password", type="password", max_chars=1024)
+    if st.button("Attiva account", type="primary"):
+        if not p1:
+            st.error("Inserisci una password.")
+        elif len(p1) < 8:
+            st.error("Minimo 8 caratteri.")
+        elif p1 != p2:
+            st.error("Le password non corrispondono.")
+        else:
+            if _aui(user['id'], _hp(p1)):
+                st.success("Account attivato! Accedi con username e password.")
+                st.query_params.clear()
+                if st.button("Vai al login"):
+                    st.rerun()
+            else:
+                st.error("Errore durante l'attivazione. Riprova.")
+    st.stop()
+
+
+def _auth_wizard():
+    """Wizard primo avvio — crea l'account amministratore."""
+    from database import crea_utente as _cu, hash_password as _hp, carica_param as _cp
+    st.title("🏠 Benvenuto — Primo avvio")
+    st.info("Nessun account trovato. Crea l'account amministratore per iniziare.")
+    _legacy_hash = None
     try:
-        from database import carica_param_o_errore as _carica_pwd
-        _APP_PASSWORD = _carica_pwd("app_password")
-        if _APP_PASSWORD and not _APP_PASSWORD.startswith('pbkdf2$'):
-            from database import hash_password as _hp, salva_param as _sp_startup
-            _APP_PASSWORD = _hp(_APP_PASSWORD)
-            _sp_startup("app_password", _APP_PASSWORD)
-        if _APP_PASSWORD:
-            st.session_state['_app_pwd_cache'] = _APP_PASSWORD
+        _legacy_hash = _cp("app_password")
     except Exception:
-        _AUTH_ERR = "db_error"
+        pass
+    col1, col2 = st.columns(2)
+    with col1:
+        wiz_user  = st.text_input("Username (min. 3 caratteri)", max_chars=50)
+        wiz_email = st.text_input("Email", max_chars=200)
+    with col2:
+        wiz_p1 = st.text_input("Password", type="password", max_chars=1024)
+        wiz_p2 = st.text_input("Conferma password", type="password", max_chars=1024)
+    usa_legacy = False
+    if _legacy_hash:
+        st.caption("💡 Rilevata una password esistente in config_params.")
+        usa_legacy = st.checkbox("Importa la password attuale (raccomandato)", value=True)
+    if st.button("✅ Crea account amministratore", type="primary"):
+        errs = []
+        if not wiz_user or len(wiz_user.strip()) < 3:
+            errs.append("Username: almeno 3 caratteri.")
+        if not wiz_email or '@' not in wiz_email:
+            errs.append("Email non valida.")
+        if not usa_legacy:
+            if not wiz_p1:
+                errs.append("Inserisci una password.")
+            elif len(wiz_p1) < 8:
+                errs.append("Password: almeno 8 caratteri.")
+            elif wiz_p1 != wiz_p2:
+                errs.append("Le password non corrispondono.")
+        for _e in errs:
+            st.error(_e)
+        if not errs:
+            try:
+                pwd_hash = _legacy_hash if (usa_legacy and _legacy_hash) else _hp(wiz_p1)
+                user = _cu(wiz_user.strip(), wiz_email.strip(), pwd_hash, is_admin=True)
+                st.session_state.update({
+                    "_auth_ok": True, "_auth_ts": time.time(),
+                    "_auth_user_id": user['id'],
+                    "_auth_username": user['username'],
+                    "_auth_is_admin": True,
+                })
+                st.success(f"Account **{user['username']}** creato. Benvenuto!")
+                st.rerun()
+            except Exception as _ex:
+                if 'duplicate' in str(_ex).lower() or 'unique' in str(_ex).lower():
+                    st.error("Username o email già in uso.")
+                else:
+                    st.error(f"Errore nella creazione: {type(_ex).__name__}")
+    st.stop()
 
-if _AUTH_ERR == "db_error":
-    st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
+
+def _auth_forgot_password():
+    """Schermata 'Password dimenticata'."""
+    import secrets as _sec
+    from database import get_utente_by_email as _gube, imposta_reset_token as _irt
+    from auth_mail import invia_email_reset as _ier, smtp_configurato as _sc
+    st.title("🔑 Reset password")
+    if not _sc():
+        st.warning(
+            "SMTP non configurato — impossibile inviare email di reset. "
+            "Configura SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD in secrets.toml "
+            "oppure contatta l'amministratore."
+        )
+    else:
+        email_input = st.text_input("La tua email", max_chars=200)
+        if st.button("Invia link di reset", type="primary"):
+            if not email_input or '@' not in email_input:
+                st.error("Inserisci un'email valida.")
+            else:
+                user = _gube(email_input)
+                if user:
+                    raw, tok_hash = _auth_genera_token()
+                    expiry = (datetime.now() + timedelta(minutes=15)).isoformat()
+                    if _irt(user['id'], tok_hash, expiry):
+                        try:
+                            base_url = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
+                            _ier(email_input, raw, base_url)
+                        except Exception as _e:
+                            st.error(f"Errore invio email: {type(_e).__name__}. Controlla la config SMTP.")
+                            st.stop()
+                st.success("Se l'email è registrata riceverai un link entro pochi minuti.")
+    if st.button("← Torna al login"):
+        st.session_state.pop("_auth_view", None)
+        st.rerun()
     st.stop()
-elif not _APP_PASSWORD:
-    st.error("⚠️ Password non configurata. Inserisci il valore `app_password` nella tabella `config_params` su Supabase.")
-    st.stop()
-elif st.session_state.get("_auth_ok") and time.time() - st.session_state.get("_auth_ts", 0) > 3600:
-    st.session_state.pop("_auth_ok", None)
-    st.session_state.pop("_auth_ts", None)
-    st.warning("Sessione scaduta. Effettua nuovamente l'accesso.")
-    st.rerun()
-elif not st.session_state.get("_auth_ok"):
+
+
+def _auth_login():
+    """Schermata di login username + password con brute-force guard."""
+    from database import verifica_credenziali as _vc
     st.title("🔒 Accesso protetto")
-
-    # ── Brute-force guard ────────────────────────────────────
-    _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]  # secondi dopo N fallimenti
+    _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
     _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
-    _failures  = st.session_state.get("_auth_failures", 0)
-    _locked_until = st.session_state.get("_auth_locked_until", 0)
-    _now = time.time()
-
-    if _now < _locked_until:
-        _wait = int(_locked_until - _now) + 1
+    _failures       = st.session_state.get("_auth_failures", 0)
+    _locked_until   = st.session_state.get("_auth_locked_until", 0)
+    if time.time() < _locked_until:
+        _wait = int(_locked_until - time.time()) + 1
         st.error(f"Troppi tentativi falliti. Riprova tra {_wait} secondi.")
         st.stop()
-
-    pwd = st.text_input("Password", type="password", max_chars=1024)
-    if st.button("Accedi"):
-        from database import verify_password as _verify_pwd, hash_password as _hash_pwd, salva_param as _salva_param_auth
-        if _verify_pwd(pwd, _APP_PASSWORD):
-            st.session_state["_auth_ok"]       = True
-            st.session_state["_auth_ts"]       = time.time()
-            st.session_state["_auth_failures"] = 0
-            st.session_state.pop("_auth_locked_until", None)
-            # Migrazione trasparente: se la password era in chiaro, re-hasha al primo login
-            if not _APP_PASSWORD.startswith('pbkdf2$'):
-                _salva_param_auth("app_password", _hash_pwd(pwd))
+    username = st.text_input("Username", max_chars=50)
+    password = st.text_input("Password", type="password", max_chars=1024)
+    _c1, _c2 = st.columns([1, 2])
+    with _c1:
+        login_btn = st.button("Accedi", type="primary")
+    with _c2:
+        if st.button("🔑 Password dimenticata?"):
+            st.session_state["_auth_view"] = "forgot_password"
             st.rerun()
+    if login_btn:
+        if not username or not password:
+            st.error("Inserisci username e password.")
         else:
-            _failures = min(_failures + 1, _MAX_FAILURES)
-            st.session_state["_auth_failures"] = _failures
-            _delay = _LOCKOUT_DELAYS[_failures]
-            if _delay > 0:
-                st.session_state["_auth_locked_until"] = time.time() + _delay
-                st.error(f"Password errata. Attendi {_delay} secondi prima del prossimo tentativo.")
+            user = _vc(username, password)
+            if user:
+                st.session_state.update({
+                    "_auth_ok": True, "_auth_ts": time.time(),
+                    "_auth_user_id": user['id'],
+                    "_auth_username": user['username'],
+                    "_auth_is_admin": user.get('is_admin', False),
+                    "_auth_failures": 0,
+                })
+                st.session_state.pop("_auth_locked_until", None)
+                st.session_state.pop("_auth_view", None)
+                st.rerun()
             else:
-                st.error("Password errata.")
+                _failures = min(_failures + 1, _MAX_FAILURES)
+                st.session_state["_auth_failures"] = _failures
+                _delay = _LOCKOUT_DELAYS[_failures]
+                if _delay > 0:
+                    st.session_state["_auth_locked_until"] = time.time() + _delay
+                    st.error(f"Credenziali errate. Attendi {_delay} s prima del prossimo tentativo.")
+                else:
+                    st.error("Credenziali non valide.")
     st.stop()
+
+
+# ── Gate di autenticazione principale ────────────────────────
+
+_reset_token  = st.query_params.get("reset_token")
+_invite_token = st.query_params.get("invite_token")
+
+if _reset_token:
+    _auth_handle_reset(_reset_token)
+elif _invite_token:
+    _auth_handle_invite(_invite_token)
+else:
+    try:
+        from database import conta_utenti as _conta_utenti
+        _n_users = _conta_utenti()
+    except Exception:
+        st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
+        st.stop()
+
+    if _n_users == 0:
+        _auth_wizard()
+    elif not st.session_state.get("_auth_ok"):
+        _view = st.session_state.get("_auth_view", "login")
+        if _view == "forgot_password":
+            _auth_forgot_password()
+        else:
+            _auth_login()
+    elif time.time() - st.session_state.get("_auth_ts", 0) > 3600:
+        for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin"):
+            st.session_state.pop(_k, None)
+        st.warning("Sessione scaduta. Effettua nuovamente l'accesso.")
+        st.rerun()
 
 if _DEMO:
     from demo_data import (
@@ -416,9 +598,18 @@ with st.sidebar:
         st.success("☁️ Supabase connesso", icon="✅")
     else:
         st.warning("⚠️ DB offline — dati non salvati")
+    _auth_uname = st.session_state.get("_auth_username", "")
+    if _auth_uname:
+        _cu, _cl = st.columns([3, 1])
+        _cu.caption(f"👤 {_auth_uname}")
+        if _cl.button("Esci", use_container_width=True):
+            for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username",
+                       "_auth_is_admin", "_auth_failures", "_auth_locked_until", "_auth_view"):
+                st.session_state.pop(_k, None)
+            st.rerun()
     st.divider()
     _SEZIONE_FIGLIO = f"👶 {_NF} timeline"
-    sezione = st.radio("Sezione", [
+    _sezioni_nav = [
         "🏠 Stato di famiglia",
         "📉 Portafoglio storico",
         "📈 ETF & mercato",
@@ -427,7 +618,10 @@ with st.sidebar:
         "🎯 Simulatore strategie",
         _SEZIONE_FIGLIO,
         "⚙️ Gestione Asset",
-    ])
+    ]
+    if st.session_state.get("_auth_is_admin"):
+        _sezioni_nav.append("👥 Utenti")
+    sezione = st.radio("Sezione", _sezioni_nav)
     with st.expander("✏️ Nomi"):
         n1_inp = st.text_input("Persona 1", value=_N1, key="edit_n1", max_chars=100)
         n2_inp = st.text_input("Persona 2", value=_N2, key="edit_n2", max_chars=100)
@@ -440,25 +634,25 @@ with st.sidebar:
                                       'nome_persona2': n2_inp,
                                       'nome_figlio':   nf_inp})
             st.rerun()
-    if _APP_PASSWORD:
-        with st.expander("🔑 Password"):
-            new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1", max_chars=1024)
-            new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2", max_chars=1024)
-            if st.button("💾 Cambia password"):
-                if not new_pwd1:
-                    st.error("Inserisci una password.")
-                elif len(new_pwd1) < 8:
-                    st.error("La password deve essere di almeno 8 caratteri.")
-                elif new_pwd1 != new_pwd2:
-                    st.error("Le password non corrispondono.")
-                elif _DEMO:
-                    st.warning("In DEMO mode il cambio password è disabilitato.")
+    with st.expander("🔑 Cambia password"):
+        new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1", max_chars=1024)
+        new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2", max_chars=1024)
+        if st.button("💾 Cambia password"):
+            if not new_pwd1:
+                st.error("Inserisci una password.")
+            elif len(new_pwd1) < 8:
+                st.error("Almeno 8 caratteri.")
+            elif new_pwd1 != new_pwd2:
+                st.error("Le password non corrispondono.")
+            elif _DEMO:
+                st.warning("In DEMO mode il cambio password è disabilitato.")
+            else:
+                from database import aggiorna_password_utente as _apwu, hash_password as _hpc
+                _uid = st.session_state.get("_auth_user_id")
+                if _uid and _apwu(_uid, _hpc(new_pwd1)):
+                    st.success("Password aggiornata!")
                 else:
-                    from database import salva_param as _salva_param_raw, hash_password as _hash_pwd_change
-                    _new_hash = _hash_pwd_change(new_pwd1)
-                    _salva_param_raw("app_password", _new_hash)
-                    st.session_state['_app_pwd_cache'] = _new_hash
-                    st.success("Password aggiornata! Al prossimo login usa la nuova.")
+                    st.error("Errore durante l'aggiornamento.")
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")
@@ -466,7 +660,7 @@ with st.sidebar:
         st.cache_data.clear()
         for k in ['params','quote_map','xls_importati','saved_today',
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
-                  'pos_df_cache','fondi_df_cache','_app_pwd_cache',
+                  'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
                   '_plotly_tpl_dark']:
@@ -1730,3 +1924,119 @@ elif sezione == "⚙️ Gestione Asset":
         st.divider()
         st.caption("Dopo aver aggiunto un asset, vai su '🔄 Aggiorna tutto' per scaricare i prezzi storici.")
         st.info("Il catalogo asset è la fonte di verità dell'app. Aggiungi qui qualsiasi ETF, fondo o azione che vuoi tracciare.")
+
+# ─────────────────────────────────────────────────────────────
+# SEZIONE ADMIN: GESTIONE UTENTI
+# ─────────────────────────────────────────────────────────────
+elif sezione == "👥 Utenti":
+    if not st.session_state.get("_auth_is_admin"):
+        st.error("Accesso riservato agli amministratori.")
+        st.stop()
+
+    st.title("👥 Gestione Utenti")
+
+    from database import (get_tutti_utenti as _gtu, crea_utente_invito as _cui,
+                          set_utente_attivo as _sua, imposta_reset_token as _irt2,
+                          get_utente_by_email as _gube2)
+    from auth_mail import (invia_email_invito as _iei, invia_email_reset as _ier2,
+                           smtp_configurato as _sc2)
+
+    tab_lista, tab_invita = st.tabs(["👥 Utenti registrati", "➕ Invita utente"])
+
+    with tab_lista:
+        _utenti_df = _gtu()
+        if _utenti_df.empty:
+            st.info("Nessun utente trovato.")
+        else:
+            for _u in _utenti_df.to_dict('records'):
+                _col_info, _col_azioni = st.columns([3, 1])
+                with _col_info:
+                    _stato = "🟢 Attivo" if _u.get('is_active') else "🔴 Disattivo"
+                    _admin = " · 👑 Admin" if _u.get('is_admin') else ""
+                    _ll = _u.get('last_login', '')
+                    if _ll:
+                        try:
+                            _ll = datetime.fromisoformat(
+                                str(_ll).replace('Z', '+00:00')
+                            ).strftime('%d/%m/%Y %H:%M')
+                        except Exception:
+                            pass
+                    else:
+                        _ll = "Mai"
+                    st.markdown(f"**{_u['username']}** — {_u['email']}")
+                    st.caption(f"{_stato}{_admin} · Ultimo accesso: {_ll}")
+                with _col_azioni:
+                    _uid2 = _u['id']
+                    _me   = st.session_state.get("_auth_user_id")
+                    if _uid2 != _me:
+                        if _u.get('is_active'):
+                            if st.button("Disattiva", key=f"dis_{_uid2}"):
+                                _sua(_uid2, False)
+                                st.rerun()
+                        else:
+                            if st.button("Riattiva", key=f"ria_{_uid2}"):
+                                _sua(_uid2, True)
+                                st.rerun()
+                    if _sc2() and _u.get('is_active') and _uid2 != _me:
+                        if st.button("Reset pwd", key=f"rst_{_uid2}"):
+                            _raw2, _th2 = _auth_genera_token()
+                            _exp2 = (datetime.now() + timedelta(minutes=15)).isoformat()
+                            if _irt2(_uid2, _th2, _exp2):
+                                try:
+                                    _base = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
+                                    _ier2(_u['email'], _raw2, _base)
+                                    st.success(f"Email di reset inviata a {_u['email']}")
+                                except Exception as _ex2:
+                                    st.error(f"Errore invio: {type(_ex2).__name__}")
+                st.divider()
+
+    with tab_invita:
+        st.subheader("Invita un nuovo utente")
+        if not _sc2():
+            st.warning(
+                "SMTP non configurato — puoi creare l'utente ma il link di attivazione "
+                "dovrà essere condiviso manualmente. Configura SMTP_HOST, SMTP_PORT, "
+                "SMTP_USER, SMTP_PASSWORD in secrets.toml per abilitare gli inviti via email."
+            )
+        with st.form("invita_utente"):
+            _inv_user  = st.text_input("Username (min. 3 caratteri)", max_chars=50)
+            _inv_email = st.text_input("Email", max_chars=200)
+            _inv_admin = st.checkbox("Ruolo amministratore", value=False)
+            _inv_submit = st.form_submit_button("📨 Invia invito")
+
+        if _inv_submit:
+            _inv_errs = []
+            if not _inv_user or len(_inv_user.strip()) < 3:
+                _inv_errs.append("Username: almeno 3 caratteri.")
+            if not _inv_email or '@' not in _inv_email:
+                _inv_errs.append("Email non valida.")
+            for _e3 in _inv_errs:
+                st.error(_e3)
+            if not _inv_errs:
+                try:
+                    _raw3, _th3 = _auth_genera_token()
+                    _exp3 = (datetime.now() + timedelta(hours=48)).isoformat()
+                    _new_u = _cui(_inv_user.strip(), _inv_email.strip(), _th3, _exp3, _inv_admin)
+                    if _new_u:
+                        if _sc2():
+                            try:
+                                _base3 = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
+                                _iei(_inv_email.strip(), _inv_user.strip(), _raw3, _base3)
+                                st.success(f"Invito inviato a {_inv_email}. Valido 48 ore.")
+                            except Exception as _ex3:
+                                st.warning(
+                                    f"Utente creato ma email non inviata ({type(_ex3).__name__}). "
+                                    f"Condividi manualmente: `?invite_token={_raw3}`"
+                                )
+                        else:
+                            st.info(
+                                f"Utente **{_inv_user.strip()}** creato. "
+                                f"Condividi questo link:\n`?invite_token={_raw3}`"
+                            )
+                    else:
+                        st.error("Errore nella creazione. Username o email già in uso?")
+                except Exception as _ex4:
+                    if 'duplicate' in str(_ex4).lower() or 'unique' in str(_ex4).lower():
+                        st.error("Username o email già in uso.")
+                    else:
+                        st.error(f"Errore: {type(_ex4).__name__}")
