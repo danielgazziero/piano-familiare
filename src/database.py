@@ -867,6 +867,17 @@ def set_utente_attivo(user_id: int, attivo: bool) -> bool:
         return False
 
 
+def elimina_utente(user_id: int) -> bool:
+    """Elimina definitivamente un utente dal DB."""
+    try:
+        client = get_client()
+        client.table('app_users').delete().eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] elimina_utente: {type(e).__name__}")
+        return False
+
+
 # ─────────────────────────────────────────────────────────────
 # SETUP INIZIALE — eseguire una volta
 # ─────────────────────────────────────────────────────────────

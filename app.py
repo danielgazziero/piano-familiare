@@ -1937,7 +1937,7 @@ elif sezione == "👥 Utenti":
 
     from database import (get_tutti_utenti as _gtu, crea_utente_invito as _cui,
                           set_utente_attivo as _sua, imposta_reset_token as _irt2,
-                          get_utente_by_email as _gube2)
+                          get_utente_by_email as _gube2, elimina_utente as _eu)
     from auth_mail import (invia_email_invito as _iei, invia_email_reset as _ier2,
                            smtp_configurato as _sc2)
 
@@ -1976,6 +1976,9 @@ elif sezione == "👥 Utenti":
                         else:
                             if st.button("Riattiva", key=f"ria_{_uid2}"):
                                 _sua(_uid2, True)
+                                st.rerun()
+                            if st.button("🗑 Elimina", key=f"del_{_uid2}"):
+                                _eu(_uid2)
                                 st.rerun()
                     if _sc2() and _u.get('is_active') and _uid2 != _me:
                         if st.button("Reset pwd", key=f"rst_{_uid2}"):
