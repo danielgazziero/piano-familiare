@@ -128,6 +128,69 @@ etf:
     stato: "candidato"
     note: "Alternativa low-cost a IWDA. TER 0.12%"
 
+# ─── BREAKDOWN GEO/SETTORIALE ETF ────────────────────────────
+# Fonte: factsheet ETF ufficiali (iShares, SPDR).
+# Aggiornare manualmente ogni 6-12 mesi dal sito del provider.
+# Percentuali arrotondate — solo per orientamento.
+etf_breakdown:
+  CSPX:
+    nome: "iShares Core S&P 500"
+    aggiornato: "2026-09"
+    geo:
+      USA: 100
+    settori:
+      Tecnologia: 31
+      Finanza: 13
+      Salute: 13
+      Consumo Discrezionale: 11
+      Comunicazione: 9
+      Industria: 8
+      Consumo Difensivo: 6
+      Energia: 4
+      Materiali: 2
+      Immobiliare: 2
+      Utilities: 1
+  IWDA:
+    nome: "iShares Core MSCI World"
+    aggiornato: "2026-09"
+    geo:
+      Nord America: 72
+      Europa: 17
+      Pacifico: 9
+      Altro: 2
+    settori:
+      Tecnologia: 25
+      Finanza: 15
+      Salute: 12
+      Consumo Discrezionale: 10
+      Industria: 10
+      Comunicazione: 8
+      Consumo Difensivo: 7
+      Energia: 4
+      Materiali: 3
+      Immobiliare: 2
+      Utilities: 4
+  ACWE:
+    nome: "SPDR MSCI ACWI"
+    aggiornato: "2026-09"
+    geo:
+      Nord America: 65
+      Europa: 14
+      Mercati Emergenti: 12
+      Pacifico: 9
+    settori:
+      Tecnologia: 23
+      Finanza: 16
+      Salute: 11
+      Consumo Discrezionale: 10
+      Industria: 9
+      Comunicazione: 8
+      Consumo Difensivo: 7
+      Energia: 4
+      Materiali: 4
+      Immobiliare: 2
+      Utilities: 6
+
 # ─── FONDI BANCARI — metadati pubblici ───────────────────────
 # quantita e valore_quota_ref → Supabase (posizioni, asset_catalog)
 fondi_bancari:

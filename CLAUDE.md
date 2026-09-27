@@ -340,10 +340,10 @@ Entrambi i branch allineati. Sistema auth completo: username+password + TOTP 2FA
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 12 | **Geo/sector ETF** — breakdown geografico aggiornabile dai factsheet | `app.py`, `config.yaml` | Dati statici, nessuna automazione. |
-| 13 | **Data freshness indicator** — riepilogo allineamento dati nella sidebar | `app.py`, `app_state.py` | UX improvement. |
-| 14 | **Month-end checklist** — pannello guidato 4 passi per validare il mese | `app.py` | UX improvement. |
-| 15 | **Gestione Asset — elimina per nome** — selectbox mostra `nome (ISIN)` invece del solo ISIN | `app.py` | UX improvement segnalato dall'utente. |
+| 12 ✅ | **Geo/sector ETF** — breakdown geografico aggiornabile dai factsheet | `app.py`, `config.yaml` | Completato 27/09/2026. Dati statici in `config.yaml → etf_breakdown`; grafici a torta geo/settore nella sezione ETF. |
+| 13 ✅ | **Data freshness indicator** — riepilogo allineamento dati nella sidebar | `app.py` | Completato 27/09/2026. Expander "📡 Allineamento dati" nella sidebar: snapshot, backfill ETF, quote fondi, ultima tx. |
+| 14 ✅ | **Month-end checklist** — pannello guidato 4 passi per validare il mese | `app.py` | Completato 27/09/2026. Nuova sezione "📋 Fine mese" nel nav con progress bar e 4 passi guidati. |
+| 15 ✅ | **Gestione Asset — elimina per nome** — selectbox mostra `nome (ISIN)` invece del solo ISIN | `app.py` | Completato 27/09/2026. `format_func` su 3 selectbox (fondi, ETF, azioni). |
 
 ---
 
