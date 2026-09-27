@@ -181,6 +181,8 @@ def _auth_handle_reset(token_raw: str):
             st.error("Le password non corrispondono.")
         else:
             if _apw(user['id'], _hp(p1)):
+                from database import reset_server_login_state as _rsls
+                _rsls(user['username'])
                 st.success("Password aggiornata! Accedi con le tue nuove credenziali.")
                 st.query_params.clear()
                 if st.button("Vai al login"):
@@ -389,6 +391,9 @@ def _auth_totp_verify():
     """Secondo step login — verifica codice TOTP."""
     import pyotp as _pyotp
     from database import get_totp_info as _gti
+    from database import (get_server_totp_state as _gsts,
+                          set_server_totp_state as _ssts,
+                          reset_server_totp_state as _rsts)
     _user_id  = st.session_state.get("_auth_pending_uid")
     _username = st.session_state.get("_auth_pending_username", "")
     _is_admin = st.session_state.get("_auth_pending_is_admin", False)
@@ -404,6 +409,8 @@ def _auth_totp_verify():
     _totp_lock_key  = f"_totp_locked_until_{_user_id}"
     _failures       = st.session_state.get(_totp_fail_key, 0)
     _locked_until   = st.session_state.get(_totp_lock_key, 0)
+    _srv_totp       = _gsts(_user_id)
+    _locked_until   = max(_locked_until, _srv_totp.get("locked_until", 0.0))
     if time.time() < _locked_until:
         _wait = int(_locked_until - time.time()) + 1
         st.error(f"Troppi tentativi falliti. Riprova tra {_wait} secondi.")
@@ -431,6 +438,7 @@ def _auth_totp_verify():
             _info = _gti(_user_id)
             _secret = _info.get('totp_secret')
             if _secret and _pyotp.TOTP(_secret).verify(totp_code.strip()):
+                _rsts(_user_id)
                 for _k in ("_auth_pending_uid", "_auth_pending_username",
                            "_auth_pending_is_admin", "_auth_failures",
                            "_auth_locked_until", "_auth_view",
@@ -444,6 +452,10 @@ def _auth_totp_verify():
                 })
                 st.rerun()
             else:
+                _n_srv_totp  = min(_srv_totp.get("n", 0) + 1, _MAX_FAILURES)
+                _delay_srv_t = _LOCKOUT_DELAYS[_n_srv_totp]
+                _lu_srv_t    = time.time() + _delay_srv_t if _delay_srv_t > 0 else 0.0
+                _ssts(_user_id, _n_srv_totp, _lu_srv_t)
                 _failures = min(_failures + 1, _MAX_FAILURES)
                 st.session_state[_totp_fail_key] = _failures
                 _delay = _LOCKOUT_DELAYS[_failures]
