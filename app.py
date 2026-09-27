@@ -668,10 +668,13 @@ def get_azioni():
             st.session_state['azioni_df_cache'] = result
     return st.session_state['azioni_df_cache']
 
-# Importa automaticamente eventuali nuovi XLS in data/input/
 if 'xls_importati' not in st.session_state:
     st.session_state['xls_importati'] = False
-if not st.session_state['xls_importati'] and db_ok:
+
+def _run_xls_import() -> None:
+    """Import XLS lazy — chiamata solo nelle sezioni che ne hanno bisogno."""
+    if st.session_state['xls_importati'] or not db_ok:
+        return
     try:
         df_tx_xls = parse_all_inputs(INPUT_DIR, config)
         if not df_tx_xls.empty:
@@ -681,9 +684,8 @@ if not st.session_state['xls_importati'] and db_ok:
         st.session_state['xls_importati'] = True
     except Exception as e:
         st.warning(f"⚠️ Errore import XLS: {type(e).__name__}")
-        # Non impostare il flag: consente retry al prossimo caricamento
 
-# Lazy loading: snapshot, auto-save e backfill avvengono dentro "Stato di famiglia"
+# Lazy loading: snapshot, auto-save, backfill e XLS import avvengono dentro le sezioni
 # (prima sezione caricata dall'utente che richiede dati ETF/azioni live).
 # Sezioni come "Fine mese" o "Gestione Asset" non fanno chiamate yfinance.
 
@@ -941,6 +943,9 @@ if sezione == "🏠 Stato di famiglia":
                 st.session_state['backfill_nuovi'] = _bf_res['n_prezzi_scaricati']
         except Exception:
             st.session_state['backfill_done'] = True
+
+    # Import XLS lazy — raggruppato con auto-save e backfill, prima dei KPI
+    _run_xls_import()
 
     c1,c2,c3,c4,c5 = st.columns(5)
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
@@ -1953,6 +1958,9 @@ elif sezione == _SEZIONE_FIGLIO:
 elif sezione == "📋 Fine mese":
     st.title("📋 Checklist fine mese")
     st.caption("Guida in 4 passi per validare i dati prima di chiudere il mese.")
+
+    # Import XLS lazy — essenziale per la checklist (Passo 1)
+    _run_xls_import()
 
     _ss_fm    = st.session_state
     _nuove_tx = _ss_fm.get('nuove_tx', 0)
