@@ -460,6 +460,8 @@ def verify_password(pwd: str, stored: str) -> bool:
         if len(parts) != 4:
             return False
         _, algo, salt, expected = parts
+        if algo not in ('sha256', 'sha512'):
+            return False
         h = hashlib.pbkdf2_hmac(algo, pwd.encode('utf-8'), salt.encode(), 260_000)
         return _hmac.compare_digest(h.hex(), expected)
     # Fallback plaintext per migrazione (prima modifica password)
