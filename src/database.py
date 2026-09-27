@@ -701,7 +701,7 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
     try:
         client = get_client()
         res = (client.table('app_users')
-               .select('*')
+               .select('id, username, email, is_admin, is_active, password_hash, totp_enabled, totp_secret')
                .eq('username', username.strip().lower())
                .eq('is_active', True)
                .limit(1)
@@ -723,7 +723,7 @@ def get_utente_by_email(email: str) -> Optional[dict]:
     try:
         client = get_client()
         res = (client.table('app_users')
-               .select('*')
+               .select('id')
                .eq('email', email.strip().lower())
                .eq('is_active', True)
                .limit(1)
@@ -757,7 +757,7 @@ def verifica_token(token_hash: str, campo_hash: str, campo_expiry: str) -> Optio
     try:
         client = get_client()
         res = (client.table('app_users')
-               .select('*')
+               .select(f'id, username, email, {campo_expiry}')
                .eq(campo_hash, token_hash)
                .execute())
         if not res.data:
