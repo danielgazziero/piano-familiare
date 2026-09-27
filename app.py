@@ -546,6 +546,14 @@ config = get_config()
 # Connessione DB (una volta per sessione)
 db_ok = init_db_connection()
 
+# ── ONBOARDING WIZARD ────────────────────────────────────────
+# Mostrato solo in modalità non-DEMO, finché wizard_completed non è 'true' in config_params.
+# Per rieseguire: admin preme il pulsante in sidebar → _wizard_restart = True.
+if not _DEMO:
+    from wizard import run_wizard as _run_wizard
+    if not _run_wizard(config, db_ok):
+        st.stop()
+
 # Carica parametri persistenti da Supabase (ultimi valori salvati)
 if 'params' not in st.session_state:
     st.session_state['params'] = carica_params_persistenti(config)
@@ -840,6 +848,13 @@ with st.sidebar:
                             st.error("Errore disabilitazione.")
                     else:
                         st.error("Codice non valido.")
+    if st.session_state.get("_auth_is_admin") and not _DEMO:
+        with st.expander("🧭 Wizard configurazione"):
+            st.caption("Riesegui la procedura guidata di configurazione iniziale.")
+            if st.button("Avvia wizard", key="btn_restart_wiz", use_container_width=True):
+                st.session_state['_wizard_restart'] = True
+                st.session_state.pop('_wizard_step', None)
+                st.rerun()
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")

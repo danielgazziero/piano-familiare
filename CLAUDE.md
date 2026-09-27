@@ -221,9 +221,19 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 27/09/2026
 
-### Ultimo commit su main e dev: `4bdb245` — 2FA TOTP
+### Ultimo commit su main: `dccd696` — feature bassa priorità + fix demo
 
-Entrambi i branch allineati. Sistema auth completo: username+password + TOTP 2FA opzionale per utente.
+Ultimo commit su dev: in progress (onboarding wizard).
+
+### Onboarding wizard (`src/wizard.py`)
+
+**Trigger:** Gate in `app.py` dopo auth — se `wizard_completed != 'true'` in config_params (solo non-DEMO).
+**Riavvio:** Admin → sidebar → expander "🧭 Wizard configurazione" → Avvia wizard.
+**Estendibilità:** Per aggiungere step a una nuova feature:
+1. Definire `_step_<id>(config, params_db) -> dict | None` in `wizard.py`
+2. Appendere entry a `WIZARD_STEPS` (prima di `riepilogo`)
+3. Aggiungere al `_RENDER_MAP`
+**Persistenza:** `config_params.wizard_step_last` (ripresa), `_wiz_done_<id>` per step, `wizard_completed = 'true'` a fine.
 
 **Commit principali della sessione del 27/09/2026:**
 
@@ -323,7 +333,7 @@ Entrambi i branch allineati. Sistema auth completo: username+password + TOTP 2FA
 | 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py`, `app_state.py` | Derivabile da `carica_transazioni_db()` già disponibile. |
 | 3 | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
 | 4 | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale e inclusi in `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
-| 5 | **Onboarding wizard** — procedura guidata al primo avvio per compilare i parametri fondamentali | `app.py`, `app_state.py`, nuovo `src/cloud_storage.py` | Opzione: salvare `config.yaml` su Supabase Storage (zero nuove dipendenze). |
+| 5 ✅ | **Onboarding wizard** — procedura guidata al primo avvio (15 step) per compilare tutti i parametri fondamentali | `app.py`, `src/wizard.py` (nuovo) | Completato 27/09/2026. Gate in app.py dopo auth; admin può rieseguire dalla sidebar. **Per aggiungere step a nuove feature: v. istruzioni in `src/wizard.py` (docstring + `WIZARD_STEPS`).** |
 | 6 ✅ | Aggiornamento automatico docs al deploy via GitHub Actions | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml` | Completato. |
 | 7 ✅ | **Demo data completa** — tutti i tab coperti: asset catalog, ETF perf, azioni, prezzi yfinance, posizioni, CRUD no-op | `app.py`, `src/demo_data.py` | Completato 27/09/2026. Gestione Asset disabilitata in DEMO con placeholder. |
 
