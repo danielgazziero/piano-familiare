@@ -194,21 +194,26 @@ elif not st.session_state.get("_auth_ok"):
 
 if _DEMO:
     from demo_data import (
-        demo_init_db_connection            as init_db_connection,
-        demo_carica_params_persistenti     as carica_params_persistenti,
-        demo_salva_params_persistenti      as salva_params_persistenti,
+        demo_init_db_connection             as init_db_connection,
+        demo_carica_params_persistenti      as carica_params_persistenti,
+        demo_salva_params_persistenti       as salva_params_persistenti,
         demo_carica_quote_fondi_persistenti as carica_quote_fondi_persistenti,
-        demo_auto_save_snapshot            as auto_save_snapshot,
-        demo_importa_transazioni_xls       as importa_transazioni_xls,
-        demo_carica_transazioni_db         as carica_transazioni_db,
-        demo_get_storico_patrimonio        as get_storico_patrimonio,
-        demo_get_storico_fondo             as get_storico_fondo,
-        demo_aggiorna_quote_fondi          as aggiorna_quote_fondi,
-        demo_esegui_backfill_avvio         as esegui_backfill_avvio,
-        demo_get_storico_portafoglio       as get_storico_portafoglio,
-        demo_get_storico_asset             as get_storico_asset,
-        demo_aggiorna_quantita_asset       as aggiorna_quantita_asset,
-        demo_get_eventi_portafoglio        as get_eventi_portafoglio,
+        demo_auto_save_snapshot             as auto_save_snapshot,
+        demo_importa_transazioni_xls        as importa_transazioni_xls,
+        demo_carica_transazioni_db          as carica_transazioni_db,
+        demo_get_storico_patrimonio         as get_storico_patrimonio,
+        demo_get_storico_fondo              as get_storico_fondo,
+        demo_aggiorna_quote_fondi           as aggiorna_quote_fondi,
+        demo_esegui_backfill_avvio          as esegui_backfill_avvio,
+        demo_get_storico_portafoglio        as get_storico_portafoglio,
+        demo_get_storico_asset              as get_storico_asset,
+        demo_aggiorna_quantita_asset        as aggiorna_quantita_asset,
+        demo_get_eventi_portafoglio         as get_eventi_portafoglio,
+        demo_get_asset_catalog              as get_asset_catalog,
+        demo_salva_asset                    as salva_asset,
+        demo_rimuovi_asset                  as rimuovi_asset,
+        demo_get_etf_data                   as get_etf_data,
+        demo_get_etf_history_chart          as get_etf_history_chart,
     )
 
 _init_plotly_template()
@@ -254,8 +259,12 @@ if 'quote_map' not in st.session_state:
 def _get_posizioni():
     """Carica posizioni dal DB con caching in session_state (evita 2× chiamate per rerun)."""
     if 'pos_df_cache' not in st.session_state:
-        from positions import carica_posizioni as _cp
-        st.session_state['pos_df_cache'] = _cp()
+        if _DEMO:
+            from demo_data import demo_carica_posizioni
+            st.session_state['pos_df_cache'] = demo_carica_posizioni()
+        else:
+            from positions import carica_posizioni as _cp
+            st.session_state['pos_df_cache'] = _cp()
     return st.session_state['pos_df_cache']
 
 
@@ -294,35 +303,43 @@ def get_fondi():
 
 def get_etf_perf():
     if 'etf_perf_cache' not in st.session_state:
-        cat = st.session_state.get('asset_catalog', pd.DataFrame())
-        st.session_state['etf_perf_cache'] = get_portfolio_performance(
-            get_config(), catalog_df=cat if not cat.empty else None)
+        if _DEMO:
+            from demo_data import demo_get_etf_perf
+            st.session_state['etf_perf_cache'] = demo_get_etf_perf()
+        else:
+            cat = st.session_state.get('asset_catalog', pd.DataFrame())
+            st.session_state['etf_perf_cache'] = get_portfolio_performance(
+                get_config(), catalog_df=cat if not cat.empty else None)
     return st.session_state['etf_perf_cache']
 
 
 def get_azioni():
     if 'azioni_df_cache' not in st.session_state:
-        cat = st.session_state.get('asset_catalog', pd.DataFrame())
-        if cat.empty or 'tipo' not in cat.columns:
-            result = get_azioni_snapshot(get_config())
+        if _DEMO:
+            from demo_data import demo_get_azioni
+            st.session_state['azioni_df_cache'] = demo_get_azioni()
         else:
-            az_cat = cat[cat['tipo'] == 'azione'].copy()
-            if az_cat.empty:
+            cat = st.session_state.get('asset_catalog', pd.DataFrame())
+            if cat.empty or 'tipo' not in cat.columns:
                 result = get_azioni_snapshot(get_config())
             else:
-                if 'quantita' not in az_cat.columns:
-                    try:
-                        pos_df = _get_posizioni()
-                        if not pos_df.empty and 'isin' in pos_df.columns:
-                            pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
-                            az_cat = az_cat.merge(pos_az, on='isin', how='left')
-                            az_cat['quantita'] = az_cat['quantita'].fillna(0)
-                        else:
+                az_cat = cat[cat['tipo'] == 'azione'].copy()
+                if az_cat.empty:
+                    result = get_azioni_snapshot(get_config())
+                else:
+                    if 'quantita' not in az_cat.columns:
+                        try:
+                            pos_df = _get_posizioni()
+                            if not pos_df.empty and 'isin' in pos_df.columns:
+                                pos_az = pos_df[pos_df['isin'].isin(az_cat['isin'])][['isin', 'quantita']]
+                                az_cat = az_cat.merge(pos_az, on='isin', how='left')
+                                az_cat['quantita'] = az_cat['quantita'].fillna(0)
+                            else:
+                                az_cat['quantita'] = 0
+                        except Exception:
                             az_cat['quantita'] = 0
-                    except Exception:
-                        az_cat['quantita'] = 0
-                result = get_azioni_snapshot(get_config(), catalog_df=az_cat)
-        st.session_state['azioni_df_cache'] = result
+                    result = get_azioni_snapshot(get_config(), catalog_df=az_cat)
+            st.session_state['azioni_df_cache'] = result
     return st.session_state['azioni_df_cache']
 
 # Importa automaticamente eventuali nuovi XLS in data/input/
@@ -802,20 +819,31 @@ elif sezione == "📈 ETF & mercato":
     sel = st.multiselect("Titoli da confrontare", list(tutti_ticker.keys()),
                           default=list(tutti_ticker.keys())[:3])
     if sel:
-        from portfolio import _batch_download, _extract_series
         fig = go.Figure()
         pal = list(COLORS.values())
-        _sel_tickers = tuple(tutti_ticker[n] for n in sel if n in tutti_ticker)
-        _raw_batch   = _batch_download(_sel_tickers, periodo)
-        for i, nome in enumerate(sel):
-            _tk = tutti_ticker.get(nome, nome)
-            _series = _extract_series(_raw_batch, _tk, len(_sel_tickers))
-            if _series.empty:
-                continue
-            first = _series.iloc[0]
-            _indexed = (_series / first * 100).round(2) if first else _series
-            fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
-                                      name=nome, line=dict(color=pal[i%len(pal)],width=2)))
+        if _DEMO:
+            for i, nome in enumerate(sel):
+                _tk = tutti_ticker.get(nome, nome)
+                _h = get_etf_data(_tk, periodo)
+                if _h.empty:
+                    continue
+                first = _h['price'].iloc[0]
+                _indexed = (_h['price'] / first * 100).round(2) if first else _h['price']
+                fig.add_trace(go.Scatter(x=_h.index, y=_indexed,
+                                          name=nome, line=dict(color=pal[i%len(pal)], width=2)))
+        else:
+            from portfolio import _batch_download, _extract_series
+            _sel_tickers = tuple(tutti_ticker[n] for n in sel if n in tutti_ticker)
+            _raw_batch   = _batch_download(_sel_tickers, periodo)
+            for i, nome in enumerate(sel):
+                _tk = tutti_ticker.get(nome, nome)
+                _series = _extract_series(_raw_batch, _tk, len(_sel_tickers))
+                if _series.empty:
+                    continue
+                first = _series.iloc[0]
+                _indexed = (_series / first * 100).round(2) if first else _series
+                fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
+                                          name=nome, line=dict(color=pal[i%len(pal)], width=2)))
         fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
         fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
         _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}", use_container_width=True, theme=None)
@@ -1452,6 +1480,11 @@ elif sezione == _SEZIONE_FIGLIO:
 elif sezione == "⚙️ Gestione Asset":
     st.title("Gestione Asset")
     st.caption("Aggiungi, modifica o rimuovi ETF, fondi e azioni. Le modifiche si riflettono subito in tutte le sezioni dell'app.")
+
+    if _DEMO:
+        st.warning("⚠️ In DEMO mode la gestione asset è disabilitata — nessun dato viene scritto.")
+        st.info("Nel profilo reale questa sezione permette di aggiungere, modificare ed eliminare ETF, fondi e azioni dal catalogo.")
+        st.stop()
 
     if not db_ok:
         st.error("DB non disponibile — impossibile gestire gli asset.")

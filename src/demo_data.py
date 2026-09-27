@@ -231,6 +231,110 @@ def demo_get_eventi_portafoglio(data_inizio=None, data_fine=None) -> pd.DataFram
 
 # ─── Fondi bancari ────────────────────────────────────────────
 
+# ─── Asset catalog ───────────────────────────────────────────
+
+def demo_get_asset_catalog() -> pd.DataFrame:
+    today_str = date.today().strftime("%Y-%m-%d")
+    rows = [
+        # Fondi bancari
+        {"isin": "IT9990000001", "nome": "GLOBFUND AZ EUROPA",     "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.018, "valore_quota_ref": 32.00,  "data_ref": today_str, "valore_iniziale": None, "note": None},
+        {"isin": "IT9990000002", "nome": "GLOBFUND AZ AMERICA",    "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.020, "valore_quota_ref": 125.00, "data_ref": today_str, "valore_iniziale": None, "note": None},
+        {"isin": "IT9990000003", "nome": "UNIVEST AZ EMERGENTI",   "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.022, "valore_quota_ref": 18.80,  "data_ref": today_str, "valore_iniziale": None, "note": None},
+        {"isin": "LU9990000004", "nome": "ITALFUND GLOBAL EQ ACC", "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.016, "valore_quota_ref": 165.00, "data_ref": today_str, "valore_iniziale": None, "note": None},
+        {"isin": "IT9990000005", "nome": "UNIVEST AZ AMERICA P",   "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.020, "valore_quota_ref": 72.00,  "data_ref": today_str, "valore_iniziale": None, "note": None},
+        {"isin": "IT9990000006", "nome": "UNIVEST AZ EURO P",      "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.018, "valore_quota_ref": 77.00,  "data_ref": today_str, "valore_iniziale": None, "note": None},
+        {"isin": "IT9990000007", "nome": "GLOBFUND AZ INTL P",     "tipo": "fondo",  "ticker_yf": None,     "ticker_bi": None,  "stato": "attivo",     "proprietario": "comune",   "ter": 0.015, "valore_quota_ref": 41.50,  "data_ref": today_str, "valore_iniziale": None, "note": None},
+        # ETF
+        {"isin": "IE00B5BMR087", "nome": "iShares Core S&P 500",   "tipo": "etf",    "ticker_yf": "CSPX.L", "ticker_bi": "CSPX", "stato": "attivo",     "proprietario": "persona1", "ter": 0.0007, "valore_quota_ref": None, "data_ref": None, "valore_iniziale": 9000, "note": None},
+        {"isin": "IE00B44Z5B48", "nome": "SPDR MSCI ACWI",          "tipo": "etf",    "ticker_yf": "ACWE.L", "ticker_bi": "ACWE", "stato": "da_avviare", "proprietario": "figlio",   "ter": 0.0040, "valore_quota_ref": None, "data_ref": None, "valore_iniziale": 0,    "note": None},
+        {"isin": "IE00B4L5Y983", "nome": "iShares Core MSCI World", "tipo": "etf",    "ticker_yf": "IWDA.AS","ticker_bi": "IWDA", "stato": "candidato",  "proprietario": "persona1", "ter": 0.0020, "valore_quota_ref": None, "data_ref": None, "valore_iniziale": 0,    "note": None},
+        # Azioni
+        {"isin": "IE00B4BNMY34", "nome": "Accenture ACN",           "tipo": "azione", "ticker_yf": "ACN",    "ticker_bi": "ACN",  "stato": "attivo",     "proprietario": "persona2", "ter": None,   "valore_quota_ref": None, "data_ref": None, "valore_iniziale": None, "note": "RSU stock plan — 50 azioni (demo)"},
+    ]
+    return pd.DataFrame(rows)
+
+
+# ─── ETF performance ─────────────────────────────────────────
+
+def demo_get_etf_perf() -> pd.DataFrame:
+    return pd.DataFrame([
+        {"isin": "IE00B5BMR087", "nome": "iShares Core S&P 500",   "ticker": "CSPX", "ticker_yf": "CSPX.L",
+         "stato": "attivo",     "valore_attuale": 11_200, "prezzo_attuale": 528.40, "rendimento_pct": 8.4, "perf_1y": 14.2},
+        {"isin": "IE00B44Z5B48", "nome": "SPDR MSCI ACWI",          "ticker": "ACWE", "ticker_yf": "ACWE.L",
+         "stato": "da_avviare", "valore_attuale": 0,      "prezzo_attuale": 220.10, "rendimento_pct": 6.1, "perf_1y": 11.8},
+        {"isin": "IE00B4L5Y983", "nome": "iShares Core MSCI World", "ticker": "IWDA", "ticker_yf": "IWDA.AS",
+         "stato": "candidato",  "valore_attuale": 0,      "prezzo_attuale": 98.30,  "rendimento_pct": 7.0, "perf_1y": 12.5},
+    ])
+
+
+# ─── Azioni ───────────────────────────────────────────────────
+
+def demo_get_azioni() -> pd.DataFrame:
+    return pd.DataFrame([{
+        "isin":               "IE00B4BNMY34",
+        "nome":               "Accenture ACN",
+        "ticker":             "ACN",
+        "quantita":           50,
+        "prezzo_attuale_usd": 345.80,
+        "valore_attuale_usd": 17_290.0,
+        "cambio_eur":         0.92,
+        "valore_attuale_eur": round(17_290.0 * 0.92, 0),
+        "perf_ytd":           12.4,
+        "perf_1y":            18.7,
+        "note":               "RSU Accenture — 50 azioni (demo). Tassazione separata.",
+    }])
+
+
+# ─── Prezzi fittizi (sostituisce yfinance) ────────────────────
+
+def _demo_price_series(ticker: str, period: str) -> pd.Series:
+    period_days = {
+        "1mo": 30, "3mo": 90, "6mo": 180, "ytd": 270, "1y": 365, "2y": 730, "5y": 1825,
+    }
+    n = period_days.get(period, 365)
+    days = pd.date_range(end=date.today(), periods=n, freq="D")
+    seed = sum(ord(c) for c in ticker) % 9999
+    rng = np.random.default_rng(seed)
+    start = {"CSPX.L": 430, "ACWE.L": 190, "IWDA.AS": 80, "ACN": 280,
+             "MWRD.L": 75, "EMAE.L": 60}.get(ticker, 100)
+    prices = start * np.cumprod(1 + rng.normal(0.0003, 0.012, n))
+    return pd.Series(prices.round(2), index=days, name=ticker)
+
+
+def demo_get_etf_data(ticker: str, period: str = "2y") -> pd.DataFrame:
+    return _demo_price_series(ticker, period).to_frame(name='price')
+
+
+def demo_get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
+    series = _demo_price_series(ticker, period)
+    hist = series.to_frame(name='price')
+    first = hist['price'].iloc[0]
+    hist['indexed'] = (hist['price'] / first * 100).round(2) if first else 100.0
+    return hist
+
+
+# ─── Posizioni ────────────────────────────────────────────────
+
+def demo_carica_posizioni() -> pd.DataFrame:
+    return pd.DataFrame([
+        {"isin": "IE00B5BMR087", "quantita": 20.0,
+         "data_inizio": date.today() - timedelta(days=365), "data_fine": None},
+        {"isin": "IE00B4BNMY34", "quantita": 50.0,
+         "data_inizio": date.today() - timedelta(days=730), "data_fine": None},
+    ])
+
+
+# ─── No-op CRUD ───────────────────────────────────────────────
+
+def demo_salva_asset(asset_dict: dict) -> bool:
+    return True
+
+
+def demo_rimuovi_asset(isin: str) -> bool:
+    return True
+
+
+# ─────────────────────────────────────────────────────────────
 def demo_get_fondi_snapshot() -> pd.DataFrame:
     fondi = [
         {"nome": "GLOBFUND AZ EUROPA",      "isin": "IT9990000001", "quantita": 30.0,   "quota_ref": 30.00,  "quota_attuale": 32.00,  "costo": 750.0},
