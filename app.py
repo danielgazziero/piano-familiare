@@ -499,6 +499,16 @@ else:
             st.session_state.pop(_k, None)
         st.warning("Sessione scaduta. Effettua nuovamente l'accesso.")
         st.rerun()
+    else:
+        # S-NEW-07: rivalidazione is_active ogni 5 minuti — senza query ad ogni rerun
+        if time.time() - st.session_state.get("_auth_active_ts", 0) > 300:
+            from database import is_utente_attivo as _is_active
+            if not _is_active(st.session_state.get("_auth_user_id")):
+                for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin"):
+                    st.session_state.pop(_k, None)
+                st.warning("Accesso revocato dall'amministratore.")
+                st.rerun()
+            st.session_state["_auth_active_ts"] = time.time()
 
 if _DEMO:
     from demo_data import (
@@ -1238,7 +1248,7 @@ elif sezione == "📈 ETF & mercato":
 
     if not attivi.empty:
         st.subheader("ETF attivi")
-        for _,r in attivi.iterrows():
+        for r in attivi.to_dict('records'):
             c1,c2,c3,c4 = st.columns(4)
             c1.metric(r['nome'], f"€ {r['valore_attuale']:,.0f}")
             c2.metric("Prezzo", f"$ {r['prezzo_attuale']:.2f}" if r['prezzo_attuale'] else "N/D")
@@ -1293,12 +1303,10 @@ elif sezione == "📈 ETF & mercato":
     _cat_now = st.session_state.get('asset_catalog', pd.DataFrame())
     if not _cat_now.empty and 'tipo' in _cat_now.columns:
         _etf_cat = _cat_now[_cat_now['tipo'] == 'etf']
-        _etf_map = {str(r.get('ticker_bi', '')): r for _, r in _etf_cat.iterrows()
-                    if r.get('ticker_bi')}
-        _etf_attivi = [r for _, r in _etf_cat.iterrows()
-                       if str(r.get('stato','')) in ('attivo','da_avviare')]
-        _etf_candidati = [r for _, r in _etf_cat.iterrows()
-                          if str(r.get('stato','')) == 'candidato']
+        _etf_cat_rows = _etf_cat.to_dict('records')
+        _etf_map = {str(r.get('ticker_bi', '')): r for r in _etf_cat_rows if r.get('ticker_bi')}
+        _etf_attivi    = [r for r in _etf_cat_rows if str(r.get('stato','')) in ('attivo','da_avviare')]
+        _etf_candidati = [r for r in _etf_cat_rows if str(r.get('stato','')) == 'candidato']
     else:
         _etf_map = {e['ticker_bi']: e for e in config.get('etf', []) if e.get('ticker_bi')}
         _etf_attivi = [e for e in config.get('etf', [])
@@ -1415,17 +1423,23 @@ elif sezione == "📈 ETF & mercato":
         _cat_confronto = st.session_state.get('asset_catalog', pd.DataFrame())
         if not _cat_confronto.empty and 'tipo' in _cat_confronto.columns:
             confronto = {str(r.get('ticker_bi', r['isin'])): str(r['ticker_yf'])
-                         for _, r in _cat_confronto[_cat_confronto['tipo'] == 'etf'].iterrows()
+                         for r in _cat_confronto[_cat_confronto['tipo'] == 'etf'].to_dict('records')
                          if r.get('ticker_yf')}
         else:
             confronto = {e['ticker_bi']: e['ticker_yf']
                          for e in config.get('etf', []) if e.get('ticker_yf')}
         pal_c = [COLORS['rosso'],COLORS['verde'],COLORS['blu'],COLORS['arancio']]
-        for i,(nome,tick) in enumerate(confronto.items()):
-            h = get_etf_history_chart(tick, per_c)
-            if not h.empty:
-                fig_c.add_trace(go.Scatter(x=h.index, y=h['indexed'].round(2),
-                                            name=nome, line=dict(color=pal_c[i],width=2)))
+        if confronto:
+            from portfolio import _batch_download, _extract_series
+            _tickers_c = tuple(confronto.values())
+            _raw_c = _batch_download(_tickers_c, per_c)
+            for i, (nome, tick) in enumerate(confronto.items()):
+                _ser = _extract_series(_raw_c, tick, len(_tickers_c))
+                if not _ser.empty:
+                    _first = _ser.iloc[0]
+                    _idx = (_ser / _first * 100).round(2) if _first else _ser
+                    fig_c.add_trace(go.Scatter(x=_ser.index, y=_idx,
+                                               name=nome, line=dict(color=pal_c[i], width=2)))
         fig_c.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
         fig_c.update_layout(title="Confronto (base 100)", height=320,
                              legend=dict(orientation="h",y=1.08))
@@ -1481,7 +1495,7 @@ elif sezione == "🏦 Fondi bancari":
     _cat_fondi = st.session_state.get('asset_catalog', pd.DataFrame())
     if not _cat_fondi.empty and 'tipo' in _cat_fondi.columns:
         costi_map = {str(r['nome']): float(r.get('ter') or 0.02) * 100
-                     for _, r in _cat_fondi[_cat_fondi['tipo'] == 'fondo'].iterrows()}
+                     for r in _cat_fondi[_cat_fondi['tipo'] == 'fondo'].to_dict('records')}
     else:
         costi_map = {f['nome']: f.get('ter', 0.02) * 100
                      for f in config.get('fondi_bancari', {}).get('titoli', [])}
@@ -1495,7 +1509,7 @@ elif sezione == "🏦 Fondi bancari":
         'TER stimato %': costi_map.get(r['nome'], 2.0),
         '% mantenere': 100,
         'Includi': True,
-    } for _, r in fondi_df.iterrows()])
+    } for r in fondi_df.to_dict('records')])
 
     df_fondi_edit = st.data_editor(
         df_edit_default,
@@ -1617,7 +1631,7 @@ elif sezione == "🏦 Fondi bancari":
             'costo_fiscale_stimato': r['Costo fisc. €'],
             'costo_annuo': r['TER stimato %'] / 100,
             'pct_da_mantenere': r['% mantenere']
-        } for _, r in df_attivi_f.iterrows()]
+        } for r in df_attivi_f.to_dict('records')]
 
         sc_agg = simula_portafoglio_fondi_scenari(
             fondi_rows_sim, anni=anni_f,
@@ -1660,7 +1674,7 @@ elif sezione == "🏦 Fondi bancari":
     with c1: data_uscita = st.date_input("Data di uscita", value=date(2027,6,1), min_value=date.today())
     with c2: rend_uscita = st.slider("Rendimento fondi (%)", 1.0, 8.0, 4.0, step=0.5, key="ru")
 
-    quote_map = {r['ISIN']: r['Quota €'] for _,r in df_fondi_edit.iterrows() if r['Includi']}
+    quote_map = {r['ISIN']: r['Quota €'] for r in df_fondi_edit.to_dict('records') if r['Includi']}
     df_uscita = simula_uscita_fondo_data_x(config, data_uscita, rend_uscita/100, quote_map,
                                             fondi_df=get_fondi())
     c1,c2,c3,c4 = st.columns(4)

@@ -586,7 +586,10 @@ def run_wizard(config: dict, db_ok: bool) -> bool:
 
     from database import carica_tutti_params, salva_params_batch
 
-    params_db = carica_tutti_params()
+    # P-NEW-W1: cache params_db in session_state — 1 query per sessione, non 1 per ogni rerun
+    if '_wiz_params_cache' not in st.session_state:
+        st.session_state['_wiz_params_cache'] = carica_tutti_params()
+    params_db = st.session_state['_wiz_params_cache']
 
     # Già completato (e non richiesto il re-run)
     if params_db.get('wizard_completed') == 'true' and not st.session_state.get('_wizard_restart'):
@@ -597,7 +600,7 @@ def run_wizard(config: dict, db_ok: bool) -> bool:
 
 
 def _render_wizard(config: dict, params_db: dict, db_ok: bool):
-    from database import carica_tutti_params, salva_params_batch
+    from database import salva_params_batch
 
     n_steps = len(WIZARD_STEPS)
 
@@ -668,6 +671,7 @@ def _render_wizard(config: dict, params_db: dict, db_ok: bool):
                 })
                 st.session_state.pop('_wizard_step', None)
                 st.session_state.pop('_wizard_restart', None)
+                st.session_state.pop('_wiz_params_cache', None)
                 st.balloons()
                 st.rerun()
         else:

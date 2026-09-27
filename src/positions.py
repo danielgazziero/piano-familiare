@@ -133,16 +133,15 @@ def inizializza_posizioni():
         except Exception:
             pass
 
-        records = []
-        for _, row in catalog.iterrows():
-            isin = row['isin']
-            q = quantita_cfg.get(isin, 0)
-            d = data_acquisto_cfg.get(isin, '2020-01-01')
-            records.append({
-                'isin': isin, 'nome': row['nome'], 'tipo': row['tipo'],
-                'quantita': q, 'data_inizio': d, 'data_fine': None,
-                'note': 'Posizione iniziale',
-            })
+        records = [
+            {
+                'isin': row['isin'], 'nome': row['nome'], 'tipo': row['tipo'],
+                'quantita': quantita_cfg.get(row['isin'], 0),
+                'data_inizio': data_acquisto_cfg.get(row['isin'], '2020-01-01'),
+                'data_fine': None, 'note': 'Posizione iniziale',
+            }
+            for row in catalog.to_dict('records')
+        ]
 
         client.table('posizioni').insert(records).execute()
         print(f"  [+] {len(records)} posizioni inizializzate da asset_catalog")
