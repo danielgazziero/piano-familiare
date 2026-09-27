@@ -657,7 +657,9 @@ CREATE TABLE IF NOT EXISTS app_users (
     reset_token_hash    TEXT,
     reset_token_expiry  TIMESTAMPTZ,
     invite_token_hash   TEXT,
-    invite_token_expiry TIMESTAMPTZ
+    invite_token_expiry TIMESTAMPTZ,
+    totp_secret         TEXT,
+    totp_enabled        BOOLEAN DEFAULT FALSE
 );
 ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY IF NOT EXISTS "service_only" ON app_users
@@ -846,7 +848,7 @@ def get_tutti_utenti() -> pd.DataFrame:
     try:
         client = get_client()
         res = (client.table('app_users')
-               .select('id, username, email, is_admin, is_active, created_at, last_login')
+               .select('id, username, email, is_admin, is_active, totp_enabled, created_at, last_login')
                .order('created_at')
                .limit(200)
                .execute())
@@ -875,6 +877,51 @@ def elimina_utente(user_id: int) -> bool:
         return True
     except Exception as e:
         print(f"  [!] elimina_utente: {type(e).__name__}")
+        return False
+
+
+def salva_totp_secret(user_id: int, secret: str) -> bool:
+    """Salva il secret TOTP e abilita 2FA per l'utente."""
+    try:
+        client = get_client()
+        client.table('app_users').update({
+            'totp_secret': secret,
+            'totp_enabled': True,
+        }).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] salva_totp_secret: {type(e).__name__}")
+        return False
+
+
+def get_totp_info(user_id: int) -> dict:
+    """Restituisce totp_enabled e totp_secret per un utente."""
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('totp_enabled, totp_secret')
+               .eq('id', user_id)
+               .limit(1)
+               .execute())
+        if res.data:
+            return res.data[0]
+        return {'totp_enabled': False, 'totp_secret': None}
+    except Exception as e:
+        print(f"  [!] get_totp_info: {type(e).__name__}")
+        return {'totp_enabled': False, 'totp_secret': None}
+
+
+def disabilita_totp(user_id: int) -> bool:
+    """Disabilita il 2FA e cancella il secret TOTP."""
+    try:
+        client = get_client()
+        client.table('app_users').update({
+            'totp_secret': None,
+            'totp_enabled': False,
+        }).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] disabilita_totp: {type(e).__name__}")
         return False
 
 

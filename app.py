@@ -343,15 +343,21 @@ def _auth_login():
         else:
             user = _vc(username, password)
             if user:
-                st.session_state.update({
-                    "_auth_ok": True, "_auth_ts": time.time(),
-                    "_auth_user_id": user['id'],
-                    "_auth_username": user['username'],
-                    "_auth_is_admin": user.get('is_admin', False),
-                    "_auth_failures": 0,
-                })
+                st.session_state["_auth_failures"] = 0
                 st.session_state.pop("_auth_locked_until", None)
-                st.session_state.pop("_auth_view", None)
+                if user.get('totp_enabled'):
+                    st.session_state["_auth_pending_uid"]      = user['id']
+                    st.session_state["_auth_pending_username"] = user['username']
+                    st.session_state["_auth_pending_is_admin"] = user.get('is_admin', False)
+                    st.session_state["_auth_view"] = "totp_verify"
+                else:
+                    st.session_state.update({
+                        "_auth_ok": True, "_auth_ts": time.time(),
+                        "_auth_user_id": user['id'],
+                        "_auth_username": user['username'],
+                        "_auth_is_admin": user.get('is_admin', False),
+                    })
+                    st.session_state.pop("_auth_view", None)
                 st.rerun()
             else:
                 _failures = min(_failures + 1, _MAX_FAILURES)
@@ -362,6 +368,69 @@ def _auth_login():
                     st.error(f"Credenziali errate. Attendi {_delay} s prima del prossimo tentativo.")
                 else:
                     st.error("Credenziali non valide.")
+    st.stop()
+
+
+def _auth_totp_verify():
+    """Secondo step login — verifica codice TOTP."""
+    import pyotp as _pyotp
+    from database import get_totp_info as _gti
+    _user_id  = st.session_state.get("_auth_pending_uid")
+    _username = st.session_state.get("_auth_pending_username", "")
+    _is_admin = st.session_state.get("_auth_pending_is_admin", False)
+    if not _user_id:
+        st.session_state.pop("_auth_view", None)
+        st.rerun()
+
+    _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
+    _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
+    _failures       = st.session_state.get("_auth_failures", 0)
+    _locked_until   = st.session_state.get("_auth_locked_until", 0)
+    if time.time() < _locked_until:
+        _wait = int(_locked_until - time.time()) + 1
+        st.error(f"Troppi tentativi falliti. Riprova tra {_wait} secondi.")
+        st.stop()
+
+    st.title("🔐 Verifica in due passaggi")
+    st.caption(f"Account: **{_username}** — Inserisci il codice dall'app authenticator.")
+    totp_code = st.text_input("Codice 6 cifre", max_chars=6, placeholder="000000")
+    _c1, _c2 = st.columns([1, 2])
+    with _c1:
+        verify_btn = st.button("Verifica", type="primary")
+    with _c2:
+        if st.button("← Torna al login"):
+            for _k in ("_auth_pending_uid", "_auth_pending_username",
+                       "_auth_pending_is_admin", "_auth_view",
+                       "_auth_failures", "_auth_locked_until"):
+                st.session_state.pop(_k, None)
+            st.rerun()
+    if verify_btn:
+        if not totp_code:
+            st.error("Inserisci il codice.")
+        else:
+            _info = _gti(_user_id)
+            _secret = _info.get('totp_secret')
+            if _secret and _pyotp.TOTP(_secret).verify(totp_code.strip()):
+                for _k in ("_auth_pending_uid", "_auth_pending_username",
+                           "_auth_pending_is_admin", "_auth_failures",
+                           "_auth_locked_until", "_auth_view"):
+                    st.session_state.pop(_k, None)
+                st.session_state.update({
+                    "_auth_ok": True, "_auth_ts": time.time(),
+                    "_auth_user_id": _user_id,
+                    "_auth_username": _username,
+                    "_auth_is_admin": _is_admin,
+                })
+                st.rerun()
+            else:
+                _failures = min(_failures + 1, _MAX_FAILURES)
+                st.session_state["_auth_failures"] = _failures
+                _delay = _LOCKOUT_DELAYS[_failures]
+                if _delay > 0:
+                    st.session_state["_auth_locked_until"] = time.time() + _delay
+                    st.error(f"Codice non valido. Attendi {_delay} s prima del prossimo tentativo.")
+                else:
+                    st.error("Codice non valido.")
     st.stop()
 
 
@@ -388,6 +457,8 @@ else:
         _view = st.session_state.get("_auth_view", "login")
         if _view == "forgot_password":
             _auth_forgot_password()
+        elif _view == "totp_verify":
+            _auth_totp_verify()
         else:
             _auth_login()
     elif time.time() - st.session_state.get("_auth_ts", 0) > 3600:
@@ -604,7 +675,9 @@ with st.sidebar:
         _cu.caption(f"👤 {_auth_uname}")
         if _cl.button("Esci", use_container_width=True):
             for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username",
-                       "_auth_is_admin", "_auth_failures", "_auth_locked_until", "_auth_view"):
+                       "_auth_is_admin", "_auth_failures", "_auth_locked_until", "_auth_view",
+                       "_auth_pending_uid", "_auth_pending_username", "_auth_pending_is_admin",
+                       "_totp_setup_secret"):
                 st.session_state.pop(_k, None)
             st.rerun()
     st.divider()
@@ -653,6 +726,69 @@ with st.sidebar:
                     st.success("Password aggiornata!")
                 else:
                     st.error("Errore durante l'aggiornamento.")
+    with st.expander("🔐 Sicurezza (2FA)"):
+        from database import get_totp_info as _gti_sb, salva_totp_secret as _sts_sb, disabilita_totp as _dt_sb
+        _uid_2fa = st.session_state.get("_auth_user_id")
+        _t_info  = _gti_sb(_uid_2fa) if _uid_2fa else {'totp_enabled': False}
+        _t_on    = _t_info.get('totp_enabled', False)
+        if _DEMO:
+            st.warning("Disabilitato in DEMO mode.")
+        elif st.session_state.get("_totp_setup_secret"):
+            import pyotp as _pyotp_sb, qrcode as _qr_sb
+            from io import BytesIO as _bio_sb
+            _sec_sb  = st.session_state["_totp_setup_secret"]
+            _uname_sb = st.session_state.get("_auth_username", "utente")
+            _uri_sb  = _pyotp_sb.TOTP(_sec_sb).provisioning_uri(
+                name=_uname_sb, issuer_name="Piano Finanziario Familiare"
+            )
+            _buf_sb = _bio_sb()
+            _qr_sb.make(_uri_sb).save(_buf_sb, format="PNG")
+            _buf_sb.seek(0)
+            st.caption("Scansiona con Google Authenticator o Authy:")
+            st.image(_buf_sb, width=180)
+            st.caption(f"Oppure inserisci manualmente: `{_sec_sb}`")
+            _code_sb = st.text_input("Codice di verifica (6 cifre)", max_chars=6, key="totp_setup_code")
+            _sc1, _sc2 = st.columns(2)
+            with _sc1:
+                if st.button("✅ Conferma", key="btn_confirm_2fa"):
+                    if not _code_sb:
+                        st.error("Inserisci il codice.")
+                    elif _pyotp_sb.TOTP(_sec_sb).verify(_code_sb.strip()):
+                        if _sts_sb(_uid_2fa, _sec_sb):
+                            st.session_state.pop("_totp_setup_secret", None)
+                            st.success("2FA attivato!")
+                            st.rerun()
+                        else:
+                            st.error("Errore salvataggio. Riprova.")
+                    else:
+                        st.error("Codice non valido. Riprova.")
+            with _sc2:
+                if st.button("✖ Annulla", key="btn_cancel_2fa"):
+                    st.session_state.pop("_totp_setup_secret", None)
+                    st.rerun()
+        elif not _t_on:
+            st.caption("🔓 2FA non attivo")
+            if st.button("Abilita 2FA", key="btn_enable_2fa"):
+                import pyotp as _pyotp_en
+                st.session_state["_totp_setup_secret"] = _pyotp_en.random_base32()
+                st.rerun()
+        else:
+            st.caption("🔒 2FA attivo")
+            _dis_code = st.text_input("Codice 2FA per disabilitare", max_chars=6, key="totp_dis_code")
+            if st.button("Disabilita 2FA", key="btn_disable_2fa"):
+                if not _dis_code:
+                    st.error("Inserisci il codice 2FA.")
+                else:
+                    import pyotp as _pyotp_dis
+                    _t_sec = _gti_sb(_uid_2fa).get('totp_secret')
+                    if _t_sec and _pyotp_dis.TOTP(_t_sec).verify(_dis_code.strip()):
+                        if _dt_sb(_uid_2fa):
+                            st.success("2FA disabilitato.")
+                            st.rerun()
+                        else:
+                            st.error("Errore disabilitazione.")
+                    else:
+                        st.error("Codice non valido.")
     st.divider()
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")
@@ -1953,6 +2089,7 @@ elif sezione == "👥 Utenti":
                 with _col_info:
                     _stato = "🟢 Attivo" if _u.get('is_active') else "🔴 Disattivo"
                     _admin = " · 👑 Admin" if _u.get('is_admin') else ""
+                    _2fa   = " · 🔐 2FA" if _u.get('totp_enabled') else ""
                     _ll = _u.get('last_login', '')
                     if _ll:
                         try:
@@ -1964,7 +2101,7 @@ elif sezione == "👥 Utenti":
                     else:
                         _ll = "Mai"
                     st.markdown(f"**{_u['username']}** — {_u['email']}")
-                    st.caption(f"{_stato}{_admin} · Ultimo accesso: {_ll}")
+                    st.caption(f"{_stato}{_admin}{_2fa} · Ultimo accesso: {_ll}")
                 with _col_azioni:
                     _uid2 = _u['id']
                     _me   = st.session_state.get("_auth_user_id")
