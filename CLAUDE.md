@@ -221,9 +221,9 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 27/09/2026
 
-### Ultimo commit su main: `2528970` — merge performance lazy loading + @st.fragment
+### Ultimo commit su main: `60a9427` — merge CLAUDE.md stato tecnico
 
-Ultimo commit su dev: allineato a main (`2528970`).
+Ultimo commit su dev: allineato a main (`60a9427`).
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -294,6 +294,9 @@ Ultimo commit su dev: allineato a main (`2528970`).
 | S-NEW-03 | ISIN non validato: `max_chars=12` + regex `^[A-Z]{2}[A-Z0-9]{9}[0-9]$` | `app.py` |
 | S-NEW-04 | Input nomi persona: `max_chars=100` | `app.py` |
 | S-NEW-05 | **2FA TOTP** — secondo step login con codice 6 cifre (pyotp); setup QR code in sidebar; disabilitazione richiede codice corrente | `app.py`, `src/database.py` |
+| S-NEW-06 | Auto-rehash password legacy (plaintext → PBKDF2) al primo login riuscito | `src/database.py` |
+| S-NEW-07 | Rivalidazione `is_active` ogni 5 min in sessione — revoca accesso utenti disattivati | `src/database.py`, `app.py` |
+| S-NEW-08 | Allowlist `_ALLOWED_TOKEN_FIELDS` + `.limit(1)` in `verifica_token` — blocca column injection | `src/database.py` |
 
 ### ✅ Fix performance (24-26/09/2026)
 
@@ -323,6 +326,21 @@ Ultimo commit su dev: allineato a main (`2528970`).
 | P-NEW-03 | `iterrows()` → `to_dict('records')` in entrambi gli adapter bancari | `src/adapters.py` |
 | P-NEW-04 | Due `iterrows()` separati su `asset_catalog` in Portafoglio storico → 1 `to_dict('records')` | `app.py` |
 | P-NEW-05 | `get_storico_portafoglio()` riceve `isins=` da `session_state['asset_catalog']` | `src/app_state.py`, `app.py` |
+| P-NEW-W1 | `_wiz_params_cache` in session_state nel wizard — evita N query Supabase durante navigazione step | `src/wizard.py` |
+| P-NEW-A1 | Batch download confronto ETF candidati → `_batch_download` + `_extract_series` | `app.py` |
+| P-NEW-A2 | 3× iterrows su `_etf_cat` → singolo `to_dict('records')` | `app.py` |
+| P-NEW-A3 | 4× iterrows sezione fondi → `to_dict('records')` | `app.py` |
+| P-NEW-A4 | iterrows su ETF attivi metrics → `to_dict('records')` | `app.py` |
+| P-NEW-I1 | `inizializza_posizioni()` → `to_dict('records')` su catalog | `src/positions.py` |
+| P-NEW-D1 | `.limit(1)` in `verifica_token` — evita scan completo tabella | `src/database.py` |
+
+### ✅ Ottimizzazioni caricamento (27/09/2026)
+
+| # | Fix | File |
+|---|---|---|
+| OPT-1 | **`@st.fragment`** su 3 sezioni interattive: grafico storico ETF, confronto candidati, simulatori fondi — slider non triggerano rerun intera app | `app.py` |
+| OPT-2 | **Lazy loading yfinance** — `get_etf_perf()`, `get_azioni()`, backfill solo dentro "Stato di famiglia"; altre sezioni zero yfinance | `app.py` |
+| OPT-3 | **Lazy XLS import** — `parse_all_inputs()` solo su "Stato di famiglia" e "Fine mese"; Portafoglio, ETF, Simulatore non toccano il parser | `app.py` |
 
 ### ✅ Fix infrastruttura (24-25/09/2026)
 
@@ -339,8 +357,8 @@ Ultimo commit su dev: allineato a main (`2528970`).
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Il Coast FIRE è già vicino al target stimato. |
-| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py`, `app_state.py` | Derivabile da `carica_transazioni_db()` già disponibile. |
+| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Il Coast FIRE è già vicino al target stimato. Simulazioni pure già in `simulator.py`. |
+| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py`, `app_state.py` | Derivabile da `carica_transazioni_db()` già in cache `tx_db_cache`. |
 | 3 | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
 | 4 | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale e inclusi in `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
 | 5 ✅ | **Onboarding wizard** — procedura guidata al primo avvio (15 step) per compilare tutti i parametri fondamentali | `app.py`, `src/wizard.py` (nuovo) | Completato 27/09/2026. Gate in app.py dopo auth; admin può rieseguire dalla sidebar. **Per aggiungere step a nuove feature: v. istruzioni in `src/wizard.py` (docstring + `WIZARD_STEPS`).** |
