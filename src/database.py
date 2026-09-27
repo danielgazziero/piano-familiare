@@ -641,6 +641,233 @@ def inizializza_asset_catalog_da_config() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────
+# GESTIONE UTENTI — tabella app_users
+# ─────────────────────────────────────────────────────────────
+
+APP_USERS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS app_users (
+    id                  BIGSERIAL PRIMARY KEY,
+    username            TEXT UNIQUE NOT NULL,
+    email               TEXT UNIQUE NOT NULL,
+    password_hash       TEXT NOT NULL,
+    is_admin            BOOLEAN DEFAULT FALSE,
+    is_active           BOOLEAN DEFAULT TRUE,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    last_login          TIMESTAMPTZ,
+    reset_token_hash    TEXT,
+    reset_token_expiry  TIMESTAMPTZ,
+    invite_token_hash   TEXT,
+    invite_token_expiry TIMESTAMPTZ
+);
+ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY IF NOT EXISTS "service_only" ON app_users
+    FOR ALL USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
+"""
+
+
+def conta_utenti() -> int:
+    """Restituisce il numero di utenti presenti in app_users. Propaga eccezioni."""
+    client = get_client()
+    res = client.table('app_users').select('id', count='exact').execute()
+    return res.count or 0
+
+
+def crea_utente(username: str, email: str, password_hash: str,
+                is_admin: bool = False) -> dict:
+    """
+    Crea un nuovo utente attivo. Restituisce il record creato.
+    Propaga eccezioni su username/email duplicato.
+    """
+    client = get_client()
+    record = {
+        'username': username.strip().lower(),
+        'email': email.strip().lower(),
+        'password_hash': password_hash,
+        'is_admin': is_admin,
+        'is_active': True,
+    }
+    res = client.table('app_users').insert(record).execute()
+    return res.data[0]
+
+
+def verifica_credenziali(username: str, password: str) -> Optional[dict]:
+    """
+    Verifica username + password. Restituisce il record utente o None.
+    Aggiorna last_login in caso di successo.
+    """
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('*')
+               .eq('username', username.strip().lower())
+               .eq('is_active', True)
+               .limit(1)
+               .execute())
+        if not res.data:
+            return None
+        user = res.data[0]
+        if not verify_password(password, user['password_hash']):
+            return None
+        aggiorna_ultimo_login(user['id'])
+        return user
+    except Exception as e:
+        print(f"  [!] verifica_credenziali: {type(e).__name__}")
+        return None
+
+
+def get_utente_by_email(email: str) -> Optional[dict]:
+    """Restituisce il record utente per email, o None se non trovato."""
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('*')
+               .eq('email', email.strip().lower())
+               .eq('is_active', True)
+               .limit(1)
+               .execute())
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f"  [!] get_utente_by_email: {type(e).__name__}")
+        return None
+
+
+def imposta_reset_token(user_id: int, token_hash: str, expiry_iso: str) -> bool:
+    """Salva il reset token (già hashato SHA-256) e la sua scadenza."""
+    try:
+        client = get_client()
+        client.table('app_users').update({
+            'reset_token_hash': token_hash,
+            'reset_token_expiry': expiry_iso,
+        }).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] imposta_reset_token: {type(e).__name__}")
+        return False
+
+
+def verifica_token(token_hash: str, campo_hash: str, campo_expiry: str) -> Optional[dict]:
+    """
+    Verifica un token (reset o invite) per hash e scadenza.
+    campo_hash / campo_expiry: nomi colonna in app_users.
+    Restituisce il record utente o None.
+    """
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('*')
+               .eq(campo_hash, token_hash)
+               .execute())
+        if not res.data:
+            return None
+        user = res.data[0]
+        expiry_str = user.get(campo_expiry)
+        if not expiry_str:
+            return None
+        expiry = datetime.fromisoformat(expiry_str.replace('Z', '+00:00'))
+        if datetime.now(expiry.tzinfo) > expiry:
+            return None
+        return user
+    except Exception as e:
+        print(f"  [!] verifica_token: {type(e).__name__}")
+        return None
+
+
+def aggiorna_password_utente(user_id: int, new_hash: str) -> bool:
+    """Aggiorna la password e cancella il reset token."""
+    try:
+        client = get_client()
+        client.table('app_users').update({
+            'password_hash': new_hash,
+            'reset_token_hash': None,
+            'reset_token_expiry': None,
+        }).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] aggiorna_password_utente: {type(e).__name__}")
+        return False
+
+
+def aggiorna_ultimo_login(user_id: int) -> bool:
+    """Aggiorna last_login per l'utente."""
+    try:
+        client = get_client()
+        client.table('app_users').update({
+            'last_login': datetime.now().isoformat(),
+        }).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] aggiorna_ultimo_login: {type(e).__name__}")
+        return False
+
+
+def crea_utente_invito(username: str, email: str, token_hash: str,
+                       expiry_iso: str, is_admin: bool = False) -> Optional[dict]:
+    """
+    Crea un utente inattivo con invite token.
+    L'utente diventa attivo dopo aver impostato la password via link email.
+    """
+    try:
+        client = get_client()
+        record = {
+            'username': username.strip().lower(),
+            'email': email.strip().lower(),
+            'password_hash': '',
+            'is_admin': is_admin,
+            'is_active': False,
+            'invite_token_hash': token_hash,
+            'invite_token_expiry': expiry_iso,
+        }
+        res = client.table('app_users').insert(record).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f"  [!] crea_utente_invito: {type(e).__name__}")
+        return None
+
+
+def attiva_utente_invito(user_id: int, password_hash: str) -> bool:
+    """Attiva l'account: imposta password e is_active=True, cancella invite token."""
+    try:
+        client = get_client()
+        client.table('app_users').update({
+            'password_hash': password_hash,
+            'is_active': True,
+            'invite_token_hash': None,
+            'invite_token_expiry': None,
+        }).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] attiva_utente_invito: {type(e).__name__}")
+        return False
+
+
+def get_tutti_utenti() -> pd.DataFrame:
+    """Restituisce lista utenti per il pannello admin."""
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('id, username, email, is_admin, is_active, created_at, last_login')
+               .order('created_at')
+               .limit(200)
+               .execute())
+        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    except Exception as e:
+        print(f"  [!] get_tutti_utenti: {type(e).__name__}")
+        return pd.DataFrame()
+
+
+def set_utente_attivo(user_id: int, attivo: bool) -> bool:
+    """Attiva o disattiva un utente (non cancella il record)."""
+    try:
+        client = get_client()
+        client.table('app_users').update({'is_active': attivo}).eq('id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] set_utente_attivo: {type(e).__name__}")
+        return False
+
+
+# ─────────────────────────────────────────────────────────────
 # SETUP INIZIALE — eseguire una volta
 # ─────────────────────────────────────────────────────────────
 
