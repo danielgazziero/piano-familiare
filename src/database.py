@@ -764,6 +764,51 @@ def reset_server_login_state(username: str) -> None:
     set_server_login_state(username, 0, 0.0)
 
 
+def get_server_totp_state(user_id: int) -> dict:
+    """
+    Legge il contatore di fallimenti TOTP server-side per un user_id.
+    Restituisce {"n": int, "locked_until": float_epoch} — persiste tra sessioni.
+    Fail-open: in caso di errore DB restituisce stato pulito.
+    """
+    try:
+        key = f"_totp_fail_{user_id}"
+        client = get_client()
+        res = (client.table('config_params')
+               .select('valore')
+               .eq('chiave', key)
+               .limit(1)
+               .execute())
+        if res.data:
+            try:
+                return json.loads(res.data[0]['valore'])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {"n": 0, "locked_until": 0.0}
+    except Exception as e:
+        print(f"  [!] get_server_totp_state: {type(e).__name__}")
+        return {"n": 0, "locked_until": 0.0}
+
+
+def set_server_totp_state(user_id: int, n: int, locked_until: float) -> None:
+    """Scrive il contatore di fallimenti TOTP server-side."""
+    try:
+        key = f"_totp_fail_{user_id}"
+        client = get_client()
+        client.table('config_params').upsert(
+            {'chiave': key,
+             'valore': json.dumps({"n": n, "locked_until": locked_until}),
+             'updated_at': datetime.now().isoformat()},
+            on_conflict='chiave'
+        ).execute()
+    except Exception as e:
+        print(f"  [!] set_server_totp_state: {type(e).__name__}")
+
+
+def reset_server_totp_state(user_id: int) -> None:
+    """Azzera il contatore TOTP server-side dopo verifica riuscita."""
+    set_server_totp_state(user_id, 0, 0.0)
+
+
 def get_utente_by_email(email: str) -> Optional[dict]:
     """Restituisce il record utente per email, o None se non trovato."""
     try:
