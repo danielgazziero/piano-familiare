@@ -23,7 +23,8 @@ from portfolio import (get_portfolio_performance, get_etf_history_chart, get_etf
 from simulator import (simula_pac, simula_pac_variabile, simula_pac_scenari,
                         simula_fondo_scenari, simula_portafoglio_fondi_scenari,
                         simula_portafoglio_etf_scenari, simula_migrazione_fondi,
-                        simula_costi_figlio, simula_scenario_completo, confronta_scenari)
+                        simula_costi_figlio, simula_scenario_completo, confronta_scenari,
+                        calcola_fire_metrics)
 from app_state import (init_db_connection, carica_params_persistenti,
                         salva_params_persistenti, carica_quote_fondi_persistenti,
                         auto_save_snapshot, importa_transazioni_xls,
@@ -1134,13 +1135,14 @@ if sezione == "🏠 Stato di famiglia":
             liq_dan = st.number_input(f"Liquidità {_N1} (€)", value=int(p_saved.get('liquidita_persona1', config['patrimonio']['liquidita_persona1'])), step=100)
             liq_ale = st.number_input(f"Liquidità {_N2} (€)", value=int(p_saved.get('liquidita_persona2', config['patrimonio']['liquidita_persona2'])), step=100)
         with c3:
-            conto_com = st.number_input("Conto comune (€)", value=int(p_saved.get('conto_comune', config['patrimonio']['conto_comune'])), step=100)
+            conto_com  = st.number_input("Conto comune (€)", value=int(p_saved.get('conto_comune', config['patrimonio']['conto_comune'])), step=100)
+            debiti_man = st.number_input("Debiti totali (€)", value=int(p_saved.get('debiti_totale', 0)), step=100, help="Somma di tutti i debiti attivi (mutuo, prestiti, ecc.)")
 
         if st.button("💾 Salva valori"):
             nuovi_params = {
                 'fondi_bancari': fondi_man, 'gestione_separata_generali': generali_man,
                 'liquidita_persona1': liq_dan, 'liquidita_persona2': liq_ale,
-                'conto_comune': conto_com,
+                'conto_comune': conto_com, 'debiti_totale': debiti_man,
                 'affitto_accantonato': p_saved.get('affitto_accantonato',
                                                     config['patrimonio']['affitto_accantonato'])
             }
@@ -1153,7 +1155,7 @@ if sezione == "🏠 Stato di famiglia":
     params_correnti = {
         'fondi_bancari': fondi_man, 'gestione_separata_generali': generali_man,
         'liquidita_persona1': liq_dan, 'liquidita_persona2': liq_ale,
-        'conto_comune': conto_com,
+        'conto_comune': conto_com, 'debiti_totale': debiti_man,
         'affitto_accantonato': p_saved.get('affitto_accantonato',
                                             config['patrimonio']['affitto_accantonato'])
     }
@@ -1185,8 +1187,61 @@ if sezione == "🏠 Stato di famiglia":
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
     c2.metric("Netto fiscale",     f"€ {snap['totale_netto_fiscale']:,.0f}", delta=f"-€ {snap['tassa_latente_fondi']:,.0f} latenti")
     c3.metric("Fondi bancari",     f"€ {snap['fondi_bancari']:,.0f}")
-    c4.metric("ETF totale",   f"€ {snap['etf_persona1']+snap['etf_figlio']:,.0f}")
+    c4.metric("ETF totale",        f"€ {snap['etf_persona1']+snap['etf_figlio']:,.0f}")
     c5.metric("Azioni ACN (USD)",  f"$ {snap['azioni_acn_usd']:,.0f}")
+
+    if snap['debiti_totale'] > 0:
+        _nw1, _nw2, _nw3 = st.columns(3)
+        _nw1.metric("Net Worth reale", f"€ {snap['net_worth']:,.0f}",
+                    delta=f"-€ {snap['debiti_totale']:,.0f} debiti", delta_color="inverse")
+        _nw2.metric("Debiti totali", f"€ {snap['debiti_totale']:,.0f}")
+        _nw3.metric("Patrimonio lordo", f"€ {snap['totale_eur']:,.0f}")
+
+    # ── FIRE Progress tracker ─────────────────────────────────
+    _fire_spese = float(p_saved.get('fire_spese_annue', 0) or 0)
+    if _fire_spese > 0:
+        st.subheader("🔥 FIRE Progress")
+        _cfg_p   = config.get('parametri', {})
+        _fire_r  = float(_cfg_p.get('fire_rendimento', 0.07))
+        _fire_tp = float(_cfg_p.get('fire_tasso_prelievo', 0.04))
+        _fire_eta = int(p_saved.get('fire_eta_attuale', 35) or 35)
+        _fire_pen = int(p_saved.get('fire_eta_pensione', 60) or 60)
+        _fire_m  = calcola_fire_metrics(
+            patrimonio_attuale=float(snap['totale_eur']),
+            spese_annue=_fire_spese,
+            eta_attuale=_fire_eta, eta_pensione=_fire_pen,
+            rendimento=_fire_r, tasso_prelievo=_fire_tp,
+        )
+        if _fire_m:
+            _fc1, _fc2 = st.columns(2)
+            with _fc1:
+                st.markdown("**Regular FIRE**")
+                st.caption(
+                    f"Target: **€ {_fire_m['fire_target']:,.0f}** "
+                    f"(€ {_fire_spese:,.0f}/anno ÷ {_fire_tp*100:.0f}%)"
+                )
+                st.progress(min(_fire_m['fire_pct'] / 100, 1.0))
+                _anni_lab = (f" — ∼ {_fire_m['anni_a_fire']:.0f} anni a ritmo attuale"
+                             if _fire_m['anni_a_fire'] else "")
+                st.caption(f"**{_fire_m['fire_pct']:.1f}%** raggiunto{_anni_lab}")
+            with _fc2:
+                st.markdown("**Coast FIRE**")
+                st.caption(
+                    f"Target: **€ {_fire_m['coast_target']:,.0f}** "
+                    f"(pensione a {_fire_pen} anni, r={_fire_r*100:.0f}%)"
+                )
+                st.progress(min(_fire_m['coast_pct'] / 100, 1.0))
+                if _fire_m['coast_raggiunto']:
+                    st.success("✅ Coast FIRE raggiunto — il composto fa il resto")
+                else:
+                    _manca = _fire_m['coast_target'] - snap['totale_eur']
+                    st.caption(f"**{_fire_m['coast_pct']:.1f}%** — mancano € {_manca:,.0f}")
+    else:
+        with st.expander("🔥 FIRE Progress — configurare spese annue"):
+            st.info(
+                "Aggiungi `fire_spese_annue` in Supabase `config_params` "
+                "(es. 36000 per €3.000/mese) per vedere il tracker FIRE."
+            )
 
     fig_pat = go.Figure(go.Pie(
         labels=['Fondi bancari','Generali',f'ETF {_N1}',f'ETF {_NF}','Azioni ACN','Liquidità'],
@@ -1249,6 +1304,22 @@ if sezione == "🏠 Stato di famiglia":
         c2.metric("Uscite",  f"€ {u_tot:,.0f}")
         c3.metric("Saldo",   f"€ {e_tot-u_tot:,.0f}")
         c4.metric("Δ budget",f"€ {u_tot-budget:+,.0f}", delta_color="inverse")
+
+        # Savings Rate
+        _per_mese = df.groupby('month')[['income','expense']].sum()
+        _per_mese['sr'] = (
+            (_per_mese['income'] - _per_mese['expense'])
+            .div(_per_mese['income'].clip(lower=1)) * 100
+        )
+        _curr_year = str(date.today().year)
+        _ytd_idx   = [m for m in _per_mese.index if str(m).startswith(_curr_year)]
+        _sr_ytd    = _per_mese.loc[_ytd_idx, 'sr'].mean() if _ytd_idx else 0.0
+        _sr_12m    = _per_mese.tail(12)['sr'].mean() if not _per_mese.empty else 0.0
+        _sr_mese   = float(_per_mese.loc[mese_sel, 'sr']) if mese_sel in _per_mese.index else 0.0
+        _sc1,_sc2,_sc3 = st.columns(3)
+        _sc1.metric("Savings rate (mese)", f"{_sr_mese:.1f}%")
+        _sc2.metric("Savings rate YTD",    f"{_sr_ytd:.1f}%")
+        _sc3.metric("Media 12 mesi",       f"{_sr_12m:.1f}%")
 
         cat_df = mese_df[mese_df['amount']<0].groupby('category')['expense'].sum().sort_values()
         fig_cat = go.Figure(go.Bar(x=cat_df.values, y=cat_df.index,
@@ -1487,6 +1558,41 @@ elif sezione == "📈 ETF & mercato":
             c2.metric("Prezzo", f"$ {r['prezzo_attuale']:.2f}" if r['prezzo_attuale'] else "N/D")
             c3.metric("YTD", f"{r['rendimento_pct']:+.1f}%" if r['rendimento_pct'] else "N/D")
             c4.metric("1 anno", f"{r['perf_1y']:+.1f}%" if r['perf_1y'] else "N/D")
+
+        # ── Rebalancing alert ─────────────────────────────────
+        _tot_etf_val = attivi['valore_attuale'].sum()
+        if _tot_etf_val > 0:
+            _soglia_reb = float(config.get('parametri', {}).get('rebalancing_soglia_drift', 5.0))
+            _cfg_target = {e['ticker_bi']: float(e.get('target_pct', 0))
+                           for e in config.get('etf', []) if e.get('ticker_bi')}
+            _cat_reb = st.session_state.get('asset_catalog', pd.DataFrame())
+            if not _cat_reb.empty and 'target_pct' in _cat_reb.columns:
+                _cfg_target.update({
+                    str(r.get('ticker_bi', '')): float(r.get('target_pct', 0))
+                    for r in _cat_reb[_cat_reb['tipo'] == 'etf'].to_dict('records')
+                    if r.get('ticker_bi')
+                })
+            _reb_rows = []
+            for r in attivi.to_dict('records'):
+                _tk = str(r.get('ticker', r.get('ticker_bi', '')))
+                _tgt = _cfg_target.get(_tk, 0.0)
+                _att = r['valore_attuale'] / _tot_etf_val * 100
+                _drift = _att - _tgt
+                _da_acq = (_tgt - _att) / 100 * _tot_etf_val
+                _reb_rows.append({
+                    'ETF': r['nome'], 'Target %': _tgt,
+                    'Attuale %': round(_att, 1), 'Drift %': round(_drift, 1),
+                    'Ribilanciare €': round(_da_acq, 0),
+                    '': '🔴' if abs(_drift) > _soglia_reb else '✅',
+                })
+            _reb_df = pd.DataFrame(_reb_rows)
+            _alert  = _reb_df['Drift %'].abs().gt(_soglia_reb).any()
+            with st.expander(
+                f"⚖️ Rebalancing ETF {'— ⚠️ intervento consigliato' if _alert else '— in linea'}",
+                expanded=_alert
+            ):
+                st.caption(f"Soglia drift: ±{_soglia_reb:.0f}%. Totale ETF attivi: € {_tot_etf_val:,.0f}")
+                st.dataframe(_reb_df, use_container_width=True, hide_index=True)
 
     # Grafico storico (@st.fragment: solo questo blocco reruns quando periodo/selezione cambia)
     st.subheader("Performance storica")

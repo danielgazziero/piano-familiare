@@ -269,3 +269,40 @@ def confronta_scenari(config):
         'Base (7%)': simula_scenario_completo(config, rendimento=0.07),
         'Ottimista (10%)': simula_scenario_completo(config, rendimento=0.10),
     }
+
+
+def calcola_fire_metrics(patrimonio_attuale: float, spese_annue: float,
+                          eta_attuale: int = 35, eta_pensione: int = 60,
+                          rendimento: float = 0.07,
+                          tasso_prelievo: float = 0.04) -> dict:
+    """
+    Calcola metriche FIRE (Financial Independence, Retire Early).
+    Regular FIRE: target = spese_annue / tasso_prelievo (regola del 4%)
+    Coast FIRE: patrimonio minimo oggi per raggiungere il target senza nuovi contributi
+    """
+    import math
+    if spese_annue <= 0:
+        return {}
+
+    fire_target = spese_annue / tasso_prelievo
+    fire_pct = min(patrimonio_attuale / fire_target * 100, 100) if fire_target > 0 else 0
+
+    anni_a_pensione = max(eta_pensione - eta_attuale, 1)
+    coast_target = fire_target / ((1 + rendimento) ** anni_a_pensione)
+    coast_pct = min(patrimonio_attuale / coast_target * 100, 100) if coast_target > 0 else 0
+
+    if patrimonio_attuale >= fire_target:
+        anni_a_fire = 0
+    elif patrimonio_attuale > 0 and rendimento > 0:
+        anni_a_fire = round(math.log(fire_target / patrimonio_attuale) / math.log(1 + rendimento), 1)
+    else:
+        anni_a_fire = None
+
+    return {
+        'fire_target': round(fire_target, 0),
+        'fire_pct': round(fire_pct, 1),
+        'coast_target': round(coast_target, 0),
+        'coast_pct': round(coast_pct, 1),
+        'coast_raggiunto': patrimonio_attuale >= coast_target,
+        'anni_a_fire': anni_a_fire,
+    }

@@ -26,6 +26,10 @@ parametri:
   scenario_spread_worst: 0.04
   scenario_spread_best: 0.03
   rimborso_annuale_default: 22000
+  # FIRE — configurabili da config_params Supabase (chiavi: fire_spese_annue, fire_eta_pensione, fire_eta_attuale)
+  fire_tasso_prelievo: 0.04
+  fire_rendimento: 0.07
+  rebalancing_soglia_drift: 5.0
 
 entrate:
   stipendio_persona1: 0
@@ -88,6 +92,7 @@ etf:
     stato: "attivo"
     data_acquisto: "2024-01-01"
     in_portafoglio: true
+    target_pct: 50
     note: "Su Directa — già in portafoglio"
 
   - ticker_yf: "ACWE.MI"
@@ -97,6 +102,7 @@ etf:
     valore_iniziale: 0
     proprietario: "figlio"
     stato: "da_avviare"
+    target_pct: 100
     note: "Conto minore Directa — avviare dopo CF figlio/a"
 
   - ticker_yf: "IWDA.AS"
@@ -106,6 +112,7 @@ etf:
     valore_iniziale: 0
     proprietario: "persona1"
     stato: "da_avviare"
+    target_pct: 50
     note: "PAC Persona 1 — avviare ottobre 2026"
 
   - ticker_yf: "EMAE.MI"
@@ -116,6 +123,7 @@ etf:
     valore_iniziale: 0
     proprietario: "persona1"
     stato: "candidato"
+    target_pct: 0
     note: "Emergenti Asia — valutare come complemento a IWDA. TER 0.55%"
 
   - ticker_yf: "MWRD.MI"
@@ -126,6 +134,7 @@ etf:
     valore_iniziale: 0
     proprietario: "persona1"
     stato: "candidato"
+    target_pct: 0
     note: "Alternativa low-cost a IWDA. TER 0.12%"
 
 # ─── BREAKDOWN GEO/SETTORIALE ETF ────────────────────────────
