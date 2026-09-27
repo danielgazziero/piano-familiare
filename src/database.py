@@ -711,6 +711,12 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         user = res.data[0]
         if not verify_password(password, user['password_hash']):
             return None
+        # S-NEW-06: auto-rehash plaintext legacy al primo login riuscito
+        if user.get('password_hash') and not user['password_hash'].startswith('pbkdf2$'):
+            try:
+                aggiorna_password_utente(user['id'], hash_password(password))
+            except Exception:
+                pass
         aggiorna_ultimo_login(user['id'])
         return user
     except Exception as e:
@@ -839,17 +845,28 @@ def imposta_reset_token(user_id: int, token_hash: str, expiry_iso: str) -> bool:
         return False
 
 
+_ALLOWED_TOKEN_FIELDS = frozenset({
+    'reset_token_hash', 'reset_token_expiry',
+    'invite_token_hash', 'invite_token_expiry',
+})
+
+
 def verifica_token(token_hash: str, campo_hash: str, campo_expiry: str) -> Optional[dict]:
     """
     Verifica un token (reset o invite) per hash e scadenza.
     campo_hash / campo_expiry: nomi colonna in app_users.
     Restituisce il record utente o None.
     """
+    # S-NEW-08: allowlist per evitare column injection via f-string
+    if campo_hash not in _ALLOWED_TOKEN_FIELDS or campo_expiry not in _ALLOWED_TOKEN_FIELDS:
+        print(f"  [!] verifica_token: campo non consentito: {campo_hash!r}, {campo_expiry!r}")
+        return None
     try:
         client = get_client()
         res = (client.table('app_users')
                .select(f'id, username, email, {campo_expiry}')
                .eq(campo_hash, token_hash)
+               .limit(1)
                .execute())
         if not res.data:
             return None
@@ -964,6 +981,22 @@ def get_tutti_utenti() -> pd.DataFrame:
     except Exception as e:
         print(f"  [!] get_tutti_utenti: {type(e).__name__}")
         return pd.DataFrame()
+
+
+def is_utente_attivo(user_id: int) -> bool:
+    """S-NEW-07: verifica se un utente è ancora attivo. Fail-open: True se il DB non risponde."""
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('is_active')
+               .eq('id', user_id)
+               .eq('is_active', True)
+               .limit(1)
+               .execute())
+        return bool(res.data)
+    except Exception as e:
+        print(f"  [!] is_utente_attivo: {type(e).__name__}")
+        return True  # fail-open: non troncare la sessione se il DB è irraggiungibile
 
 
 def set_utente_attivo(user_id: int, attivo: bool) -> bool:

@@ -221,9 +221,9 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 27/09/2026
 
-### Ultimo commit su main: `dccd696` — feature bassa priorità + fix demo
+### Ultimo commit su main: `0023e6a` — merge onboarding wizard 15 step (feat #5)
 
-Ultimo commit su dev: in progress (onboarding wizard).
+Ultimo commit su dev: allineato a main (`0023e6a`).
 
 ### Onboarding wizard (`src/wizard.py`)
 
