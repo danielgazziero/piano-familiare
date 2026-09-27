@@ -384,8 +384,12 @@ def _auth_totp_verify():
 
     _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
     _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
-    _failures       = st.session_state.get("_auth_failures", 0)
-    _locked_until   = st.session_state.get("_auth_locked_until", 0)
+    # Contatori TOTP separati per user_id — persistono anche se l'utente
+    # torna al login e ri-effettua il login con password corretta.
+    _totp_fail_key  = f"_totp_failures_{_user_id}"
+    _totp_lock_key  = f"_totp_locked_until_{_user_id}"
+    _failures       = st.session_state.get(_totp_fail_key, 0)
+    _locked_until   = st.session_state.get(_totp_lock_key, 0)
     if time.time() < _locked_until:
         _wait = int(_locked_until - time.time()) + 1
         st.error(f"Troppi tentativi falliti. Riprova tra {_wait} secondi.")
@@ -399,6 +403,8 @@ def _auth_totp_verify():
         verify_btn = st.button("Verifica", type="primary")
     with _c2:
         if st.button("← Torna al login"):
+            # Rimuove solo le chiavi del flusso pending — i contatori TOTP
+            # per user_id rimangono, così il lockout non si azzera tornando indietro.
             for _k in ("_auth_pending_uid", "_auth_pending_username",
                        "_auth_pending_is_admin", "_auth_view",
                        "_auth_failures", "_auth_locked_until"):
@@ -413,7 +419,8 @@ def _auth_totp_verify():
             if _secret and _pyotp.TOTP(_secret).verify(totp_code.strip()):
                 for _k in ("_auth_pending_uid", "_auth_pending_username",
                            "_auth_pending_is_admin", "_auth_failures",
-                           "_auth_locked_until", "_auth_view"):
+                           "_auth_locked_until", "_auth_view",
+                           _totp_fail_key, _totp_lock_key):
                     st.session_state.pop(_k, None)
                 st.session_state.update({
                     "_auth_ok": True, "_auth_ts": time.time(),
@@ -424,10 +431,10 @@ def _auth_totp_verify():
                 st.rerun()
             else:
                 _failures = min(_failures + 1, _MAX_FAILURES)
-                st.session_state["_auth_failures"] = _failures
+                st.session_state[_totp_fail_key] = _failures
                 _delay = _LOCKOUT_DELAYS[_failures]
                 if _delay > 0:
-                    st.session_state["_auth_locked_until"] = time.time() + _delay
+                    st.session_state[_totp_lock_key] = time.time() + _delay
                     st.error(f"Codice non valido. Attendi {_delay} s prima del prossimo tentativo.")
                 else:
                     st.error("Codice non valido.")
