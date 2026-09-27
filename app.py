@@ -319,6 +319,9 @@ def _auth_forgot_password():
 def _auth_login():
     """Schermata di login username + password con brute-force guard."""
     from database import verifica_credenziali as _vc
+    from database import (get_server_login_state as _gsls,
+                          set_server_login_state as _ssls,
+                          reset_server_login_state as _rsls)
     st.title("🔒 Accesso protetto")
     _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
     _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
@@ -341,8 +344,15 @@ def _auth_login():
         if not username or not password:
             st.error("Inserisci username e password.")
         else:
+            # Controlla lockout server-side (persiste tra sessioni/browser diversi)
+            _srv = _gsls(username)
+            if time.time() < _srv.get("locked_until", 0.0):
+                _wait = int(_srv["locked_until"] - time.time()) + 1
+                st.error(f"Account temporaneamente bloccato. Riprova tra {_wait} secondi.")
+                st.stop()
             user = _vc(username, password)
             if user:
+                _rsls(username)
                 st.session_state["_auth_failures"] = 0
                 st.session_state.pop("_auth_locked_until", None)
                 if user.get('totp_enabled'):
@@ -360,6 +370,10 @@ def _auth_login():
                     st.session_state.pop("_auth_view", None)
                 st.rerun()
             else:
+                _n_srv = min(_srv.get("n", 0) + 1, _MAX_FAILURES)
+                _delay_srv = _LOCKOUT_DELAYS[_n_srv]
+                _lu_srv = time.time() + _delay_srv if _delay_srv > 0 else 0.0
+                _ssls(username, _n_srv, _lu_srv)
                 _failures = min(_failures + 1, _MAX_FAILURES)
                 st.session_state["_auth_failures"] = _failures
                 _delay = _LOCKOUT_DELAYS[_failures]

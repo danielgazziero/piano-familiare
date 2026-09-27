@@ -8,6 +8,7 @@ import ssl
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from html import escape as _he
 
 
 def _get_smtp_config() -> dict:
@@ -45,6 +46,7 @@ def _invia_email(to_email: str, subject: str, body_html: str) -> None:
             "SMTP non configurato. Aggiungi SMTP_HOST, SMTP_PORT, SMTP_USER, "
             "SMTP_PASSWORD in .streamlit/secrets.toml."
         )
+    to_email = to_email.replace('\r', '').replace('\n', '')
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From']    = cfg['user']
@@ -76,7 +78,7 @@ def invia_email_invito(email: str, username: str, token: str, base_url: str) -> 
     link = f"{base_url.rstrip('/')}/?invite_token={token}"
     body = f"""
 <p>Sei stato invitato ad accedere a <strong>Piano Finanziario Familiare</strong>.</p>
-<p>Il tuo username è: <strong>{username}</strong></p>
+<p>Il tuo username è: <strong>{_he(username)}</strong></p>
 <p><a href="{link}" style="font-size:1.1em;font-weight:bold">
 Clicca qui per impostare la tua password e attivare l'account
 </a></p>

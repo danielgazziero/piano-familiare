@@ -718,6 +718,52 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         return None
 
 
+def get_server_login_state(username: str) -> dict:
+    """
+    Legge il contatore di fallimenti login server-side per un username.
+    Restituisce {"n": int, "locked_until": float_epoch} — persiste tra sessioni.
+    Fail-open: in caso di errore DB restituisce stato pulito (non blocca).
+    """
+    try:
+        key = f"_auth_fail_{username.strip().lower()[:50]}"
+        client = get_client()
+        res = (client.table('config_params')
+               .select('valore')
+               .eq('chiave', key)
+               .limit(1)
+               .execute())
+        if res.data:
+            try:
+                return json.loads(res.data[0]['valore'])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {"n": 0, "locked_until": 0.0}
+    except Exception as e:
+        print(f"  [!] get_server_login_state: {type(e).__name__}")
+        return {"n": 0, "locked_until": 0.0}
+
+
+def set_server_login_state(username: str, n: int, locked_until: float) -> None:
+    """Scrive il contatore di fallimenti login server-side."""
+    try:
+        import time as _time
+        key = f"_auth_fail_{username.strip().lower()[:50]}"
+        client = get_client()
+        client.table('config_params').upsert(
+            {'chiave': key,
+             'valore': json.dumps({"n": n, "locked_until": locked_until}),
+             'updated_at': datetime.now().isoformat()},
+            on_conflict='chiave'
+        ).execute()
+    except Exception as e:
+        print(f"  [!] set_server_login_state: {type(e).__name__}")
+
+
+def reset_server_login_state(username: str) -> None:
+    """Azzera il contatore server-side dopo un login riuscito."""
+    set_server_login_state(username, 0, 0.0)
+
+
 def get_utente_by_email(email: str) -> Optional[dict]:
     """Restituisce il record utente per email, o None se non trovato."""
     try:
