@@ -708,11 +708,14 @@ with st.sidebar:
                                       'nome_figlio':   nf_inp})
             st.rerun()
     with st.expander("🔑 Cambia password"):
-        new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1", max_chars=1024)
-        new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2", max_chars=1024)
+        cur_pwd  = st.text_input("Password attuale", type="password", key="cur_pwd", max_chars=1024)
+        new_pwd1 = st.text_input("Nuova password",   type="password", key="pwd1",    max_chars=1024)
+        new_pwd2 = st.text_input("Conferma",         type="password", key="pwd2",    max_chars=1024)
         if st.button("💾 Cambia password"):
-            if not new_pwd1:
-                st.error("Inserisci una password.")
+            if not cur_pwd:
+                st.error("Inserisci la password attuale.")
+            elif not new_pwd1:
+                st.error("Inserisci una nuova password.")
             elif len(new_pwd1) < 8:
                 st.error("Almeno 8 caratteri.")
             elif new_pwd1 != new_pwd2:
@@ -720,9 +723,17 @@ with st.sidebar:
             elif _DEMO:
                 st.warning("In DEMO mode il cambio password è disabilitato.")
             else:
-                from database import aggiorna_password_utente as _apwu, hash_password as _hpc
+                from database import (aggiorna_password_utente as _apwu,
+                                      hash_password as _hpc,
+                                      verify_password as _vpwd,
+                                      get_password_hash_by_id as _gphbi)
                 _uid = st.session_state.get("_auth_user_id")
-                if _uid and _apwu(_uid, _hpc(new_pwd1)):
+                _cur_hash = _gphbi(_uid) if _uid else None
+                if _cur_hash is None:
+                    st.error("Errore durante la verifica.")
+                elif not _vpwd(cur_pwd, _cur_hash):
+                    st.error("Password attuale non corretta.")
+                elif _uid and _apwu(_uid, _hpc(new_pwd1)):
                     st.success("Password aggiornata!")
                 else:
                     st.error("Errore durante l'aggiornamento.")

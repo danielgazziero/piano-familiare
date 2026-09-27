@@ -775,6 +775,23 @@ def verifica_token(token_hash: str, campo_hash: str, campo_expiry: str) -> Optio
         return None
 
 
+def get_password_hash_by_id(user_id: int) -> Optional[str]:
+    """Restituisce il password_hash corrente dell'utente dato il suo id, o None in caso di errore."""
+    try:
+        client = get_client()
+        res = (client.table('app_users')
+               .select('password_hash')
+               .eq('id', user_id)
+               .limit(1)
+               .execute())
+        if res.data:
+            return res.data[0].get('password_hash')
+        return None
+    except Exception as e:
+        print(f"  [!] get_password_hash_by_id: {type(e).__name__}")
+        return None
+
+
 def aggiorna_password_utente(user_id: int, new_hash: str) -> bool:
     """Aggiorna la password e cancella il reset token."""
     try:
