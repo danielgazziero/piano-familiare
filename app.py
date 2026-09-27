@@ -683,30 +683,9 @@ if not st.session_state['xls_importati'] and db_ok:
         st.warning(f"⚠️ Errore import XLS: {type(e).__name__}")
         # Non impostare il flag: consente retry al prossimo caricamento
 
-# Carica snapshot patrimonio corrente per auto-save
-etf_df_init   = get_etf_perf()
-fondi_df_init = get_fondi()
-azioni_df_init= get_azioni()
-snap_init = patrimonio_snapshot(
-    config, etf_df_init, fondi_df_init, azioni_df_init,
-    st.session_state['params']
-)
-
-# Auto-save silenzioso (upsert — sovrascrive se già salvato oggi)
-if db_ok and 'saved_today' not in st.session_state:
-    auto_save_snapshot(snap_init, st.session_state['params'])
-    st.session_state['saved_today'] = True
-
-# Backfill prezzi silenzioso — scarica retroattivamente i giorni mancanti
-# Non blocca l'UI, gira in background al primo caricamento della sessione
-if db_ok and 'backfill_done' not in st.session_state:
-    try:
-        res = esegui_backfill_avvio(config, verbose=False)
-        st.session_state['backfill_done'] = True
-        if res['n_prezzi_scaricati'] > 0:
-            st.session_state['backfill_nuovi'] = res['n_prezzi_scaricati']
-    except Exception:
-        st.session_state['backfill_done'] = True
+# Lazy loading: snapshot, auto-save e backfill avvengono dentro "Stato di famiglia"
+# (prima sezione caricata dall'utente che richiede dati ETF/azioni live).
+# Sezioni come "Fine mese" o "Gestione Asset" non fanno chiamate yfinance.
 
 # ── SIDEBAR ──────────────────────────────────────────────────
 with st.sidebar:
@@ -947,6 +926,21 @@ if sezione == "🏠 Stato di famiglia":
     fondi_df = get_fondi()
     azioni_df= get_azioni()
     snap = patrimonio_snapshot(config, etf_df, fondi_df, azioni_df, params_correnti)
+
+    # Auto-save silenzioso (lazy: gira quando i dati ETF/azioni sono già caricati qui sopra)
+    if db_ok and 'saved_today' not in st.session_state:
+        auto_save_snapshot(snap, st.session_state['params'])
+        st.session_state['saved_today'] = True
+
+    # Backfill prezzi storici (once per session, lazy)
+    if db_ok and 'backfill_done' not in st.session_state:
+        try:
+            _bf_res = esegui_backfill_avvio(config, verbose=False)
+            st.session_state['backfill_done'] = True
+            if _bf_res.get('n_prezzi_scaricati', 0) > 0:
+                st.session_state['backfill_nuovi'] = _bf_res['n_prezzi_scaricati']
+        except Exception:
+            st.session_state['backfill_done'] = True
 
     c1,c2,c3,c4,c5 = st.columns(5)
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
