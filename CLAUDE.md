@@ -221,9 +221,9 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 27/09/2026
 
-### Ultimo commit su main: `0023e6a` — merge onboarding wizard 15 step (feat #5)
+### Ultimo commit su main: `2528970` — merge performance lazy loading + @st.fragment
 
-Ultimo commit su dev: allineato a main (`0023e6a`).
+Ultimo commit su dev: allineato a main (`2528970`).
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -235,7 +235,17 @@ Ultimo commit su dev: allineato a main (`0023e6a`).
 3. Aggiungere al `_RENDER_MAP`
 **Persistenza:** `config_params.wizard_step_last` (ripresa), `_wiz_done_<id>` per step, `wizard_completed = 'true'` a fine.
 
-**Commit principali della sessione del 27/09/2026:**
+**Commit principali della sessione del 27/09/2026 (performance):**
+
+| Commit | Contenuto |
+|---|---|
+| `e9cb971` | merge: fix sicurezza S-NEW-06/07/08 + performance P-NEW-W1/A1-A4/I1/D1 |
+| `19536c7` | perf: lazy loading yfinance — snapshot/backfill solo su "Stato di famiglia" |
+| `296a678` | perf: lazy XLS import — parse_all_inputs solo su sezioni rilevanti |
+| `73470e1` | perf: @st.fragment su grafici ETF e simulatori fondi |
+| `2528970` | merge: tutte le ottimizzazioni su main |
+
+**Commit principali della sessione del 27/09/2026 (wizard e auth):**
 
 | Commit | Contenuto |
 |---|---|
