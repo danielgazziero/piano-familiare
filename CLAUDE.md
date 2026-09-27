@@ -223,7 +223,7 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ### Ultimo commit su main: `60a9427` — merge CLAUDE.md stato tecnico
 
-Ultimo commit su dev: allineato a main (`60a9427`).
+Ultimo commit su dev: `160c22a` — feat: FIRE tracker, Savings Rate, Rebalancing ETF, Liabilities net worth.
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -357,10 +357,10 @@ Ultimo commit su dev: allineato a main (`60a9427`).
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Il Coast FIRE è già vicino al target stimato. Simulazioni pure già in `simulator.py`. |
-| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py`, `app_state.py` | Derivabile da `carica_transazioni_db()` già in cache `tx_db_cache`. |
-| 3 | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
-| 4 | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale e inclusi in `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
+| 1 ✅ | **FIRE Progress tracker** — Regular FIRE + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Completato 27/09/2026. `calcola_fire_metrics()` in `simulator.py`. Attivato da `fire_spese_annue` in `config_params`. |
+| 2 ✅ | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py` | Completato 27/09/2026. Calcolato da `tx_db_cache` già in cache, nessuna query aggiuntiva. |
+| 3 ✅ | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `config.yaml` | Completato 27/09/2026. `target_pct` in `config.yaml`; soglia in `parametri.rebalancing_soglia_drift`. |
+| 4 ✅ | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale | `app.py`, `portfolio.py` | Completato 27/09/2026. Input `debiti_totale` in "Aggiorna valori manuali"; `patrimonio_snapshot()` restituisce `net_worth` e `debiti_totale`. |
 | 5 ✅ | **Onboarding wizard** — procedura guidata al primo avvio (15 step) per compilare tutti i parametri fondamentali | `app.py`, `src/wizard.py` (nuovo) | Completato 27/09/2026. Gate in app.py dopo auth; admin può rieseguire dalla sidebar. **Per aggiungere step a nuove feature: v. istruzioni in `src/wizard.py` (docstring + `WIZARD_STEPS`).** |
 | 6 ✅ | Aggiornamento automatico docs al deploy via GitHub Actions | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml` | Completato. |
 | 7 ✅ | **Demo data completa** — tutti i tab coperti: asset catalog, ETF perf, azioni, prezzi yfinance, posizioni, CRUD no-op | `app.py`, `src/demo_data.py` | Completato 27/09/2026. Gestione Asset disabilitata in DEMO con placeholder. |
