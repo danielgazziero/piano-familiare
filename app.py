@@ -668,10 +668,13 @@ def get_azioni():
             st.session_state['azioni_df_cache'] = result
     return st.session_state['azioni_df_cache']
 
-# Importa automaticamente eventuali nuovi XLS in data/input/
 if 'xls_importati' not in st.session_state:
     st.session_state['xls_importati'] = False
-if not st.session_state['xls_importati'] and db_ok:
+
+def _run_xls_import() -> None:
+    """Import XLS lazy — chiamata solo nelle sezioni che ne hanno bisogno."""
+    if st.session_state['xls_importati'] or not db_ok:
+        return
     try:
         df_tx_xls = parse_all_inputs(INPUT_DIR, config)
         if not df_tx_xls.empty:
@@ -681,32 +684,244 @@ if not st.session_state['xls_importati'] and db_ok:
         st.session_state['xls_importati'] = True
     except Exception as e:
         st.warning(f"⚠️ Errore import XLS: {type(e).__name__}")
-        # Non impostare il flag: consente retry al prossimo caricamento
 
-# Carica snapshot patrimonio corrente per auto-save
-etf_df_init   = get_etf_perf()
-fondi_df_init = get_fondi()
-azioni_df_init= get_azioni()
-snap_init = patrimonio_snapshot(
-    config, etf_df_init, fondi_df_init, azioni_df_init,
-    st.session_state['params']
-)
+# Lazy loading: snapshot, auto-save, backfill e XLS import avvengono dentro le sezioni
+# (prima sezione caricata dall'utente che richiede dati ETF/azioni live).
+# Sezioni come "Fine mese" o "Gestione Asset" non fanno chiamate yfinance.
 
-# Auto-save silenzioso (upsert — sovrascrive se già salvato oggi)
-if db_ok and 'saved_today' not in st.session_state:
-    auto_save_snapshot(snap_init, st.session_state['params'])
-    st.session_state['saved_today'] = True
+# ── FRAGMENT: grafico storico ETF ─────────────────────────────
+@st.fragment
+def _frag_storico_etf():
+    """Reruns solo quando periodo o selezione ticker cambia — non tutta la pagina."""
+    _etf = get_etf_perf()
+    _tutti_t = {r['ticker']: r['ticker_yf'] for r in _etf.to_dict('records') if r.get('ticker_yf')}
+    _tutti_t['ACN'] = 'ACN'
+    periodo = st.select_slider("Periodo", ["1mo","3mo","6mo","ytd","1y","2y"], value="1y")
+    sel = st.multiselect("Titoli da confrontare", list(_tutti_t.keys()),
+                          default=list(_tutti_t.keys())[:3])
+    if not sel:
+        return
+    fig = go.Figure()
+    pal = list(COLORS.values())
+    if _DEMO:
+        for i, nome in enumerate(sel):
+            _tk = _tutti_t.get(nome, nome)
+            _h = get_etf_data(_tk, periodo)
+            if _h.empty:
+                continue
+            first = _h['price'].iloc[0]
+            _indexed = (_h['price'] / first * 100).round(2) if first else _h['price']
+            fig.add_trace(go.Scatter(x=_h.index, y=_indexed,
+                                      name=nome, line=dict(color=pal[i%len(pal)], width=2)))
+    else:
+        from portfolio import _batch_download, _extract_series
+        _sel_tickers = tuple(_tutti_t[n] for n in sel if n in _tutti_t)
+        _raw_batch   = _batch_download(_sel_tickers, periodo)
+        for i, nome in enumerate(sel):
+            _tk = _tutti_t.get(nome, nome)
+            _series = _extract_series(_raw_batch, _tk, len(_sel_tickers))
+            if _series.empty:
+                continue
+            first = _series.iloc[0]
+            _indexed = (_series / first * 100).round(2) if first else _series
+            fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
+                                      name=nome, line=dict(color=pal[i%len(pal)], width=2)))
+    fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
+    fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
+    _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}",
+                  use_container_width=True, theme=None)
 
-# Backfill prezzi silenzioso — scarica retroattivamente i giorni mancanti
-# Non blocca l'UI, gira in background al primo caricamento della sessione
-if db_ok and 'backfill_done' not in st.session_state:
-    try:
-        res = esegui_backfill_avvio(config, verbose=False)
-        st.session_state['backfill_done'] = True
-        if res['n_prezzi_scaricati'] > 0:
-            st.session_state['backfill_nuovi'] = res['n_prezzi_scaricati']
-    except Exception:
-        st.session_state['backfill_done'] = True
+
+# ── FRAGMENT: confronto ETF candidati ─────────────────────────
+@st.fragment
+def _frag_confronto_candidati():
+    """Reruns solo quando il periodo del confronto cambia."""
+    _etf = get_etf_perf()
+    _candidati = _etf[_etf['stato'] == 'candidato']
+    if _candidati.empty:
+        return
+    st.subheader("Confronto ETF candidati")
+    fig_c = go.Figure()
+    per_c = st.select_slider("Periodo confronto", ["6mo","ytd","1y","2y"], value="1y", key="pc")
+    _cat_confronto = st.session_state.get('asset_catalog', pd.DataFrame())
+    if not _cat_confronto.empty and 'tipo' in _cat_confronto.columns:
+        confronto = {str(r.get('ticker_bi', r['isin'])): str(r['ticker_yf'])
+                     for r in _cat_confronto[_cat_confronto['tipo'] == 'etf'].to_dict('records')
+                     if r.get('ticker_yf')}
+    else:
+        confronto = {e['ticker_bi']: e['ticker_yf']
+                     for e in config.get('etf', []) if e.get('ticker_yf')}
+    pal_c = [COLORS['rosso'],COLORS['verde'],COLORS['blu'],COLORS['arancio']]
+    if confronto:
+        from portfolio import _batch_download, _extract_series
+        _tickers_c = tuple(confronto.values())
+        _raw_c = _batch_download(_tickers_c, per_c)
+        for i, (nome, tick) in enumerate(confronto.items()):
+            _ser = _extract_series(_raw_c, tick, len(_tickers_c))
+            if not _ser.empty:
+                _first = _ser.iloc[0]
+                _idx = (_ser / _first * 100).round(2) if _first else _ser
+                fig_c.add_trace(go.Scatter(x=_ser.index, y=_idx,
+                                           name=nome, line=dict(color=pal_c[i], width=2)))
+    fig_c.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
+    fig_c.update_layout(title="Confronto (base 100)", height=320,
+                         legend=dict(orientation="h",y=1.08))
+    _plotly_chart(fig_c, use_container_width=True, theme=None)
+    st.info("💡 MWRD = alternativa Amundi a IWDA (stesso indice, TER 0.12%). "
+            "EMAE = satellite emergenti asiatici — interessante al 10-15% del PAC "
+            "se vuoi esposizione separata dall'ACWI del figlio/a.")
+
+
+# ── FRAGMENT: simulatori scenari fondi ────────────────────────
+@st.fragment
+def _frag_fondi_scenari():
+    """Reruns solo quando i slider cambiano — non tutta la pagina."""
+    df_attivi_f   = st.session_state.get('_fondi_df_edit_attivi', pd.DataFrame())
+    df_fondi_edit = st.session_state.get('_fondi_df_edit_full', pd.DataFrame())
+    if df_attivi_f.empty:
+        st.info("Nessun fondo selezionato nella tabella.")
+        return
+
+    _cfg      = get_config()
+    _aliquota = _cfg.get('parametri', {}).get('aliquota_capital_gain',
+                _cfg.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))
+
+    st.subheader("Scenari per singolo fondo")
+    nomi_inclusi = df_attivi_f['Fondo'].tolist()
+    fondo_sel = st.selectbox("Seleziona fondo", nomi_inclusi) if nomi_inclusi else None
+
+    c1,c2,c3 = st.columns(3)
+    with c1: anni_f    = st.slider("Orizzonte (anni)", 1, 15, 5, key="anni_fondo")
+    with c2: rend_b_f  = st.slider("Rendimento base %", 0.0, 8.0, 4.0, step=0.5, key="rb_fondo")
+    with c3: rend_w_f  = st.slider("Rendimento worst %", -5.0, 4.0, 0.0, step=0.5, key="rw_fondo")
+    rend_best_f = st.slider("Rendimento best %", 4.0, 12.0, 8.0, step=0.5, key="rbest_fondo")
+
+    if fondo_sel:
+        isin_sel  = df_attivi_f[df_attivi_f['Fondo'] == fondo_sel]['ISIN'].iloc[0]
+        storico_f = get_storico_fondo(isin_sel, giorni=365)
+        if not storico_f.empty and len(storico_f) > 1:
+            st.subheader(f"Storico quote — {fondo_sel}")
+            fig_st = go.Figure()
+            fig_st.add_trace(go.Scatter(x=storico_f['data'], y=storico_f['quota'],
+                                         name='Quota €', line=dict(color=COLORS['blu'],width=2)))
+            fig_st.update_layout(height=200, xaxis_title="", yaxis_title="Quota €",
+                                  margin=dict(t=20,b=0))
+            _plotly_chart(fig_st, use_container_width=True, theme=None)
+
+        row_f = df_attivi_f[df_attivi_f['Fondo'] == fondo_sel].iloc[0]
+        pct   = row_f['% mantenere'] / 100
+        ter   = row_f['TER stimato %'] / 100
+        val_f = row_f['Valore €'] * pct
+        cf_f  = row_f['Costo fisc. €'] * pct
+
+        df_sc_f = simula_fondo_scenari(
+            val_f, cf_f, quantita_pct=1.0, anni=anni_f,
+            rend_base=rend_b_f/100, rend_worst=rend_w_f/100, rend_best=rend_best_f/100,
+            costo_annuo=ter, aliquota=_aliquota
+        )
+        fig_f   = go.Figure()
+        base_s  = df_sc_f[df_sc_f['scenario']=='base']
+        worst_s = df_sc_f[df_sc_f['scenario']=='worst']
+        best_s  = df_sc_f[df_sc_f['scenario']=='best']
+        fig_f.add_trace(go.Scatter(
+            x=best_s['anno'].tolist() + worst_s['anno'].tolist()[::-1],
+            y=best_s['netto_uscita'].tolist() + worst_s['netto_uscita'].tolist()[::-1],
+            fill='toself', fillcolor='rgba(30,139,92,0.08)',
+            line=dict(color='rgba(0,0,0,0)'), name='Range worst-best'
+        ))
+        for sc_df, label in [(base_s,'Base'),(worst_s,'Worst'),(best_s,'Best')]:
+            _sc_key = sc_df['scenario'].iloc[0]
+            fig_f.add_trace(go.Scatter(
+                x=sc_df['anno'], y=sc_df['netto_uscita'], name=f"Netto {label}",
+                line=dict(color=SC_COLORS[_sc_key], width=2, dash=SC_DASH[_sc_key])
+            ))
+            fig_f.add_trace(go.Scatter(
+                x=sc_df['anno'], y=sc_df['valore_lordo'], name=f"Lordo {label}",
+                line=dict(color=SC_COLORS[_sc_key], width=1, dash='dot'), opacity=0.5
+            ))
+        fig_f.update_layout(height=400, xaxis_title="Anni", yaxis_title="€",
+                             legend=dict(orientation="h", y=1.08))
+        _plotly_chart(fig_f, _title=f"{fondo_sel} — {int(pct*100)}% · scenari worst/base/best",
+                      use_container_width=True, theme=None)
+
+        anno_kpi = st.slider("Mostra valori all'anno", 0, anni_f, min(3, anni_f), key="kpi_anno")
+        for sc_df, label in [(base_s,'Base'),(worst_s,'Worst'),(best_s,'Best')]:
+            row_k = sc_df[sc_df['anno'] == anno_kpi]
+            if not row_k.empty:
+                st.write(f"**{label}** — Anno {anno_kpi}: "
+                          f"Lordo €{row_k['valore_lordo'].iloc[0]:,.0f} | "
+                          f"Tassa €{row_k['tassa_latente'].iloc[0]:,.0f} | "
+                          f"Netto **€{row_k['netto_uscita'].iloc[0]:,.0f}**")
+
+    st.subheader("Portafoglio fondi aggregato — worst / base / best")
+    fondi_rows_sim = [{
+        'nome': r['Fondo'], 'valore_attuale': r['Valore €'],
+        'costo_fiscale_stimato': r['Costo fisc. €'],
+        'costo_annuo': r['TER stimato %'] / 100,
+        'pct_da_mantenere': r['% mantenere']
+    } for r in df_attivi_f.to_dict('records')]
+    sc_agg = simula_portafoglio_fondi_scenari(
+        fondi_rows_sim, anni=anni_f,
+        rend_base=rend_b_f/100, rend_worst=rend_w_f/100,
+        rend_best=rend_best_f/100, aliquota=_aliquota
+    )
+    fig_agg   = go.Figure()
+    best_agg  = sc_agg['best']
+    worst_agg = sc_agg['worst']
+    fig_agg.add_trace(go.Scatter(
+        x=best_agg['anno'].tolist() + worst_agg['anno'].tolist()[::-1],
+        y=best_agg['netto_uscita'].tolist() + worst_agg['netto_uscita'].tolist()[::-1],
+        fill='toself', fillcolor='rgba(30,92,139,0.08)',
+        line=dict(color='rgba(0,0,0,0)'), name='Range worst-best'
+    ))
+    for sc_key, label in [('base','Base'),('worst','Worst'),('best','Best')]:
+        df_sc = sc_agg[sc_key]
+        fig_agg.add_trace(go.Scatter(
+            x=df_sc['anno'], y=df_sc['netto_uscita'], name=f"Netto {label}",
+            line=dict(color=SC_COLORS[sc_key], width=2, dash=SC_DASH[sc_key])
+        ))
+        fig_agg.add_trace(go.Scatter(
+            x=df_sc['anno'], y=df_sc['valore_lordo'], name=f"Lordo {label}",
+            line=dict(color=SC_COLORS[sc_key], width=1, dash='dot'), opacity=0.4
+        ))
+    fig_agg.update_layout(title="Portafoglio fondi aggregato — evoluzione netta e lorda",
+                           height=420, xaxis_title="Anni", yaxis_title="€",
+                           legend=dict(orientation="h", y=1.08))
+    _plotly_chart(fig_agg, use_container_width=True, theme=None)
+
+    st.subheader("Simulatore: se esco il giorno X")
+    c1,c2 = st.columns(2)
+    with c1: data_uscita = st.date_input("Data di uscita", value=date(2027,6,1), min_value=date.today())
+    with c2: rend_uscita = st.slider("Rendimento fondi (%)", 1.0, 8.0, 4.0, step=0.5, key="ru")
+    _quote_map_f = {r['ISIN']: r['Quota €']
+                    for r in df_fondi_edit.to_dict('records') if r.get('Includi', False)}
+    df_uscita = simula_uscita_fondo_data_x(_cfg, data_uscita, rend_uscita/100, _quote_map_f,
+                                            fondi_df=get_fondi())
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("Attesa",             f"{df_uscita['mesi_attesa'].iloc[0]:.0f} mesi")
+    c2.metric("Valore proiettato",  f"€ {df_uscita['valore_proiettato'].sum():,.0f}")
+    c3.metric("Tassa stimata",      f"€ {df_uscita['tassa_proiettata'].sum():,.0f}")
+    c4.metric("Netto proiettato",   f"€ {df_uscita['netto_proiettato'].sum():,.0f}")
+    show_u = df_uscita[['nome','valore_attuale','netto_uscita',
+                          'valore_proiettato','tassa_proiettata','netto_proiettato']].copy()
+    for _col in show_u.columns[1:]:
+        show_u[_col] = show_u[_col].map(lambda x: f"€ {x:,.2f}")
+    show_u.columns = ['Fondo','Val. attuale','Netto oggi','Val. proiettato','Tassa','Netto proiettato']
+    st.dataframe(show_u, use_container_width=True, hide_index=True)
+
+    st.subheader("Piano di uscita ottimale")
+    piano_df = piano_uscita_ottimale(_cfg, _quote_map_f, fondi_df=get_fondi())
+    if not piano_df.empty:
+        fig_piano = px.bar(piano_df, x='anno', y='netto_in_etf', color='fondo',
+                            title="Netto reinvestito in ETF per anno e per fondo",
+                            labels={'anno':'Anno','netto_in_etf':'€ netto'})
+        fig_piano.update_layout(height=300, legend=dict(orientation="h",y=1.08))
+        _plotly_chart(fig_piano, use_container_width=True, theme=None)
+        c1,c2,c3 = st.columns(3)
+        c1.metric("Tot. rimborsato", f"€ {piano_df['rimborso_lordo'].sum():,.0f}")
+        c2.metric("Tot. tasse",      f"€ {piano_df['tassa_26pct'].sum():,.0f}")
+        c3.metric("Tot. netto ETF",  f"€ {piano_df['netto_in_etf'].sum():,.0f}")
+
 
 # ── SIDEBAR ──────────────────────────────────────────────────
 with st.sidebar:
@@ -947,6 +1162,24 @@ if sezione == "🏠 Stato di famiglia":
     fondi_df = get_fondi()
     azioni_df= get_azioni()
     snap = patrimonio_snapshot(config, etf_df, fondi_df, azioni_df, params_correnti)
+
+    # Auto-save silenzioso (lazy: gira quando i dati ETF/azioni sono già caricati qui sopra)
+    if db_ok and 'saved_today' not in st.session_state:
+        auto_save_snapshot(snap, st.session_state['params'])
+        st.session_state['saved_today'] = True
+
+    # Backfill prezzi storici (once per session, lazy)
+    if db_ok and 'backfill_done' not in st.session_state:
+        try:
+            _bf_res = esegui_backfill_avvio(config, verbose=False)
+            st.session_state['backfill_done'] = True
+            if _bf_res.get('n_prezzi_scaricati', 0) > 0:
+                st.session_state['backfill_nuovi'] = _bf_res['n_prezzi_scaricati']
+        except Exception:
+            st.session_state['backfill_done'] = True
+
+    # Import XLS lazy — raggruppato con auto-save e backfill, prima dei KPI
+    _run_xls_import()
 
     c1,c2,c3,c4,c5 = st.columns(5)
     c1.metric("Patrimonio totale", f"€ {snap['totale_eur']:,.0f}")
@@ -1255,42 +1488,9 @@ elif sezione == "📈 ETF & mercato":
             c3.metric("YTD", f"{r['rendimento_pct']:+.1f}%" if r['rendimento_pct'] else "N/D")
             c4.metric("1 anno", f"{r['perf_1y']:+.1f}%" if r['perf_1y'] else "N/D")
 
-    # Grafico storico
+    # Grafico storico (@st.fragment: solo questo blocco reruns quando periodo/selezione cambia)
     st.subheader("Performance storica")
-    periodo = st.select_slider("Periodo", ["1mo","3mo","6mo","ytd","1y","2y"], value="1y")
-    tutti_ticker = {r['ticker']: r['ticker_yf'] for r in etf_df.to_dict('records') if r.get('ticker_yf')}
-    tutti_ticker['ACN'] = 'ACN'
-    sel = st.multiselect("Titoli da confrontare", list(tutti_ticker.keys()),
-                          default=list(tutti_ticker.keys())[:3])
-    if sel:
-        fig = go.Figure()
-        pal = list(COLORS.values())
-        if _DEMO:
-            for i, nome in enumerate(sel):
-                _tk = tutti_ticker.get(nome, nome)
-                _h = get_etf_data(_tk, periodo)
-                if _h.empty:
-                    continue
-                first = _h['price'].iloc[0]
-                _indexed = (_h['price'] / first * 100).round(2) if first else _h['price']
-                fig.add_trace(go.Scatter(x=_h.index, y=_indexed,
-                                          name=nome, line=dict(color=pal[i%len(pal)], width=2)))
-        else:
-            from portfolio import _batch_download, _extract_series
-            _sel_tickers = tuple(tutti_ticker[n] for n in sel if n in tutti_ticker)
-            _raw_batch   = _batch_download(_sel_tickers, periodo)
-            for i, nome in enumerate(sel):
-                _tk = tutti_ticker.get(nome, nome)
-                _series = _extract_series(_raw_batch, _tk, len(_sel_tickers))
-                if _series.empty:
-                    continue
-                first = _series.iloc[0]
-                _indexed = (_series / first * 100).round(2) if first else _series
-                fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
-                                          name=nome, line=dict(color=pal[i%len(pal)], width=2)))
-        fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
-        fig.update_layout(height=400, legend=dict(orientation="h",y=1.08))
-        _plotly_chart(fig, _title=f"Performance relativa (base 100) · {periodo}", use_container_width=True, theme=None)
+    _frag_storico_etf()
 
     # ── SIMULATORE PAC ETF — tabella editabile ────────────────
     st.subheader("Simulatore PAC — portafoglio ETF personalizzabile")
@@ -1416,37 +1616,8 @@ elif sezione == "📈 ETF & mercato":
         c3.metric(f"Scenario worst", f"€ {vf_worst:,.0f}", delta=f"€ {vf_worst-vf_base:+,.0f}")
         c4.metric(f"Scenario best",  f"€ {vf_best:,.0f}",  delta=f"€ {vf_best-vf_base:+,.0f}")
 
-    if not candidati.empty:
-        st.subheader("Confronto ETF candidati")
-        fig_c = go.Figure()
-        per_c = st.select_slider("Periodo confronto", ["6mo","ytd","1y","2y"], value="1y", key="pc")
-        _cat_confronto = st.session_state.get('asset_catalog', pd.DataFrame())
-        if not _cat_confronto.empty and 'tipo' in _cat_confronto.columns:
-            confronto = {str(r.get('ticker_bi', r['isin'])): str(r['ticker_yf'])
-                         for r in _cat_confronto[_cat_confronto['tipo'] == 'etf'].to_dict('records')
-                         if r.get('ticker_yf')}
-        else:
-            confronto = {e['ticker_bi']: e['ticker_yf']
-                         for e in config.get('etf', []) if e.get('ticker_yf')}
-        pal_c = [COLORS['rosso'],COLORS['verde'],COLORS['blu'],COLORS['arancio']]
-        if confronto:
-            from portfolio import _batch_download, _extract_series
-            _tickers_c = tuple(confronto.values())
-            _raw_c = _batch_download(_tickers_c, per_c)
-            for i, (nome, tick) in enumerate(confronto.items()):
-                _ser = _extract_series(_raw_c, tick, len(_tickers_c))
-                if not _ser.empty:
-                    _first = _ser.iloc[0]
-                    _idx = (_ser / _first * 100).round(2) if _first else _ser
-                    fig_c.add_trace(go.Scatter(x=_ser.index, y=_idx,
-                                               name=nome, line=dict(color=pal_c[i], width=2)))
-        fig_c.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
-        fig_c.update_layout(title="Confronto (base 100)", height=320,
-                             legend=dict(orientation="h",y=1.08))
-        _plotly_chart(fig_c, use_container_width=True, theme=None)
-        st.info("💡 MWRD = alternativa Amundi a IWDA (stesso indice, TER 0.12%). "
-                "EMAE = satellite emergenti asiatici — interessante al 10-15% del PAC "
-                "se vuoi esposizione separata dall'ACWI del figlio/a.")
+    # Confronto candidati (@st.fragment: solo questo blocco reruns quando periodo cambia)
+    _frag_confronto_candidati()
 
     # ── COMPOSIZIONE GEO/SETTORIALE ───────────────────────────
     _etf_bkdn = config.get('etf_breakdown', {})
@@ -1530,6 +1701,9 @@ elif sezione == "🏦 Fondi bancari":
     )
 
     df_attivi_f = df_fondi_edit[df_fondi_edit['Includi'] == True].copy()
+    # Salvo per il fragment (si aggiorna ad ogni full-page rerun, non ai slider)
+    st.session_state['_fondi_df_edit_attivi'] = df_attivi_f
+    st.session_state['_fondi_df_edit_full']   = df_fondi_edit
 
     # Totali snapshot
     _aliquota = config.get('parametri', {}).get('aliquota_capital_gain',
@@ -1545,163 +1719,8 @@ elif sezione == "🏦 Fondi bancari":
     c3.metric("Tassa latente 26%",  f"€ {tot_tassa:,.0f}")
     c4.metric("Netto se esci oggi",  f"€ {tot_netto:,.0f}")
 
-    # ── Grafico singolo fondo + scenari ──────────────────────
-    st.subheader("Scenari per singolo fondo")
-    nomi_inclusi = df_attivi_f['Fondo'].tolist()
-    fondo_sel = st.selectbox("Seleziona fondo", nomi_inclusi) if nomi_inclusi else None
-
-    c1,c2,c3 = st.columns(3)
-    with c1: anni_f = st.slider("Orizzonte (anni)", 1, 15, 5, key="anni_fondo")
-    with c2: rend_b_f = st.slider("Rendimento base %", 0.0, 8.0, 4.0, step=0.5, key="rb_fondo")
-    with c3: rend_w_f = st.slider("Rendimento worst %", -5.0, 4.0, 0.0, step=0.5, key="rw_fondo")
-    rend_best_f = st.slider("Rendimento best %", 4.0, 12.0, 8.0, step=0.5, key="rbest_fondo")
-
-    # Storico quote fondo selezionato da Supabase
-    if fondo_sel:
-        isin_sel = df_attivi_f[df_attivi_f['Fondo'] == fondo_sel]['ISIN'].iloc[0]
-        storico_f = get_storico_fondo(isin_sel, giorni=365)
-        if not storico_f.empty and len(storico_f) > 1:
-            st.subheader(f"Storico quote — {fondo_sel}")
-            fig_st = go.Figure()
-            fig_st.add_trace(go.Scatter(x=storico_f['data'], y=storico_f['quota'],
-                                         name='Quota €', line=dict(color=COLORS['blu'],width=2)))
-            fig_st.update_layout(height=200, xaxis_title="", yaxis_title="Quota €",
-                                  margin=dict(t=20,b=0))
-            _plotly_chart(fig_st, use_container_width=True, theme=None)
-
-    if fondo_sel:
-        row_f = df_attivi_f[df_attivi_f['Fondo'] == fondo_sel].iloc[0]
-        pct   = row_f['% mantenere'] / 100
-        ter   = row_f['TER stimato %'] / 100
-        val_f = row_f['Valore €'] * pct
-        cf_f  = row_f['Costo fisc. €'] * pct
-
-        df_sc_f = simula_fondo_scenari(
-            val_f, cf_f, quantita_pct=1.0, anni=anni_f,
-            rend_base=rend_b_f/100, rend_worst=rend_w_f/100, rend_best=rend_best_f/100,
-            costo_annuo=ter, aliquota=_aliquota
-        )
-
-        fig_f = go.Figure()
-        # Banda
-        base_s = df_sc_f[df_sc_f['scenario']=='base']
-        worst_s= df_sc_f[df_sc_f['scenario']=='worst']
-        best_s = df_sc_f[df_sc_f['scenario']=='best']
-        fig_f.add_trace(go.Scatter(
-            x=best_s['anno'].tolist() + worst_s['anno'].tolist()[::-1],
-            y=best_s['netto_uscita'].tolist() + worst_s['netto_uscita'].tolist()[::-1],
-            fill='toself', fillcolor='rgba(30,139,92,0.08)',
-            line=dict(color='rgba(0,0,0,0)'), name='Range worst-best'
-        ))
-        for sc_df, label in [(base_s,'Base'),(worst_s,'Worst'),(best_s,'Best')]:
-            fig_f.add_trace(go.Scatter(
-                x=sc_df['anno'], y=sc_df['netto_uscita'],
-                name=f"Netto {label}", line=dict(color=SC_COLORS[sc_df['scenario'].iloc[0]], width=2, dash=SC_DASH[sc_df['scenario'].iloc[0]])
-            ))
-            fig_f.add_trace(go.Scatter(
-                x=sc_df['anno'], y=sc_df['valore_lordo'],
-                name=f"Lordo {label}", line=dict(color=SC_COLORS[sc_df['scenario'].iloc[0]], width=1, dash='dot'),
-                opacity=0.5
-            ))
-
-        _fig_f_title = f"{fondo_sel} — {int(pct*100)}% · scenari worst/base/best"
-        fig_f.update_layout(
-            height=400, xaxis_title="Anni", yaxis_title="€",
-            legend=dict(orientation="h", y=1.08)
-        )
-        _plotly_chart(fig_f, _title=_fig_f_title, use_container_width=True, theme=None)
-
-        # KPI anno scelto
-        anno_kpi = st.slider("Mostra valori all'anno", 0, anni_f, min(3, anni_f), key="kpi_anno")
-        for sc_df, label in [(base_s,'Base'),(worst_s,'Worst'),(best_s,'Best')]:
-            row_k = sc_df[sc_df['anno'] == anno_kpi]
-            if not row_k.empty:
-                st.write(f"**{label}** — Anno {anno_kpi}: "
-                          f"Lordo €{row_k['valore_lordo'].iloc[0]:,.0f} | "
-                          f"Tassa €{row_k['tassa_latente'].iloc[0]:,.0f} | "
-                          f"Netto **€{row_k['netto_uscita'].iloc[0]:,.0f}**")
-
-    # ── Grafico aggregato tutti i fondi ──────────────────────
-    st.subheader("Portafoglio fondi aggregato — worst / base / best")
-
-    if not df_attivi_f.empty:
-        fondi_rows_sim = [{
-            'nome': r['Fondo'],
-            'valore_attuale': r['Valore €'],
-            'costo_fiscale_stimato': r['Costo fisc. €'],
-            'costo_annuo': r['TER stimato %'] / 100,
-            'pct_da_mantenere': r['% mantenere']
-        } for r in df_attivi_f.to_dict('records')]
-
-        sc_agg = simula_portafoglio_fondi_scenari(
-            fondi_rows_sim, anni=anni_f,
-            rend_base=rend_b_f/100, rend_worst=rend_w_f/100,
-            rend_best=rend_best_f/100, aliquota=_aliquota
-        )
-
-        fig_agg = go.Figure()
-        best_agg  = sc_agg['best']
-        worst_agg = sc_agg['worst']
-        fig_agg.add_trace(go.Scatter(
-            x=best_agg['anno'].tolist() + worst_agg['anno'].tolist()[::-1],
-            y=best_agg['netto_uscita'].tolist() + worst_agg['netto_uscita'].tolist()[::-1],
-            fill='toself', fillcolor='rgba(30,92,139,0.08)',
-            line=dict(color='rgba(0,0,0,0)'), name='Range worst-best'
-        ))
-        for sc_key, label in [('base','Base'),('worst','Worst'),('best','Best')]:
-            df_sc = sc_agg[sc_key]
-            fig_agg.add_trace(go.Scatter(
-                x=df_sc['anno'], y=df_sc['netto_uscita'],
-                name=f"Netto {label}",
-                line=dict(color=SC_COLORS[sc_key], width=2, dash=SC_DASH[sc_key])
-            ))
-            fig_agg.add_trace(go.Scatter(
-                x=df_sc['anno'], y=df_sc['valore_lordo'],
-                name=f"Lordo {label}",
-                line=dict(color=SC_COLORS[sc_key], width=1, dash='dot'), opacity=0.4
-            ))
-
-        fig_agg.update_layout(
-            title="Portafoglio fondi aggregato — evoluzione netta e lorda",
-            height=420, xaxis_title="Anni", yaxis_title="€",
-            legend=dict(orientation="h", y=1.08)
-        )
-        _plotly_chart(fig_agg, use_container_width=True, theme=None)
-
-    # ── Simulatore uscita data X ──────────────────────────────
-    st.subheader("Simulatore: se esco il giorno X")
-    c1,c2 = st.columns(2)
-    with c1: data_uscita = st.date_input("Data di uscita", value=date(2027,6,1), min_value=date.today())
-    with c2: rend_uscita = st.slider("Rendimento fondi (%)", 1.0, 8.0, 4.0, step=0.5, key="ru")
-
-    quote_map = {r['ISIN']: r['Quota €'] for r in df_fondi_edit.to_dict('records') if r['Includi']}
-    df_uscita = simula_uscita_fondo_data_x(config, data_uscita, rend_uscita/100, quote_map,
-                                            fondi_df=get_fondi())
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Attesa", f"{df_uscita['mesi_attesa'].iloc[0]:.0f} mesi")
-    c2.metric("Valore proiettato", f"€ {df_uscita['valore_proiettato'].sum():,.0f}")
-    c3.metric("Tassa stimata",     f"€ {df_uscita['tassa_proiettata'].sum():,.0f}")
-    c4.metric("Netto proiettato",  f"€ {df_uscita['netto_proiettato'].sum():,.0f}")
-
-    show_u = df_uscita[['nome','valore_attuale','netto_uscita','valore_proiettato','tassa_proiettata','netto_proiettato']].copy()
-    for c in show_u.columns[1:]:
-        show_u[c] = show_u[c].map(lambda x: f"€ {x:,.2f}")
-    show_u.columns = ['Fondo','Val. attuale','Netto oggi','Val. proiettato','Tassa','Netto proiettato']
-    st.dataframe(show_u, use_container_width=True, hide_index=True)
-
-    # ── Piano uscita ottimale ─────────────────────────────────
-    st.subheader("Piano di uscita ottimale")
-    piano_df = piano_uscita_ottimale(config, quote_map, fondi_df=get_fondi())
-    if not piano_df.empty:
-        fig_piano = px.bar(piano_df, x='anno', y='netto_in_etf', color='fondo',
-                            title="Netto reinvestito in ETF per anno e per fondo",
-                            labels={'anno':'Anno','netto_in_etf':'€ netto'})
-        fig_piano.update_layout(height=300, legend=dict(orientation="h",y=1.08))
-        _plotly_chart(fig_piano, use_container_width=True, theme=None)
-        c1,c2,c3 = st.columns(3)
-        c1.metric("Tot. rimborsato", f"€ {piano_df['rimborso_lordo'].sum():,.0f}")
-        c2.metric("Tot. tasse",      f"€ {piano_df['tassa_26pct'].sum():,.0f}")
-        c3.metric("Tot. netto ETF",  f"€ {piano_df['netto_in_etf'].sum():,.0f}")
+    # Simulatori scenari (@st.fragment: solo questi blocchi rerunano sui slider)
+    _frag_fondi_scenari()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1959,6 +1978,9 @@ elif sezione == _SEZIONE_FIGLIO:
 elif sezione == "📋 Fine mese":
     st.title("📋 Checklist fine mese")
     st.caption("Guida in 4 passi per validare i dati prima di chiudere il mese.")
+
+    # Import XLS lazy — essenziale per la checklist (Passo 1)
+    _run_xls_import()
 
     _ss_fm    = st.session_state
     _nuove_tx = _ss_fm.get('nuove_tx', 0)
