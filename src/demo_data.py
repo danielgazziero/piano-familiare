@@ -259,11 +259,14 @@ def demo_get_asset_catalog() -> pd.DataFrame:
 def demo_get_etf_perf() -> pd.DataFrame:
     return pd.DataFrame([
         {"isin": "IE00B5BMR087", "nome": "iShares Core S&P 500",   "ticker": "CSPX", "ticker_yf": "CSPX.L",
-         "stato": "attivo",     "valore_attuale": 11_200, "prezzo_attuale": 528.40, "rendimento_pct": 8.4, "perf_1y": 14.2},
+         "stato": "attivo",     "proprietario": "persona1", "valore_attuale": 11_200, "valore_iniziale": 9000,
+         "prezzo_attuale": 528.40, "rendimento_pct": 8.4, "perf_1y": 14.2, "rendimento_eur": 2200, "ter": 0.0007, "note": None},
         {"isin": "IE00B44Z5B48", "nome": "SPDR MSCI ACWI",          "ticker": "ACWE", "ticker_yf": "ACWE.L",
-         "stato": "da_avviare", "valore_attuale": 0,      "prezzo_attuale": 220.10, "rendimento_pct": 6.1, "perf_1y": 11.8},
+         "stato": "da_avviare", "proprietario": "figlio",   "valore_attuale": 0,      "valore_iniziale": 0,
+         "prezzo_attuale": 220.10, "rendimento_pct": 6.1, "perf_1y": 11.8, "rendimento_eur": 0, "ter": 0.0040, "note": None},
         {"isin": "IE00B4L5Y983", "nome": "iShares Core MSCI World", "ticker": "IWDA", "ticker_yf": "IWDA.AS",
-         "stato": "candidato",  "valore_attuale": 0,      "prezzo_attuale": 98.30,  "rendimento_pct": 7.0, "perf_1y": 12.5},
+         "stato": "candidato",  "proprietario": "persona1", "valore_attuale": 0,      "valore_iniziale": 0,
+         "prezzo_attuale": 98.30,  "rendimento_pct": 7.0, "perf_1y": 12.5, "rendimento_eur": 0, "ter": 0.0020, "note": None},
     ])
 
 

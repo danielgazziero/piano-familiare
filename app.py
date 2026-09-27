@@ -723,6 +723,7 @@ with st.sidebar:
         "📊 Azioni Accenture",
         "🎯 Simulatore strategie",
         _SEZIONE_FIGLIO,
+        "📋 Fine mese",
         "⚙️ Gestione Asset",
     ]
     if st.session_state.get("_auth_is_admin"):
@@ -857,6 +858,22 @@ with st.sidebar:
         st.info(f"📥 {st.session_state['nuove_tx']} nuove transazioni")
     if st.session_state.get('backfill_nuovi'):
         st.info(f"📡 {st.session_state['backfill_nuovi']} nuovi prezzi scaricati")
+    with st.expander("📡 Allineamento dati"):
+        _ss = st.session_state
+        _snap_ok  = bool(_ss.get('saved_today'))
+        _bf_ok    = bool(_ss.get('backfill_done'))
+        _qm       = _ss.get('quote_map', {})
+        _tx_cache = _ss.get('tx_db_cache')
+        _last_tx  = "N/D"
+        if isinstance(_tx_cache, pd.DataFrame) and not _tx_cache.empty and 'data' in _tx_cache.columns:
+            try:
+                _last_tx = pd.to_datetime(_tx_cache['data']).max().strftime('%d/%m/%Y')
+            except Exception:
+                pass
+        st.markdown(f"{'✅' if _snap_ok else '⚠️'} Snapshot oggi: {'sì' if _snap_ok else 'no'}")
+        st.markdown(f"{'✅' if _bf_ok else '⚠️'} Prezzi ETF: {'ok' if _bf_ok else 'in attesa'}")
+        st.markdown(f"{'✅' if _qm else '⚠️'} Quote fondi: {str(len(_qm)) + ' caricate' if _qm else 'non caricate'}")
+        st.caption(f"Ultima tx registrata: {_last_tx}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1402,6 +1419,37 @@ elif sezione == "📈 ETF & mercato":
                 "EMAE = satellite emergenti asiatici — interessante al 10-15% del PAC "
                 "se vuoi esposizione separata dall'ACWI del figlio/a.")
 
+    # ── COMPOSIZIONE GEO/SETTORIALE ───────────────────────────
+    _etf_bkdn = config.get('etf_breakdown', {})
+    if _etf_bkdn:
+        with st.expander("📊 Composizione geografica & settoriale", expanded=False):
+            st.caption("Dati da factsheet ufficiali — aggiornare manualmente in `config.yaml → etf_breakdown`.")
+            _bk_sel = st.selectbox("ETF", list(_etf_bkdn.keys()), key="sel_etf_breakdown")
+            _bk = _etf_bkdn.get(_bk_sel, {})
+            if _bk:
+                st.caption(f"{_bk.get('nome','')} · aggiornato: {_bk.get('aggiornato','N/D')}")
+                _geo  = _bk.get('geo', {})
+                _sett = _bk.get('settori', {})
+                c1_bk, c2_bk = st.columns(2)
+                if _geo:
+                    fig_geo = go.Figure(go.Pie(
+                        labels=list(_geo.keys()), values=list(_geo.values()),
+                        hole=0.4, textinfo='label+percent', textposition='outside',
+                    ))
+                    fig_geo.update_layout(height=320, showlegend=False, margin=dict(t=0,b=0,l=0,r=0))
+                    with c1_bk:
+                        _plotly_chart(fig_geo, _title="Distribuzione geografica",
+                                      use_container_width=True, theme=None)
+                if _sett:
+                    fig_sett = go.Figure(go.Pie(
+                        labels=list(_sett.keys()), values=list(_sett.values()),
+                        hole=0.4, textinfo='label+percent', textposition='outside',
+                    ))
+                    fig_sett.update_layout(height=320, showlegend=False, margin=dict(t=0,b=0,l=0,r=0))
+                    with c2_bk:
+                        _plotly_chart(fig_sett, _title="Distribuzione settoriale",
+                                      use_container_width=True, theme=None)
+
 
 # ─────────────────────────────────────────────────────────────
 # SEZIONE 3: FONDI BANCARI
@@ -1877,6 +1925,64 @@ elif sezione == _SEZIONE_FIGLIO:
 
 
 # ─────────────────────────────────────────────────────────────
+# SEZIONE: FINE MESE
+# ─────────────────────────────────────────────────────────────
+elif sezione == "📋 Fine mese":
+    st.title("📋 Checklist fine mese")
+    st.caption("Guida in 4 passi per validare i dati prima di chiudere il mese.")
+
+    _ss_fm    = st.session_state
+    _nuove_tx = _ss_fm.get('nuove_tx', 0)
+    _xls_imp  = bool(_ss_fm.get('xls_importati'))
+    _snap_ok  = bool(_ss_fm.get('saved_today'))
+    _qm_fm    = _ss_fm.get('quote_map', {})
+    _quote_ok = bool(_qm_fm)
+
+    _completati = sum([_xls_imp, _quote_ok, _snap_ok])
+    st.progress(_completati / 4, text=f"{_completati}/4 passi completati automaticamente")
+    st.divider()
+
+    # Passo 1 — Estratti XLS
+    st.markdown(f"### {'✅' if _xls_imp else '⬜'} Passo 1 — Importa estratti bancari")
+    if _xls_imp:
+        _ntx_label = f" — {_nuove_tx} nuove transazioni" if _nuove_tx else ""
+        st.success(f"Estratti importati questa sessione{_ntx_label}.")
+    else:
+        st.info("Deposita i file XLS in `data/input/` e clicca '🔄 Aggiorna tutto' nella sidebar.")
+    st.divider()
+
+    # Passo 2 — Quote fondi
+    st.markdown(f"### {'✅' if _quote_ok else '⬜'} Passo 2 — Aggiorna quote fondi bancari")
+    if _quote_ok:
+        st.success(f"Quote fondi caricate ({len(_qm_fm)} fondi). "
+                   "Vai in '🏦 Fondi bancari' per aggiornare il valore quota al prezzo corrente.")
+    else:
+        st.warning("Quote fondi non caricate — controlla la connessione al DB.")
+    st.divider()
+
+    # Passo 3 — Liquidità (sempre manuale)
+    st.markdown("### ⬜ Passo 3 — Aggiorna liquidità e valori manuali")
+    st.info("Vai in '🏠 Stato di famiglia' → '🔧 Aggiorna valori manuali' e inserisci i saldi bancari del mese.")
+    st.divider()
+
+    # Passo 4 — Snapshot
+    st.markdown(f"### {'✅' if _snap_ok else '⬜'} Passo 4 — Snapshot patrimonio odierno")
+    if _snap_ok:
+        st.success("Snapshot salvato per oggi su Supabase.")
+    else:
+        st.warning("Snapshot non ancora salvato. Torna in '🏠 Stato di famiglia' oppure clicca '🔄 Aggiorna tutto'.")
+    st.divider()
+
+    if _completati == 4 or (_completati == 3 and _xls_imp and _quote_ok and _snap_ok):
+        st.balloons()
+        st.success("🎉 Tutti i passi completati — il mese è chiuso!")
+    else:
+        _mancanti = 4 - _completati
+        st.caption(f"Il passo 3 (aggiorna liquidità) richiede sempre un'azione manuale. "
+                   f"{'Manca ancora il passo 3 manuale.' if _completati >= 3 else ''}")
+
+
+# ─────────────────────────────────────────────────────────────
 # SEZIONE: GESTIONE ASSET
 # ─────────────────────────────────────────────────────────────
 elif sezione == "⚙️ Gestione Asset":
@@ -1919,8 +2025,10 @@ elif sezione == "⚙️ Gestione Asset":
             st.dataframe(fondi_df[disp_cols], use_container_width=True, hide_index=True)
 
         st.subheader("Modifica / elimina fondo")
+        _f_name = fondi_df.set_index('isin')['nome'].to_dict() if not fondi_df.empty else {}
         isin_sel = st.selectbox("Seleziona fondo",
                                  options=fondi_df['isin'].tolist() if not fondi_df.empty else [],
+                                 format_func=lambda x: f"{_f_name.get(x, x)} ({x})",
                                  key="sel_fondo")
         if isin_sel and not fondi_df.empty:
             row = fondi_df[fondi_df['isin'] == isin_sel].iloc[0]
@@ -1977,8 +2085,10 @@ elif sezione == "⚙️ Gestione Asset":
             st.dataframe(etf_df[disp], use_container_width=True, hide_index=True)
 
         st.subheader("Modifica / elimina ETF")
+        _e_name = etf_df.set_index('isin')['nome'].to_dict() if not etf_df.empty else {}
         isin_etf = st.selectbox("Seleziona ETF",
                                   options=etf_df['isin'].tolist() if not etf_df.empty else [],
+                                  format_func=lambda x: f"{_e_name.get(x, x)} ({x})",
                                   key="sel_etf")
         if isin_etf and not etf_df.empty:
             row = etf_df[etf_df['isin'] == isin_etf].iloc[0]
@@ -2032,8 +2142,10 @@ elif sezione == "⚙️ Gestione Asset":
             st.dataframe(az_df[disp], use_container_width=True, hide_index=True)
 
         st.subheader("Modifica / elimina azione")
+        _a_name = az_df.set_index('isin')['nome'].to_dict() if not az_df.empty else {}
         isin_az = st.selectbox("Seleziona azione",
                                  options=az_df['isin'].tolist() if not az_df.empty else [],
+                                 format_func=lambda x: f"{_a_name.get(x, x)} ({x})",
                                  key="sel_azione")
         if isin_az and not az_df.empty:
             row = az_df[az_df['isin'] == isin_az].iloc[0]
