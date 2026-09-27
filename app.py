@@ -740,7 +740,11 @@ with st.sidebar:
     with st.expander("🔐 Sicurezza (2FA)"):
         from database import get_totp_info as _gti_sb, salva_totp_secret as _sts_sb, disabilita_totp as _dt_sb
         _uid_2fa = st.session_state.get("_auth_user_id")
-        _t_info  = _gti_sb(_uid_2fa) if _uid_2fa else {'totp_enabled': False}
+        if '_totp_info_cache' not in st.session_state:
+            st.session_state['_totp_info_cache'] = (
+                _gti_sb(_uid_2fa) if _uid_2fa else {'totp_enabled': False, 'totp_secret': None}
+            )
+        _t_info  = st.session_state['_totp_info_cache']
         _t_on    = _t_info.get('totp_enabled', False)
         if _DEMO:
             st.warning("Disabilitato in DEMO mode.")
@@ -767,6 +771,7 @@ with st.sidebar:
                     elif _pyotp_sb.TOTP(_sec_sb).verify(_code_sb.strip()):
                         if _sts_sb(_uid_2fa, _sec_sb):
                             st.session_state.pop("_totp_setup_secret", None)
+                            st.session_state.pop("_totp_info_cache", None)
                             st.success("2FA attivato!")
                             st.rerun()
                         else:
@@ -791,9 +796,10 @@ with st.sidebar:
                     st.error("Inserisci il codice 2FA.")
                 else:
                     import pyotp as _pyotp_dis
-                    _t_sec = _gti_sb(_uid_2fa).get('totp_secret')
+                    _t_sec = _t_info.get('totp_secret')
                     if _t_sec and _pyotp_dis.TOTP(_t_sec).verify(_dis_code.strip()):
                         if _dt_sb(_uid_2fa):
+                            st.session_state.pop("_totp_info_cache", None)
                             st.success("2FA disabilitato.")
                             st.rerun()
                         else:
@@ -810,7 +816,7 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
-                  '_plotly_tpl_dark']:
+                  '_plotly_tpl_dark','_totp_info_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
