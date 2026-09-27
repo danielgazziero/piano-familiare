@@ -2,9 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "piano-familiare",
+      "name": "Piano Familiare",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.headless=true"],
+      "port": 8501,
+      "autoPort": false
+    },
+    {
+      "name": "Piano Familiare (attach)",
+      "url": "http://localhost:8501",
       "port": 8501
     }
   ]
