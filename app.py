@@ -384,8 +384,12 @@ def _auth_totp_verify():
 
     _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
     _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
-    _failures       = st.session_state.get("_auth_failures", 0)
-    _locked_until   = st.session_state.get("_auth_locked_until", 0)
+    # Contatori TOTP separati per user_id — persistono anche se l'utente
+    # torna al login e ri-effettua il login con password corretta.
+    _totp_fail_key  = f"_totp_failures_{_user_id}"
+    _totp_lock_key  = f"_totp_locked_until_{_user_id}"
+    _failures       = st.session_state.get(_totp_fail_key, 0)
+    _locked_until   = st.session_state.get(_totp_lock_key, 0)
     if time.time() < _locked_until:
         _wait = int(_locked_until - time.time()) + 1
         st.error(f"Troppi tentativi falliti. Riprova tra {_wait} secondi.")
@@ -399,6 +403,8 @@ def _auth_totp_verify():
         verify_btn = st.button("Verifica", type="primary")
     with _c2:
         if st.button("← Torna al login"):
+            # Rimuove solo le chiavi del flusso pending — i contatori TOTP
+            # per user_id rimangono, così il lockout non si azzera tornando indietro.
             for _k in ("_auth_pending_uid", "_auth_pending_username",
                        "_auth_pending_is_admin", "_auth_view",
                        "_auth_failures", "_auth_locked_until"):
@@ -413,7 +419,8 @@ def _auth_totp_verify():
             if _secret and _pyotp.TOTP(_secret).verify(totp_code.strip()):
                 for _k in ("_auth_pending_uid", "_auth_pending_username",
                            "_auth_pending_is_admin", "_auth_failures",
-                           "_auth_locked_until", "_auth_view"):
+                           "_auth_locked_until", "_auth_view",
+                           _totp_fail_key, _totp_lock_key):
                     st.session_state.pop(_k, None)
                 st.session_state.update({
                     "_auth_ok": True, "_auth_ts": time.time(),
@@ -424,10 +431,10 @@ def _auth_totp_verify():
                 st.rerun()
             else:
                 _failures = min(_failures + 1, _MAX_FAILURES)
-                st.session_state["_auth_failures"] = _failures
+                st.session_state[_totp_fail_key] = _failures
                 _delay = _LOCKOUT_DELAYS[_failures]
                 if _delay > 0:
-                    st.session_state["_auth_locked_until"] = time.time() + _delay
+                    st.session_state[_totp_lock_key] = time.time() + _delay
                     st.error(f"Codice non valido. Attendi {_delay} s prima del prossimo tentativo.")
                 else:
                     st.error("Codice non valido.")
@@ -708,11 +715,14 @@ with st.sidebar:
                                       'nome_figlio':   nf_inp})
             st.rerun()
     with st.expander("🔑 Cambia password"):
-        new_pwd1 = st.text_input("Nuova password", type="password", key="pwd1", max_chars=1024)
-        new_pwd2 = st.text_input("Conferma",       type="password", key="pwd2", max_chars=1024)
+        cur_pwd  = st.text_input("Password attuale", type="password", key="cur_pwd", max_chars=1024)
+        new_pwd1 = st.text_input("Nuova password",   type="password", key="pwd1",    max_chars=1024)
+        new_pwd2 = st.text_input("Conferma",         type="password", key="pwd2",    max_chars=1024)
         if st.button("💾 Cambia password"):
-            if not new_pwd1:
-                st.error("Inserisci una password.")
+            if not cur_pwd:
+                st.error("Inserisci la password attuale.")
+            elif not new_pwd1:
+                st.error("Inserisci una nuova password.")
             elif len(new_pwd1) < 8:
                 st.error("Almeno 8 caratteri.")
             elif new_pwd1 != new_pwd2:
@@ -720,16 +730,28 @@ with st.sidebar:
             elif _DEMO:
                 st.warning("In DEMO mode il cambio password è disabilitato.")
             else:
-                from database import aggiorna_password_utente as _apwu, hash_password as _hpc
+                from database import (aggiorna_password_utente as _apwu,
+                                      hash_password as _hpc,
+                                      verify_password as _vpwd,
+                                      get_password_hash_by_id as _gphbi)
                 _uid = st.session_state.get("_auth_user_id")
-                if _uid and _apwu(_uid, _hpc(new_pwd1)):
+                _cur_hash = _gphbi(_uid) if _uid else None
+                if _cur_hash is None:
+                    st.error("Errore durante la verifica.")
+                elif not _vpwd(cur_pwd, _cur_hash):
+                    st.error("Password attuale non corretta.")
+                elif _uid and _apwu(_uid, _hpc(new_pwd1)):
                     st.success("Password aggiornata!")
                 else:
                     st.error("Errore durante l'aggiornamento.")
     with st.expander("🔐 Sicurezza (2FA)"):
         from database import get_totp_info as _gti_sb, salva_totp_secret as _sts_sb, disabilita_totp as _dt_sb
         _uid_2fa = st.session_state.get("_auth_user_id")
-        _t_info  = _gti_sb(_uid_2fa) if _uid_2fa else {'totp_enabled': False}
+        if '_totp_info_cache' not in st.session_state:
+            st.session_state['_totp_info_cache'] = (
+                _gti_sb(_uid_2fa) if _uid_2fa else {'totp_enabled': False, 'totp_secret': None}
+            )
+        _t_info  = st.session_state['_totp_info_cache']
         _t_on    = _t_info.get('totp_enabled', False)
         if _DEMO:
             st.warning("Disabilitato in DEMO mode.")
@@ -756,6 +778,7 @@ with st.sidebar:
                     elif _pyotp_sb.TOTP(_sec_sb).verify(_code_sb.strip()):
                         if _sts_sb(_uid_2fa, _sec_sb):
                             st.session_state.pop("_totp_setup_secret", None)
+                            st.session_state.pop("_totp_info_cache", None)
                             st.success("2FA attivato!")
                             st.rerun()
                         else:
@@ -780,9 +803,10 @@ with st.sidebar:
                     st.error("Inserisci il codice 2FA.")
                 else:
                     import pyotp as _pyotp_dis
-                    _t_sec = _gti_sb(_uid_2fa).get('totp_secret')
+                    _t_sec = _t_info.get('totp_secret')
                     if _t_sec and _pyotp_dis.TOTP(_t_sec).verify(_dis_code.strip()):
                         if _dt_sb(_uid_2fa):
+                            st.session_state.pop("_totp_info_cache", None)
                             st.success("2FA disabilitato.")
                             st.rerun()
                         else:
@@ -799,7 +823,7 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
-                  '_plotly_tpl_dark']:
+                  '_plotly_tpl_dark','_totp_info_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
