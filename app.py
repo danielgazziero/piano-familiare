@@ -1198,14 +1198,25 @@ if sezione == "🏠 Stato di famiglia":
         _nw3.metric("Patrimonio lordo", f"€ {snap['totale_eur']:,.0f}")
 
     # ── FIRE Progress tracker ─────────────────────────────────
+    # Carica tx in anticipo per stimare le spese annue dall'ingestion
+    if 'tx_db_cache' not in st.session_state:
+        st.session_state['tx_db_cache'] = carica_transazioni_db(mesi=12)
+    _tx_fire = st.session_state['tx_db_cache']
+    _spese_stimate_fire = 0.0
+    if not _tx_fire.empty and 'expense' in _tx_fire.columns:
+        _pm_fire = _tx_fire.groupby('month')['expense'].sum()
+        if not _pm_fire.empty:
+            _spese_stimate_fire = round(float(_pm_fire.tail(12).mean()) * 12, 0)
+
     _fire_spese = float(p_saved.get('fire_spese_annue', 0) or 0)
+    _cfg_p   = config.get('parametri', {})
+    _fire_r  = float(_cfg_p.get('fire_rendimento', 0.07))
+    _fire_tp = float(_cfg_p.get('fire_tasso_prelievo', 0.04))
+    _fire_eta = int(p_saved.get('fire_eta_attuale', 35) or 35)
+    _fire_pen = int(p_saved.get('fire_eta_pensione', 60) or 60)
+
+    st.subheader("🔥 FIRE Progress")
     if _fire_spese > 0:
-        st.subheader("🔥 FIRE Progress")
-        _cfg_p   = config.get('parametri', {})
-        _fire_r  = float(_cfg_p.get('fire_rendimento', 0.07))
-        _fire_tp = float(_cfg_p.get('fire_tasso_prelievo', 0.04))
-        _fire_eta = int(p_saved.get('fire_eta_attuale', 35) or 35)
-        _fire_pen = int(p_saved.get('fire_eta_pensione', 60) or 60)
         _fire_m  = calcola_fire_metrics(
             patrimonio_attuale=float(snap['totale_eur']),
             spese_annue=_fire_spese,
@@ -1236,12 +1247,45 @@ if sezione == "🏠 Stato di famiglia":
                 else:
                     _manca = _fire_m['coast_target'] - snap['totale_eur']
                     st.caption(f"**{_fire_m['coast_pct']:.1f}%** — mancano € {_manca:,.0f}")
+        with st.expander("⚙️ Modifica configurazione FIRE", expanded=False):
+            _hint_fire = (f"Stima automatica dalle ultime transazioni: € {_spese_stimate_fire:,.0f}/anno"
+                          if _spese_stimate_fire else None)
+            _fce1, _fce2, _fce3 = st.columns(3)
+            with _fce1:
+                _e_spese = st.number_input("Spese annue (€)", value=int(_fire_spese),
+                                           step=1000, help=_hint_fire, key="fire_edit_spese")
+            with _fce2:
+                _e_eta = st.number_input("Età attuale", value=_fire_eta,
+                                         min_value=18, max_value=80, step=1, key="fire_edit_eta")
+            with _fce3:
+                _e_pen = st.number_input("Età target FIRE", value=_fire_pen,
+                                         min_value=30, max_value=80, step=1, key="fire_edit_pen")
+            if st.button("💾 Aggiorna configurazione FIRE", key="fire_edit_save"):
+                _fp = {'fire_spese_annue': _e_spese, 'fire_eta_attuale': _e_eta, 'fire_eta_pensione': _e_pen}
+                if salva_params_persistenti(_fp):
+                    st.session_state['params'].update(_fp)
+                    st.success("Salvato ✓")
+                    st.rerun()
     else:
-        with st.expander("🔥 FIRE Progress — configurare spese annue"):
-            st.info(
-                "Aggiungi `fire_spese_annue` in Supabase `config_params` "
-                "(es. 36000 per €3.000/mese) per vedere il tracker FIRE."
-            )
+        _hint_fire = (f"Stima automatica dalle ultime transazioni: € {_spese_stimate_fire:,.0f}/anno"
+                      if _spese_stimate_fire else None)
+        _fn1, _fn2, _fn3 = st.columns(3)
+        with _fn1:
+            _val_spese_default = int(_spese_stimate_fire) if _spese_stimate_fire else 30000
+            _new_spese = st.number_input("Spese annue target (€)", value=_val_spese_default,
+                                         step=1000, help=_hint_fire, key="fire_new_spese")
+        with _fn2:
+            _new_eta = st.number_input("Età attuale", value=_fire_eta,
+                                       min_value=18, max_value=80, step=1, key="fire_new_eta")
+        with _fn3:
+            _new_pen = st.number_input("Età target FIRE", value=_fire_pen,
+                                       min_value=30, max_value=80, step=1, key="fire_new_pen")
+        if st.button("💾 Salva e attiva FIRE tracker", key="fire_new_save"):
+            _fp = {'fire_spese_annue': _new_spese, 'fire_eta_attuale': _new_eta, 'fire_eta_pensione': _new_pen}
+            if salva_params_persistenti(_fp):
+                st.session_state['params'].update(_fp)
+                st.success("FIRE tracker attivato ✓")
+                st.rerun()
 
     fig_pat = go.Figure(go.Pie(
         labels=['Fondi bancari','Generali',f'ETF {_N1}',f'ETF {_NF}','Azioni ACN','Liquidità'],
@@ -1593,6 +1637,37 @@ elif sezione == "📈 ETF & mercato":
             ):
                 st.caption(f"Soglia drift: ±{_soglia_reb:.0f}%. Totale ETF attivi: € {_tot_etf_val:,.0f}")
                 st.dataframe(_reb_df, use_container_width=True, hide_index=True)
+                st.divider()
+                st.caption("**⚙️ Modifica target allocation**")
+                _reb_tk_list = [str(r.get('ticker', r.get('ticker_bi', ''))) for r in attivi.to_dict('records')]
+                _reb_tgt_new = {}
+                _reb_edit_cols = st.columns(max(len(_reb_tk_list), 1))
+                for _ri, _rtkr in enumerate(_reb_tk_list):
+                    with _reb_edit_cols[_ri]:
+                        _reb_tgt_new[_rtkr] = st.number_input(
+                            f"Target % {_rtkr}", value=float(_cfg_target.get(_rtkr, 0.0)),
+                            min_value=0.0, max_value=100.0, step=5.0, key=f"reb_tgt_{_rtkr}")
+                _reb_tot = sum(_reb_tgt_new.values())
+                if _reb_tot > 0 and abs(_reb_tot - 100.0) > 0.1:
+                    st.warning(f"I target sommano a {_reb_tot:.0f}% (diverso da 100%). Verifica prima di salvare.")
+                if st.button("💾 Salva target allocation", key="reb_save_tgt"):
+                    _cat_reb_upd = st.session_state.get('asset_catalog', pd.DataFrame())
+                    _reb_ok = True
+                    for _rtkr2, _rtgt_val in _reb_tgt_new.items():
+                        if not _cat_reb_upd.empty and 'ticker_bi' in _cat_reb_upd.columns:
+                            _arows = _cat_reb_upd[_cat_reb_upd['ticker_bi'] == _rtkr2]
+                            if not _arows.empty:
+                                _aupd = _arows.iloc[0].to_dict()
+                                _aupd['target_pct'] = _rtgt_val
+                                if not salva_asset(_aupd):
+                                    _reb_ok = False
+                    if _reb_ok:
+                        st.session_state.pop('asset_catalog', None)
+                        st.session_state.pop('etf_perf_cache', None)
+                        st.success("Target allocation salvati ✓")
+                        st.rerun()
+                    else:
+                        st.error("Errore nel salvataggio. Verifica la connessione a Supabase.")
 
     # Grafico storico (@st.fragment: solo questo blocco reruns quando periodo/selezione cambia)
     st.subheader("Performance storica")
