@@ -325,6 +325,9 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
     tassa_latente = p.get('fondi_plusvalenze', 0) * aliquota
     snap['tassa_latente_fondi'] = round(tassa_latente, 0)
     snap['totale_netto_fiscale'] = round(snap['totale_eur'] - tassa_latente, 0)
+    debiti = p.get('debiti_totale', 0) or 0
+    snap['debiti_totale'] = round(debiti, 0)
+    snap['net_worth'] = round(snap['totale_eur'] - debiti, 0)
     return snap
 
 

@@ -18,10 +18,13 @@ CREATE TABLE IF NOT EXISTS asset_catalog (
     valore_quota_ref NUMERIC,
     data_ref         TEXT,
     valore_iniziale  NUMERIC DEFAULT 0,
+    target_pct       NUMERIC DEFAULT 0,
     note             TEXT,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
+-- Migration: aggiungi target_pct se asset_catalog esiste già
+ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;
 ALTER TABLE asset_catalog ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
     CREATE POLICY "service_only" ON asset_catalog

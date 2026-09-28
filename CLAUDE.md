@@ -221,9 +221,26 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 27/09/2026
 
-### Ultimo commit su main: `60a9427` — merge CLAUDE.md stato tecnico
+### Branch corrente: `dev` — da mergiare su main
 
-Ultimo commit su dev: allineato a main (`60a9427`).
+| Branch | Ultimo commit | Contenuto |
+|---|---|---|
+| `main` | `60a9427` | merge CLAUDE.md stato tecnico |
+| `dev` | `3fe2541` | chore: aggiorna CLAUDE.md feature #1-4 completate |
+
+**dev è avanti di 2 commit rispetto a main** — merge non ancora eseguito.
+
+### Alert di configurazione aperti (da indirizzare prima del merge su main)
+
+> Questi alert appaiono nell'app dev dopo il deploy delle feature #1-4.
+> Vanno risolti configurando i valori corrispondenti in Supabase `config_params`.
+
+| Alert | Chiave `config_params` da aggiungere | Valore di esempio |
+|---|---|---|
+| FIRE tracker non attivo | `fire_spese_annue` | `36000` (€3.000/mese) |
+| FIRE — età non configurata | `fire_eta_attuale` | `35` |
+| FIRE — età pensione non configurata | `fire_eta_pensione` | `60` |
+| Rebalancing: target_pct non aggiornati | `target_pct` in `config.yaml` ETF | CSPX 50%, IWDA 50% (già messi) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -234,6 +251,33 @@ Ultimo commit su dev: allineato a main (`60a9427`).
 2. Appendere entry a `WIZARD_STEPS` (prima di `riepilogo`)
 3. Aggiungere al `_RENDER_MAP`
 **Persistenza:** `config_params.wizard_step_last` (ripresa), `_wiz_done_<id>` per step, `wizard_completed = 'true'` a fine.
+
+### FIRE tracker — configurazione `config_params`
+
+| Chiave | Tipo | Default usato | Descrizione |
+|---|---|---|---|
+| `fire_spese_annue` | float | — (tracker nascosto se assente) | Spese annue target per FIRE |
+| `fire_eta_attuale` | int | `35` | Età attuale persona1 |
+| `fire_eta_pensione` | int | `60` | Età target pensione/FIRE |
+
+Il tasso di prelievo (4%) e il rendimento atteso (7%) sono in `config.yaml → parametri.fire_tasso_prelievo` / `fire_rendimento`.
+
+### Rebalancing ETF — configurazione
+
+`target_pct` per ogni ETF in `config.yaml → etf[].target_pct`. Valori attuali:
+- CSPX: 50% (persona1, attivo)
+- IWDA: 50% (persona1, da avviare)
+- ACWE: 100% (figlio, portafoglio separato)
+- EMAE/MWRD: 0% (candidati, esclusi dal calcolo)
+
+La soglia oltre cui scatta l'alert è `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 27/09/2026 (feature #1-4):**
+
+| Commit | Contenuto |
+|---|---|
+| `160c22a` | feat: FIRE tracker, Savings Rate, Rebalancing ETF, Liabilities net worth |
+| `3fe2541` | chore: aggiorna CLAUDE.md feature #1-4 completate |
 
 **Commit principali della sessione del 27/09/2026 (performance):**
 
@@ -357,13 +401,24 @@ Ultimo commit su dev: allineato a main (`60a9427`).
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 1 | **FIRE Progress tracker** — Regular FIRE (target configurabile) + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Il Coast FIRE è già vicino al target stimato. Simulazioni pure già in `simulator.py`. |
-| 2 | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py`, `app_state.py` | Derivabile da `carica_transazioni_db()` già in cache `tx_db_cache`. |
-| 3 | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `portfolio.py`, `config.yaml` | Target allocation da aggiungere in `config.yaml`. |
-| 4 | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale e inclusi in `patrimonio_log` | `app.py`, `database.py`, `config.yaml` | I debiti sono già in `config.yaml → debiti[]` ma non appaiono nei KPI. |
+| 1 ✅ | **FIRE Progress tracker** — Regular FIRE + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Completato 27/09/2026. `calcola_fire_metrics()` in `simulator.py`. Attivato da `fire_spese_annue` in `config_params`. |
+| 2 ✅ | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py` | Completato 27/09/2026. Calcolato da `tx_db_cache` già in cache, nessuna query aggiuntiva. |
+| 3 ✅ | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `config.yaml` | Completato 27/09/2026. `target_pct` in `config.yaml`; soglia in `parametri.rebalancing_soglia_drift`. |
+| 4 ✅ | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale | `app.py`, `portfolio.py` | Completato 27/09/2026. Input `debiti_totale` in "Aggiorna valori manuali"; `patrimonio_snapshot()` restituisce `net_worth` e `debiti_totale`. |
 | 5 ✅ | **Onboarding wizard** — procedura guidata al primo avvio (15 step) per compilare tutti i parametri fondamentali | `app.py`, `src/wizard.py` (nuovo) | Completato 27/09/2026. Gate in app.py dopo auth; admin può rieseguire dalla sidebar. **Per aggiungere step a nuove feature: v. istruzioni in `src/wizard.py` (docstring + `WIZARD_STEPS`).** |
 | 6 ✅ | Aggiornamento automatico docs al deploy via GitHub Actions | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml` | Completato. |
 | 7 ✅ | **Demo data completa** — tutti i tab coperti: asset catalog, ETF perf, azioni, prezzi yfinance, posizioni, CRUD no-op | `app.py`, `src/demo_data.py` | Completato 27/09/2026. Gestione Asset disabilitata in DEMO con placeholder. |
+
+### 🟠 Prossimi step — alert configurazione da risolvere (dev, prima del merge su main)
+
+> Alert visibili in ambiente dev dopo deploy feature #1-4. Da risolvere configurando Supabase.
+
+| # | Alert / Azione | Dove | Come risolvere |
+|---|---|---|---|
+| A1 | FIRE tracker non attivo (sezione nascosta) | "Stato di famiglia" | Aggiungere `fire_spese_annue` in Supabase `config_params` (es. `36000`) |
+| A2 | FIRE — età default usate (35/60) | "Stato di famiglia" | Aggiungere `fire_eta_attuale` e `fire_eta_pensione` in `config_params` |
+| A3 | Rebalancing: target_pct CSPX/IWDA 50/50 provvisori | "ETF & mercato" | Aggiornare `target_pct` in `config.yaml` con la vera allocation target |
+| A4 | Debiti totali = 0 (KPI riga nascosta) | "Stato di famiglia" | Inserire valore reale in "Aggiorna valori manuali → Debiti totali" |
 
 ### 🟡 Media priorità
 
