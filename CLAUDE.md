@@ -219,28 +219,14 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 27/09/2026
+## Stato tecnico al 28/09/2026
 
-### Branch corrente: `dev` — da mergiare su main
+### Branch corrente: `main` = `dev` — allineati
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `60a9427` | merge CLAUDE.md stato tecnico |
-| `dev` | `3fe2541` | chore: aggiorna CLAUDE.md feature #1-4 completate |
-
-**dev è avanti di 2 commit rispetto a main** — merge non ancora eseguito.
-
-### Alert di configurazione aperti (da indirizzare prima del merge su main)
-
-> Questi alert appaiono nell'app dev dopo il deploy delle feature #1-4.
-> Vanno risolti configurando i valori corrispondenti in Supabase `config_params`.
-
-| Alert | Chiave `config_params` da aggiungere | Valore di esempio |
-|---|---|---|
-| FIRE tracker non attivo | `fire_spese_annue` | `36000` (€3.000/mese) |
-| FIRE — età non configurata | `fire_eta_attuale` | `35` |
-| FIRE — età pensione non configurata | `fire_eta_pensione` | `60` |
-| Rebalancing: target_pct non aggiornati | `target_pct` in `config.yaml` ETF | CSPX 50%, IWDA 50% (già messi) |
+| `main` | `18f8734` | merge: FIRE config UI + ETF target allocation editabile da interfaccia |
+| `dev` | `18f8734` | (rebase su main — allineati) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -252,25 +238,40 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 3. Aggiungere al `_RENDER_MAP`
 **Persistenza:** `config_params.wizard_step_last` (ripresa), `_wiz_done_<id>` per step, `wizard_completed = 'true'` a fine.
 
-### FIRE tracker — configurazione `config_params`
+### FIRE tracker — configurazione
 
-| Chiave | Tipo | Default usato | Descrizione |
+Configurabile direttamente dall'UI in "Stato di famiglia" → sezione "🔥 FIRE Progress":
+- Se non ancora attivato: form espanso con 3 campi + stima automatica da transazioni
+- Se già attivato: expander collassato "⚙️ Modifica configurazione FIRE"
+
+I valori vengono salvati su Supabase `config_params` via `salva_params_persistenti()`.
+
+| Chiave `config_params` | Tipo | Default | Descrizione |
 |---|---|---|---|
-| `fire_spese_annue` | float | — (tracker nascosto se assente) | Spese annue target per FIRE |
+| `fire_spese_annue` | float | — (form mostrato se assente) | Spese annue target per FIRE |
 | `fire_eta_attuale` | int | `35` | Età attuale persona1 |
 | `fire_eta_pensione` | int | `60` | Età target pensione/FIRE |
 
-Il tasso di prelievo (4%) e il rendimento atteso (7%) sono in `config.yaml → parametri.fire_tasso_prelievo` / `fire_rendimento`.
+Il tasso di prelievo (4%) e il rendimento atteso (7%) rimangono in `config.yaml → parametri.fire_tasso_prelievo` / `fire_rendimento` (non modificabili da UI — valori standard FIRE).
+
+La stima automatica delle spese è calcolata da `tx_db_cache → expense` media ultimi 12 mesi × 12.
 
 ### Rebalancing ETF — configurazione
 
-`target_pct` per ogni ETF in `config.yaml → etf[].target_pct`. Valori attuali:
-- CSPX: 50% (persona1, attivo)
-- IWDA: 50% (persona1, da avviare)
-- ACWE: 100% (figlio, portafoglio separato)
-- EMAE/MWRD: 0% (candidati, esclusi dal calcolo)
+`target_pct` per ogni ETF configurabile dall'UI in "ETF & mercato" → expander "⚖️ Rebalancing ETF" → sezione "⚙️ Modifica target allocation". Salva su Supabase `asset_catalog.target_pct` via `salva_asset()`.
 
-La soglia oltre cui scatta l'alert è `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+**Priorità lettura:** `asset_catalog.target_pct` (Supabase) sovrascrive `config.yaml → etf[].target_pct`.
+
+**Prerequisito schema:** `ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;` (già in `docs/setup_supabase_schema.sql`).
+
+La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 28/09/2026 (config UI):**
+
+| Commit | Contenuto |
+|---|---|
+| `142a211` | feat: FIRE config UI + ETF target allocation editabile da interfaccia |
+| `18f8734` | merge: su main — main e dev allineati |
 
 **Commit principali della sessione del 27/09/2026 (feature #1-4):**
 
@@ -401,24 +402,13 @@ La soglia oltre cui scatta l'alert è `config.yaml → parametri.rebalancing_sog
 
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
-| 1 ✅ | **FIRE Progress tracker** — Regular FIRE + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Completato 27/09/2026. `calcola_fire_metrics()` in `simulator.py`. Attivato da `fire_spese_annue` in `config_params`. |
+| 1 ✅ | **FIRE Progress tracker** — Regular FIRE + Coast FIRE, barra avanzamento, anni mancanti | `app.py`, `simulator.py`, `config.yaml` | Completato 27/09/2026. `calcola_fire_metrics()` in `simulator.py`. Parametri (spese, età) configurabili da UI → `config_params`; stima spese automatica da transazioni. |
 | 2 ✅ | **Savings Rate** — KPI mensile, YTD, media 12 mesi in "Stato di famiglia" | `app.py` | Completato 27/09/2026. Calcolato da `tx_db_cache` già in cache, nessuna query aggiuntiva. |
-| 3 ✅ | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `config.yaml` | Completato 27/09/2026. `target_pct` in `config.yaml`; soglia in `parametri.rebalancing_soglia_drift`. |
+| 3 ✅ | **Rebalancing alert ETF** — tabella target/attuale/drift e importo € da ribilanciare | `app.py`, `asset_catalog` | Completato 27/09/2026. `target_pct` editabile da UI → `asset_catalog` Supabase (fallback `config.yaml`). Migration SQL in `docs/setup_supabase_schema.sql`. |
 | 4 ✅ | **Liabilities nel net worth** — debiti dedotti dal patrimonio totale | `app.py`, `portfolio.py` | Completato 27/09/2026. Input `debiti_totale` in "Aggiorna valori manuali"; `patrimonio_snapshot()` restituisce `net_worth` e `debiti_totale`. |
 | 5 ✅ | **Onboarding wizard** — procedura guidata al primo avvio (15 step) per compilare tutti i parametri fondamentali | `app.py`, `src/wizard.py` (nuovo) | Completato 27/09/2026. Gate in app.py dopo auth; admin può rieseguire dalla sidebar. **Per aggiungere step a nuove feature: v. istruzioni in `src/wizard.py` (docstring + `WIZARD_STEPS`).** |
 | 6 ✅ | Aggiornamento automatico docs al deploy via GitHub Actions | `docs/build_html_docs.py`, `.github/workflows/build-docs.yml` | Completato. |
 | 7 ✅ | **Demo data completa** — tutti i tab coperti: asset catalog, ETF perf, azioni, prezzi yfinance, posizioni, CRUD no-op | `app.py`, `src/demo_data.py` | Completato 27/09/2026. Gestione Asset disabilitata in DEMO con placeholder. |
-
-### 🟠 Prossimi step — alert configurazione da risolvere (dev, prima del merge su main)
-
-> Alert visibili in ambiente dev dopo deploy feature #1-4. Da risolvere configurando Supabase.
-
-| # | Alert / Azione | Dove | Come risolvere |
-|---|---|---|---|
-| A1 | FIRE tracker non attivo (sezione nascosta) | "Stato di famiglia" | Aggiungere `fire_spese_annue` in Supabase `config_params` (es. `36000`) |
-| A2 | FIRE — età default usate (35/60) | "Stato di famiglia" | Aggiungere `fire_eta_attuale` e `fire_eta_pensione` in `config_params` |
-| A3 | Rebalancing: target_pct CSPX/IWDA 50/50 provvisori | "ETF & mercato" | Aggiornare `target_pct` in `config.yaml` con la vera allocation target |
-| A4 | Debiti totali = 0 (KPI riga nascosta) | "Stato di famiglia" | Inserire valore reale in "Aggiorna valori manuali → Debiti totali" |
 
 ### 🟡 Media priorità
 
