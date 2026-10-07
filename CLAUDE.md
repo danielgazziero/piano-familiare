@@ -219,14 +219,14 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 28/09/2026
+## Stato tecnico al 07/10/2026
 
 ### Branch corrente: `main` = `dev` — allineati
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `18f8734` | merge: FIRE config UI + ETF target allocation editabile da interfaccia |
-| `dev` | `18f8734` | (rebase su main — allineati) |
+| `main` | `3c6f5d6` | merge: code quality scan — 7 fix qualità e sicurezza |
+| `dev` | `3c6f5d6` | (rebase su main — allineati) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -265,6 +265,15 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 **Prerequisito schema:** `ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;` (già in `docs/setup_supabase_schema.sql`).
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 07/10/2026 (quality scan + feature #9):**
+
+| Commit | Contenuto |
+|---|---|
+| `3de298a` | feat: bollo threshold alert + fix params_correnti |
+| `4d906eb` | merge: bollo threshold alert (feature #9) su main |
+| `c03ad6f` | fix: code quality scan — 7 fix qualità e sicurezza |
+| `3c6f5d6` | merge: code quality scan su main |
 
 **Commit principali della sessione del 28/09/2026 (config UI):**
 
@@ -387,6 +396,18 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | OPT-2 | **Lazy loading yfinance** — `get_etf_perf()`, `get_azioni()`, backfill solo dentro "Stato di famiglia"; altre sezioni zero yfinance | `app.py` |
 | OPT-3 | **Lazy XLS import** — `parse_all_inputs()` solo su "Stato di famiglia" e "Fine mese"; Portafoglio, ETF, Simulatore non toccano il parser | `app.py` |
 
+### ✅ Fix qualità e sicurezza (07/10/2026)
+
+| # | Fix | File |
+|---|---|---|
+| Q1 | `get_fondi_snapshot()`: `config['patrimonio']['fondi_costo_fiscale']` → `.get()` (prevenzione KeyError) | `src/portfolio.py` |
+| Q2 | `_auth_active_ts` aggiunto alla lista di chiavi azzerata su timeout sessione e su revoca accesso admin | `app.py` |
+| Q3 | `iterrows()` → `to_dict('records')` nel loop eventi portafoglio (unica violazione rimasta, CLAUDE.md) | `app.py` |
+| Q4 | `pass` → `continue` in `calcola_portafoglio_storico` (intent = skip ISIN senza posizioni) | `src/positions.py` |
+| Q5 | `{k: v for k, v in asset.items()}` → `dict(asset)` in `upsert_asset` | `src/database.py` |
+| Q6 | Rimosso import ridondante `scarica_tutti_storici` nel body di `backfill_prezzi` (già a livello modulo) | `src/positions.py` |
+| Q7 | `not first_price or first_price == 0` → `not first_price` (condizione ridondante) | `src/portfolio.py` |
+
 ### ✅ Fix infrastruttura (24-25/09/2026)
 
 | # | Fix | File |
@@ -415,7 +436,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
 | 8 | **XIRR stimato** — rendimento annualizzato via net cash flow | `simulator.py`, `app.py` | Richiede `scipy.optimize` o XIRR manuale. |
-| 9 | **Bollo threshold alert** — avviso se cash > €5.000 | `app.py` | Soglia configurabile in `config.yaml`. |
+| 9 ✅ | **Bollo threshold alert** — avviso se cash > soglia configurabile | `app.py`, `config.yaml` | Completato 07/10/2026. Somma `liquidita_persona1 + persona2 + conto_comune`; soglia `config.yaml → parametri.bollo_soglia_liquidita` (default €5.000). |
 | 10 | **YoY cash flow** — delta vs anno precedente per inflows/expenses/net CF | `app.py`, `app_state.py` | Estensione sezione transazioni. |
 | 11 | **Blocked Assets storico** — valorizzazioni periodiche asset illiquidi (immobili, previdenza) | `database.py`, `app_state.py`, `app.py` | Nuova tabella Supabase `blocked_assets_log`. |
 
