@@ -496,7 +496,8 @@ else:
         else:
             _auth_login()
     elif time.time() - st.session_state.get("_auth_ts", 0) > 3600:
-        for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin"):
+        for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin",
+                   "_auth_active_ts"):
             st.session_state.pop(_k, None)
         st.warning("Sessione scaduta. Effettua nuovamente l'accesso.")
         st.rerun()
@@ -505,7 +506,8 @@ else:
         if time.time() - st.session_state.get("_auth_active_ts", 0) > 300:
             from database import is_utente_attivo as _is_active
             if not _is_active(st.session_state.get("_auth_user_id")):
-                for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin"):
+                for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin",
+                           "_auth_active_ts"):
                     st.session_state.pop(_k, None)
                 st.warning("Accesso revocato dall'amministratore.")
                 st.rerun()
@@ -1466,7 +1468,7 @@ elif sezione == "📉 Portafoglio storico":
                 st.session_state['eventi_storico_cache'][data_da] = get_eventi_portafoglio(data_da)
             eventi = st.session_state['eventi_storico_cache'][data_da]
             if not eventi.empty:
-                for _, ev in eventi.iterrows():
+                for ev in eventi.to_dict('records'):
                     fig_tot.add_vline(
                         x=str(ev['data_inizio']),
                         line_dash="dot", line_color=COLORS['arancio'],

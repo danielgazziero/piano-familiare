@@ -355,7 +355,6 @@ def backfill_prezzi(isins: List[str], verbose: bool = True) -> Dict[str, int]:
             print(f"  [↓] {isin}: {giorni_mancanti} giorni da scaricare ({data_da} → {oggi})")
         da_scaricare.setdefault(data_da, []).append(isin)
 
-    from prices import scarica_tutti_storici
     for data_da, gruppo in da_scaricare.items():
         if verbose:
             print(f"  [batch] {len(gruppo)} ISIN da {data_da}")
@@ -551,7 +550,7 @@ def calcola_portafoglio_storico(isins: List[str] = None,
     for isin in isins:
         posizioni_storico = posizioni_per_isin.get(isin, [])
         if not posizioni_storico:
-            pass  # Se il DB non ha posizioni, saltiamo questo ISIN
+            continue
 
         prezzi_isin = prezzi_per_isin.get(isin, pd.DataFrame())
         series = _computa_valore_isin(posizioni_storico, prezzi_isin, df_dates)

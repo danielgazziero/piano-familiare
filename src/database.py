@@ -534,7 +534,7 @@ def upsert_asset(asset: dict) -> bool:
     """Inserisce o aggiorna un asset nel catalogo."""
     try:
         client = get_client()
-        record = {k: v for k, v in asset.items()}
+        record = dict(asset)
         fb = record.get('fallback_tickers', [])
         record['fallback_tickers'] = json.dumps(fb if isinstance(fb, list) else [])
         record['updated_at'] = datetime.now().isoformat()
