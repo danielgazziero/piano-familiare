@@ -30,6 +30,7 @@ parametri:
   fire_tasso_prelievo: 0.04
   fire_rendimento: 0.07
   rebalancing_soglia_drift: 5.0
+  bollo_soglia_liquidita: 5000
 
 entrate:
   stipendio_persona1: 0
