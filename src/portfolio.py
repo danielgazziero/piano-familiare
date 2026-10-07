@@ -61,7 +61,7 @@ def get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
         return pd.DataFrame()
     hist = series.to_frame(name='price')
     first_price = hist['price'].iloc[0]
-    if not first_price or first_price == 0:
+    if not first_price:
         return hist
     hist['indexed'] = hist['price'] / first_price * 100
     return hist
@@ -146,7 +146,7 @@ def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
         fondi = config.get('fondi_bancari', {}).get('titoli', [])
         aliquota = config.get('fondi_bancari', {}).get('aliquota_capital_gain', 0.26)
     tot_valore_ref = sum(f.get('quantita', 0) * f.get('valore_quota_ref', 0) for f in fondi)
-    costo_fiscale_tot = config['patrimonio']['fondi_costo_fiscale']
+    costo_fiscale_tot = config.get('patrimonio', {}).get('fondi_costo_fiscale', 0)
     rows = []
 
     for fondo in fondi:
