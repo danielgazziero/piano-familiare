@@ -1197,6 +1197,21 @@ if sezione == "🏠 Stato di famiglia":
         _nw2.metric("Debiti totali", f"€ {snap['debiti_totale']:,.0f}")
         _nw3.metric("Patrimonio lordo", f"€ {snap['totale_eur']:,.0f}")
 
+    _cfg_p = config.get('parametri', {})
+
+    # ── Bollo threshold alert ──────────────────────────────────
+    _bollo_soglia = float(_cfg_p.get('bollo_soglia_liquidita', 5000))
+    _liq_conti = (float(params_correnti.get('liquidita_persona1', 0) or 0) +
+                  float(params_correnti.get('liquidita_persona2', 0) or 0) +
+                  float(params_correnti.get('conto_comune', 0) or 0))
+    if _liq_conti > _bollo_soglia:
+        st.warning(
+            f"💰 **Liquidità sui conti correnti: € {_liq_conti:,.0f}** — supera la soglia di € {_bollo_soglia:,.0f}. "
+            f"Considera di investire o spostare l'eccedenza (€ {_liq_conti - _bollo_soglia:,.0f}) "
+            f"per evitare il bollo e ridurre il cash drag.",
+            icon="⚠️"
+        )
+
     # ── FIRE Progress tracker ─────────────────────────────────
     # Carica tx in anticipo per stimare le spese annue dall'ingestion
     if 'tx_db_cache' not in st.session_state:
@@ -1209,7 +1224,6 @@ if sezione == "🏠 Stato di famiglia":
             _spese_stimate_fire = round(float(_pm_fire.tail(12).mean()) * 12, 0)
 
     _fire_spese = float(p_saved.get('fire_spese_annue', 0) or 0)
-    _cfg_p   = config.get('parametri', {})
     _fire_r  = float(_cfg_p.get('fire_rendimento', 0.07))
     _fire_tp = float(_cfg_p.get('fire_tasso_prelievo', 0.04))
     _fire_eta = int(p_saved.get('fire_eta_attuale', 35) or 35)
