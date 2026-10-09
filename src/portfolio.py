@@ -61,7 +61,7 @@ def get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
         return pd.DataFrame()
     hist = series.to_frame(name='price')
     first_price = hist['price'].iloc[0]
-    if not first_price:
+    if not first_price or pd.isna(first_price):
         return hist
     hist['indexed'] = hist['price'] / first_price * 100
     return hist

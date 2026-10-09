@@ -946,7 +946,7 @@ with st.sidebar:
             for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username",
                        "_auth_is_admin", "_auth_failures", "_auth_locked_until", "_auth_view",
                        "_auth_pending_uid", "_auth_pending_username", "_auth_pending_is_admin",
-                       "_totp_setup_secret"):
+                       "_totp_setup_secret", "_auth_active_ts"):
                 st.session_state.pop(_k, None)
             st.rerun()
     st.divider()
@@ -1202,10 +1202,10 @@ if sezione == "🏠 Stato di famiglia":
     _cfg_p = config.get('parametri', {})
 
     # ── Bollo threshold alert ──────────────────────────────────
-    _bollo_soglia = float(_cfg_p.get('bollo_soglia_liquidita', 5000))
-    _liq_conti = (float(params_correnti.get('liquidita_persona1', 0) or 0) +
-                  float(params_correnti.get('liquidita_persona2', 0) or 0) +
-                  float(params_correnti.get('conto_comune', 0) or 0))
+    # Soglia da Supabase config_params (fallback config.yaml); editabile senza redeploy
+    _bollo_soglia = float(p_saved.get('bollo_soglia_liquidita') or _cfg_p.get('bollo_soglia_liquidita', 5000))
+    # snap['liquidita'] include affitto_accantonato — escludiamo: il bollo riguarda solo i conti correnti
+    _liq_conti = float(snap['liquidita']) - float(params_correnti.get('affitto_accantonato') or 0)
     if _liq_conti > _bollo_soglia:
         st.warning(
             f"💰 **Liquidità sui conti correnti: € {_liq_conti:,.0f}** — supera la soglia di € {_bollo_soglia:,.0f}. "
