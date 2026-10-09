@@ -219,14 +219,14 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 07/10/2026
+## Stato tecnico al 09/10/2026
 
 ### Branch corrente: `main` = `dev` — allineati
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `3c6f5d6` | merge: code quality scan — 7 fix qualità e sicurezza |
-| `dev` | `3c6f5d6` | (rebase su main — allineati) |
+| `main` | `47b158f` | merge: 5 fix da code review — auth logout, NaN guard, bollo alert |
+| `dev` | `47b158f` | (rebase su main — allineati) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -251,6 +251,7 @@ I valori vengono salvati su Supabase `config_params` via `salva_params_persisten
 | `fire_spese_annue` | float | — (form mostrato se assente) | Spese annue target per FIRE |
 | `fire_eta_attuale` | int | `35` | Età attuale persona1 |
 | `fire_eta_pensione` | int | `60` | Età target pensione/FIRE |
+| `bollo_soglia_liquidita` | float | `5000` (fallback `config.yaml`) | Soglia liquidità conti correnti per bollo alert |
 
 Il tasso di prelievo (4%) e il rendimento atteso (7%) rimangono in `config.yaml → parametri.fire_tasso_prelievo` / `fire_rendimento` (non modificabili da UI — valori standard FIRE).
 
@@ -265,6 +266,13 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 **Prerequisito schema:** `ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;` (già in `docs/setup_supabase_schema.sql`).
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 09/10/2026 (code review fix):**
+
+| Commit | Contenuto |
+|---|---|
+| `351f99e` | fix: 5 fix da code review — auth logout, NaN guard, bollo alert |
+| `47b158f` | merge: 5 fix da code review su main |
 
 **Commit principali della sessione del 07/10/2026 (quality scan + feature #9):**
 
@@ -396,6 +404,15 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | OPT-2 | **Lazy loading yfinance** — `get_etf_perf()`, `get_azioni()`, backfill solo dentro "Stato di famiglia"; altre sezioni zero yfinance | `app.py` |
 | OPT-3 | **Lazy XLS import** — `parse_all_inputs()` solo su "Stato di famiglia" e "Fine mese"; Portafoglio, ETF, Simulatore non toccano il parser | `app.py` |
 
+### ✅ Fix code review (09/10/2026)
+
+| # | Fix | File |
+|---|---|---|
+| CR1 | `_auth_active_ts` aggiunta al cleanup del button "Esci" — mancava nel logout manuale (era già in timeout e revoca admin) | `app.py` |
+| CR2 | `if not first_price or pd.isna(first_price):` — guard NaN esplicito in `get_etf_history_chart` (`bool(np.nan)` è True, bypassava la condizione) | `src/portfolio.py` |
+| CR3 | `bollo_soglia_liquidita` letta da `p_saved` (Supabase) con fallback `config.yaml` — editabile senza redeploy come FIRE/rebalancing | `app.py` |
+| CR4 | `_liq_conti` calcolata da `snap['liquidita'] - affitto_accantonato` invece di ri-sommare 3 chiavi — evita drift futuro se `patrimonio_snapshot` aggiunge nuove fonti | `app.py` |
+
 ### ✅ Fix qualità e sicurezza (07/10/2026)
 
 | # | Fix | File |
@@ -406,7 +423,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | Q4 | `pass` → `continue` in `calcola_portafoglio_storico` (intent = skip ISIN senza posizioni) | `src/positions.py` |
 | Q5 | `{k: v for k, v in asset.items()}` → `dict(asset)` in `upsert_asset` | `src/database.py` |
 | Q6 | Rimosso import ridondante `scarica_tutti_storici` nel body di `backfill_prezzi` (già a livello modulo) | `src/positions.py` |
-| Q7 | `not first_price or first_price == 0` → `not first_price` (condizione ridondante) | `src/portfolio.py` |
+| Q7 | `not first_price or first_price == 0` → `not first_price` (condizione ridondante, poi integrata con NaN guard in CR2) | `src/portfolio.py` |
 
 ### ✅ Fix infrastruttura (24-25/09/2026)
 
@@ -436,7 +453,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | # | Feature | Moduli coinvolti | Note |
 |---|---|---|---|
 | 8 | **XIRR stimato** — rendimento annualizzato via net cash flow | `simulator.py`, `app.py` | Richiede `scipy.optimize` o XIRR manuale. |
-| 9 ✅ | **Bollo threshold alert** — avviso se cash > soglia configurabile | `app.py`, `config.yaml` | Completato 07/10/2026. Somma `liquidita_persona1 + persona2 + conto_comune`; soglia `config.yaml → parametri.bollo_soglia_liquidita` (default €5.000). |
+| 9 ✅ | **Bollo threshold alert** — avviso se cash > soglia configurabile | `app.py`, `config.yaml` | Completato 07/10/2026. Calcola `snap['liquidita'] - affitto_accantonato`; soglia da `config_params.bollo_soglia_liquidita` (fallback `config.yaml`, default €5.000) — editabile da Supabase senza redeploy. |
 | 10 | **YoY cash flow** — delta vs anno precedente per inflows/expenses/net CF | `app.py`, `app_state.py` | Estensione sezione transazioni. |
 | 11 | **Blocked Assets storico** — valorizzazioni periodiche asset illiquidi (immobili, previdenza) | `database.py`, `app_state.py`, `app.py` | Nuova tabella Supabase `blocked_assets_log`. |
 
