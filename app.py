@@ -17,7 +17,7 @@ import html as _html
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from parser import load_config, parse_all_inputs
-from portfolio import (get_portfolio_performance, get_etf_history_chart, get_etf_data,
+from portfolio import (get_portfolio_performance, get_etf_data,
                         get_fondi_snapshot, simula_uscita_fondo_data_x, piano_uscita_ottimale,
                         get_azioni_snapshot, patrimonio_snapshot)
 from simulator import (simula_pac, simula_pac_variabile, simula_pac_scenari,
@@ -534,7 +534,6 @@ if _DEMO:
         demo_salva_asset                    as salva_asset,
         demo_rimuovi_asset                  as rimuovi_asset,
         demo_get_etf_data                   as get_etf_data,
-        demo_get_etf_history_chart          as get_etf_history_chart,
     )
 
 _init_plotly_template()
