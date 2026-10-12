@@ -83,6 +83,7 @@ def carica_posizioni() -> pd.DataFrame:
                .select('*')
                .is_('data_fine', 'null')
                .order('isin')
+               .limit(500)
                .execute())
         if not res.data:
             return pd.DataFrame()

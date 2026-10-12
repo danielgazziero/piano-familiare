@@ -259,23 +259,29 @@ def get_azioni_snapshot(config: dict,
         azioni = catalog_df[catalog_df['tipo'] == 'azione'].to_dict('records')
     else:
         azioni = config.get('azioni', [])
+    if not azioni:
+        return pd.DataFrame()
+
+    tickers = tuple(az.get('ticker_yf') or az.get('ticker') for az in azioni)
+    raw = _batch_download(tickers, "1y")
+
     rows = []
     for az in azioni:
         ticker = az.get('ticker_yf') or az.get('ticker')
         quantita = az.get('quantita', 0)
-        hist_1y = get_etf_data(ticker, period="1y")
+        serie = _extract_series(raw, ticker, len(tickers))
         prezzo_attuale = valore_attuale = perf_ytd = perf_1y = None
-        if not hist_1y.empty:
-            prezzo_attuale = round(float(hist_1y['price'].iloc[-1]), 2)
+        if not serie.empty:
+            prezzo_attuale = round(float(serie.iloc[-1]), 2)
             valore_attuale = round(prezzo_attuale * quantita, 2)
-            perf_1y = round((hist_1y['price'].iloc[-1] / hist_1y['price'].iloc[0] - 1) * 100, 2)
+            perf_1y = round((serie.iloc[-1] / serie.iloc[0] - 1) * 100, 2)
             # YTD: subset da 1 gennaio — evita una seconda chiamata yfinance
             year_start = pd.Timestamp(date.today().year, 1, 1)
-            idx = hist_1y.index
+            idx = serie.index
             ys = year_start.tz_localize(idx.tz) if idx.tz is not None else year_start
-            hist_ytd = hist_1y[idx >= ys]
-            if not hist_ytd.empty:
-                perf_ytd = round((hist_ytd['price'].iloc[-1] / hist_ytd['price'].iloc[0] - 1) * 100, 2)
+            serie_ytd = serie[idx >= ys]
+            if not serie_ytd.empty:
+                perf_ytd = round((serie_ytd.iloc[-1] / serie_ytd.iloc[0] - 1) * 100, 2)
 
         rows.append({
             'nome': az['nome'], 'ticker': ticker, 'isin': az.get('isin', ''),
