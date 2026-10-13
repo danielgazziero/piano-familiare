@@ -54,18 +54,6 @@ def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
-    raw = _batch_download((ticker,), period)
-    series = _extract_series(raw, ticker, 1)
-    if series.empty:
-        return pd.DataFrame()
-    hist = series.to_frame(name='price')
-    first_price = hist['price'].iloc[0]
-    if not first_price or pd.isna(first_price):
-        return hist
-    hist['indexed'] = hist['price'] / first_price * 100
-    return hist
-
 
 def get_portfolio_performance(config: dict,
                                catalog_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
@@ -285,7 +273,9 @@ def get_azioni_snapshot(config: dict,
             ys = year_start.tz_localize(idx.tz) if idx.tz is not None else year_start
             serie_ytd = serie[idx >= ys]
             if not serie_ytd.empty:
-                perf_ytd = round((serie_ytd.iloc[-1] / serie_ytd.iloc[0] - 1) * 100, 2)
+                p0_ytd = float(serie_ytd.iloc[0])
+                if p0_ytd:
+                    perf_ytd = round((float(serie_ytd.iloc[-1]) / p0_ytd - 1) * 100, 2)
 
         rows.append({
             'nome': az['nome'], 'ticker': ticker, 'isin': az.get('isin', ''),

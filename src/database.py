@@ -698,6 +698,7 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
     Verifica username + password. Restituisce il record utente o None.
     Aggiorna last_login in caso di successo.
     """
+    _FAKE_HASH = "pbkdf2$sha256$fakesalt$" + "a" * 64
     try:
         client = get_client()
         res = (client.table('app_users')
@@ -706,28 +707,23 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
                .eq('is_active', True)
                .limit(1)
                .execute())
-        if not res.data:
-            # Timing guard: esegui verify_password su hash finto per uniformare
-            # il tempo di risposta e impedire username enumeration via timing.
-            verify_password(password, "pbkdf2$sha256$fakesalt$" + "a" * 64)
-            return None
-        user = res.data[0]
-        if not verify_password(password, user['password_hash']):
+        # Timing guard: PBKDF2 runs unconditionally — real hash if user found,
+        # fake hash otherwise — uniformizes user-found vs. user-not-found paths.
+        user_data = res.data[0] if res.data else None
+        stored = user_data['password_hash'] if user_data else _FAKE_HASH
+        if not verify_password(password, stored) or user_data is None:
             return None
         # S-NEW-06: auto-rehash plaintext legacy al primo login riuscito
-        if user.get('password_hash') and not user['password_hash'].startswith('pbkdf2$'):
+        if not user_data['password_hash'].startswith('pbkdf2$'):
             try:
-                aggiorna_password_utente(user['id'], hash_password(password))
+                aggiorna_password_utente(user_data['id'], hash_password(password))
             except Exception:
                 pass
-        aggiorna_ultimo_login(user['id'])
-        return user
+        aggiorna_ultimo_login(user_data['id'])
+        return user_data
     except Exception as e:
-        # Timing guard: uniforma il tempo di risposta anche in caso di errore DB.
-        try:
-            verify_password(password, "pbkdf2$sha256$fakesalt$" + "a" * 64)
-        except Exception:
-            pass
+        # Timing guard on exception path (masks fast-fail errors; not slow DB timeouts).
+        verify_password(password, _FAKE_HASH)
         print(f"  [!] verifica_credenziali: {type(e).__name__}")
         return None
 
