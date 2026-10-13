@@ -225,8 +225,8 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `2a1b6cc` | merge: 4 fix da code review settimanale su main |
-| `dev` | `2a1b6cc` | (rebase su main — allineati) |
+| `main` | `043b58a` | merge: aggiorna CLAUDE.md stato 13/10/2026 |
+| `dev` | `043b58a` | (rebase su main — allineati) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -267,14 +267,17 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
 
-**Commit principali della sessione del 13/10/2026 (code review settimanale):**
+**Commit principali della sessione del 12-13/10/2026 (code review settimanale automatico):**
 
-| Commit | Contenuto |
-|---|---|
-| `e804192` | fix: 6 fix da code review automatico (sicurezza, efficienza, refactoring) |
-| `ec4dd17` | fix: 4 fix da code review automatico (sicurezza, robustezza) |
-| `7524872` | fix: 4 fix da code review settimanale (sicurezza, robustezza, refactoring) |
-| `2a1b6cc` | merge: 4 fix da code review settimanale su main |
+| Commit | Data | Contenuto |
+|---|---|---|
+| `e804192` | 12/10 | fix: 6 fix da code review automatico (sicurezza, efficienza, refactoring) |
+| `021e41e` | 13/10 | merge: 4 fix da code review automatico su main |
+| `ec4dd17` | 13/10 | fix: 4 fix da code review automatico (sicurezza, robustezza) |
+| `7524872` | 13/10 | fix: 4 fix da code review settimanale (sicurezza, robustezza, refactoring) |
+| `2a1b6cc` | 13/10 | merge: 4 fix da code review settimanale su main |
+| `25fc4f4` | 13/10 | chore: aggiorna CLAUDE.md — stato 13/10/2026, fix WK-S1..WK-RF1 |
+| `043b58a` | 13/10 | merge: aggiorna CLAUDE.md stato 13/10/2026 |
 
 **Commit principali della sessione del 09/10/2026 (code review fix):**
 
