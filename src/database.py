@@ -723,6 +723,11 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         aggiorna_ultimo_login(user['id'])
         return user
     except Exception as e:
+        # Timing guard: uniforma il tempo di risposta anche in caso di errore DB.
+        try:
+            verify_password(password, "pbkdf2$sha256$fakesalt$" + "a" * 64)
+        except Exception:
+            pass
         print(f"  [!] verifica_credenziali: {type(e).__name__}")
         return None
 

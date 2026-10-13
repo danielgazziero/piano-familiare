@@ -277,7 +277,8 @@ def get_azioni_snapshot(config: dict,
         if not serie.empty:
             prezzo_attuale = round(float(serie.iloc[-1]), 2)
             valore_attuale = round(prezzo_attuale * quantita, 2)
-            perf_1y = round((serie.iloc[-1] / serie.iloc[0] - 1) * 100, 2)
+            if serie.iloc[0] and not pd.isna(serie.iloc[0]):
+                perf_1y = round((serie.iloc[-1] / serie.iloc[0] - 1) * 100, 2)
             # YTD: subset da 1 gennaio — evita una seconda chiamata yfinance
             year_start = pd.Timestamp(date.today().year, 1, 1)
             idx = serie.index

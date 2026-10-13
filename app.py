@@ -266,10 +266,9 @@ def _auth_wizard():
         if not errs:
             try:
                 if usa_legacy and _legacy_hash:
-                    # Se già PBKDF2 lo usiamo direttamente; altrimenti lo salviamo as-is
-                    # (potrebbe essere plaintext o un altro formato): S-NEW-06 farà l'upgrade
-                    # a PBKDF2 al primo login riuscito, evitando di hashare un hash.
-                    pwd_hash = _legacy_hash
+                    # Se già PBKDF2 lo usiamo direttamente; altrimenti lo hashiamo subito
+                    # per non salvare plaintext in app_users.
+                    pwd_hash = _legacy_hash if _legacy_hash.startswith('pbkdf2$') else _hp(_legacy_hash)
                 else:
                     pwd_hash = _hp(wiz_p1)
                 user = _cu(wiz_user.strip(), wiz_email.strip(), pwd_hash, is_admin=True)
@@ -336,8 +335,6 @@ def _auth_login():
                           set_server_login_state as _ssls,
                           reset_server_login_state as _rsls)
     st.title("🔒 Accesso protetto")
-    _LOCKOUT_DELAYS = _AUTH_LOCKOUT_DELAYS
-    _MAX_FAILURES   = _AUTH_MAX_FAILURES
     _failures       = st.session_state.get("_auth_failures", 0)
     _locked_until   = st.session_state.get("_auth_locked_until", 0)
     if time.time() < _locked_until:
@@ -383,13 +380,13 @@ def _auth_login():
                     st.session_state.pop("_auth_view", None)
                 st.rerun()
             else:
-                _n_srv = min(_srv.get("n", 0) + 1, _MAX_FAILURES)
-                _delay_srv = _LOCKOUT_DELAYS[_n_srv]
+                _n_srv = min(_srv.get("n", 0) + 1, _AUTH_MAX_FAILURES)
+                _delay_srv = _AUTH_LOCKOUT_DELAYS[_n_srv]
                 _lu_srv = time.time() + _delay_srv if _delay_srv > 0 else 0.0
                 _ssls(username, _n_srv, _lu_srv)
-                _failures = min(_failures + 1, _MAX_FAILURES)
+                _failures = min(_failures + 1, _AUTH_MAX_FAILURES)
                 st.session_state["_auth_failures"] = _failures
-                _delay = _LOCKOUT_DELAYS[_failures]
+                _delay = _AUTH_LOCKOUT_DELAYS[_failures]
                 if _delay > 0:
                     st.session_state["_auth_locked_until"] = time.time() + _delay
                     st.error(f"Credenziali errate. Attendi {_delay} s prima del prossimo tentativo.")
@@ -412,8 +409,6 @@ def _auth_totp_verify():
         st.session_state.pop("_auth_view", None)
         st.rerun()
 
-    _LOCKOUT_DELAYS = _AUTH_LOCKOUT_DELAYS
-    _MAX_FAILURES   = _AUTH_MAX_FAILURES
     # Contatori TOTP separati per user_id — persistono anche se l'utente
     # torna al login e ri-effettua il login con password corretta.
     _totp_fail_key  = f"_totp_failures_{_user_id}"
@@ -463,13 +458,13 @@ def _auth_totp_verify():
                 })
                 st.rerun()
             else:
-                _n_srv_totp  = min(_srv_totp.get("n", 0) + 1, _MAX_FAILURES)
-                _delay_srv_t = _LOCKOUT_DELAYS[_n_srv_totp]
+                _n_srv_totp  = min(_srv_totp.get("n", 0) + 1, _AUTH_MAX_FAILURES)
+                _delay_srv_t = _AUTH_LOCKOUT_DELAYS[_n_srv_totp]
                 _lu_srv_t    = time.time() + _delay_srv_t if _delay_srv_t > 0 else 0.0
                 _ssts(_user_id, _n_srv_totp, _lu_srv_t)
-                _failures = min(_failures + 1, _MAX_FAILURES)
+                _failures = min(_failures + 1, _AUTH_MAX_FAILURES)
                 st.session_state[_totp_fail_key] = _failures
-                _delay = _LOCKOUT_DELAYS[_failures]
+                _delay = _AUTH_LOCKOUT_DELAYS[_failures]
                 if _delay > 0:
                     st.session_state[_totp_lock_key] = time.time() + _delay
                     st.error(f"Codice non valido. Attendi {_delay} s prima del prossimo tentativo.")
