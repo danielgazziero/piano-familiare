@@ -701,12 +701,15 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
     try:
         client = get_client()
         res = (client.table('app_users')
-               .select('id, username, email, is_admin, is_active, password_hash, totp_enabled, totp_secret')
+               .select('id, username, email, is_admin, is_active, password_hash, totp_enabled')
                .eq('username', username.strip().lower())
                .eq('is_active', True)
                .limit(1)
                .execute())
         if not res.data:
+            # Timing guard: esegui verify_password su hash finto per uniformare
+            # il tempo di risposta e impedire username enumeration via timing.
+            verify_password(password, "pbkdf2$sha256$fakesalt$" + "a" * 64)
             return None
         user = res.data[0]
         if not verify_password(password, user['password_hash']):

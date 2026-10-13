@@ -83,10 +83,14 @@ def carica_posizioni() -> pd.DataFrame:
                .select('*')
                .is_('data_fine', 'null')
                .order('isin')
+               .limit(1000)
                .execute())
         if not res.data:
             return pd.DataFrame()
-        return pd.DataFrame(res.data)
+        df = pd.DataFrame(res.data)
+        if len(df) == 1000:
+            print("  [!] carica_posizioni: risultato troncato a 1000 righe — verifica posizioni attive")
+        return df
     except Exception as e:
         print(f"  [!] Errore caricamento posizioni: {type(e).__name__}")
         return pd.DataFrame()

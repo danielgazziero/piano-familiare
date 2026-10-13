@@ -265,7 +265,13 @@ def _auth_wizard():
             st.error(_e)
         if not errs:
             try:
-                pwd_hash = _legacy_hash if (usa_legacy and _legacy_hash) else _hp(wiz_p1)
+                if usa_legacy and _legacy_hash:
+                    # Se già PBKDF2 lo usiamo direttamente; altrimenti lo salviamo as-is
+                    # (potrebbe essere plaintext o un altro formato): S-NEW-06 farà l'upgrade
+                    # a PBKDF2 al primo login riuscito, evitando di hashare un hash.
+                    pwd_hash = _legacy_hash
+                else:
+                    pwd_hash = _hp(wiz_p1)
                 user = _cu(wiz_user.strip(), wiz_email.strip(), pwd_hash, is_admin=True)
                 st.session_state.update({
                     "_auth_ok": True, "_auth_ts": time.time(),
@@ -319,6 +325,10 @@ def _auth_forgot_password():
     st.stop()
 
 
+_AUTH_LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
+_AUTH_MAX_FAILURES   = len(_AUTH_LOCKOUT_DELAYS) - 1
+
+
 def _auth_login():
     """Schermata di login username + password con brute-force guard."""
     from database import verifica_credenziali as _vc
@@ -326,8 +336,8 @@ def _auth_login():
                           set_server_login_state as _ssls,
                           reset_server_login_state as _rsls)
     st.title("🔒 Accesso protetto")
-    _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
-    _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
+    _LOCKOUT_DELAYS = _AUTH_LOCKOUT_DELAYS
+    _MAX_FAILURES   = _AUTH_MAX_FAILURES
     _failures       = st.session_state.get("_auth_failures", 0)
     _locked_until   = st.session_state.get("_auth_locked_until", 0)
     if time.time() < _locked_until:
@@ -402,8 +412,8 @@ def _auth_totp_verify():
         st.session_state.pop("_auth_view", None)
         st.rerun()
 
-    _LOCKOUT_DELAYS = [0, 0, 0, 5, 15, 30, 60, 120, 300]
-    _MAX_FAILURES   = len(_LOCKOUT_DELAYS) - 1
+    _LOCKOUT_DELAYS = _AUTH_LOCKOUT_DELAYS
+    _MAX_FAILURES   = _AUTH_MAX_FAILURES
     # Contatori TOTP separati per user_id — persistono anche se l'utente
     # torna al login e ri-effettua il login con password corretta.
     _totp_fail_key  = f"_totp_failures_{_user_id}"
