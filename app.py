@@ -266,8 +266,10 @@ def _auth_wizard():
         if not errs:
             try:
                 if usa_legacy and _legacy_hash:
-                    # Rehash se il valore legacy è plaintext (non contiene il prefisso pbkdf2$)
-                    pwd_hash = _legacy_hash if _legacy_hash.startswith('pbkdf2$') else _hp(_legacy_hash)
+                    # Se già PBKDF2 lo usiamo direttamente; altrimenti lo salviamo as-is
+                    # (potrebbe essere plaintext o un altro formato): S-NEW-06 farà l'upgrade
+                    # a PBKDF2 al primo login riuscito, evitando di hashare un hash.
+                    pwd_hash = _legacy_hash
                 else:
                     pwd_hash = _hp(wiz_p1)
                 user = _cu(wiz_user.strip(), wiz_email.strip(), pwd_hash, is_admin=True)

@@ -709,7 +709,7 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         if not res.data:
             # Timing guard: esegui verify_password su hash finto per uniformare
             # il tempo di risposta e impedire username enumeration via timing.
-            verify_password(password, "pbkdf2$sha256$260000$fakesalt$" + "a" * 64)
+            verify_password(password, "pbkdf2$sha256$fakesalt$" + "a" * 64)
             return None
         user = res.data[0]
         if not verify_password(password, user['password_hash']):

@@ -456,6 +456,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | 9 ✅ | **Bollo threshold alert** — avviso se cash > soglia configurabile | `app.py`, `config.yaml` | Completato 07/10/2026. Calcola `snap['liquidita'] - affitto_accantonato`; soglia da `config_params.bollo_soglia_liquidita` (fallback `config.yaml`, default €5.000) — editabile da Supabase senza redeploy. |
 | 10 | **YoY cash flow** — delta vs anno precedente per inflows/expenses/net CF | `app.py`, `app_state.py` | Estensione sezione transazioni. |
 | 11 | **Blocked Assets storico** — valorizzazioni periodiche asset illiquidi (immobili, previdenza) | `database.py`, `app_state.py`, `app.py` | Nuova tabella Supabase `blocked_assets_log`. |
+| 16 | **AI Spending Analysis** — categorizzazione transazioni + analisi AI con benchmark ISTAT e confronto storico | `app.py`, `simulator.py`, `database.py`, `config.yaml`, `config_params` | Design finalizzato 10/10/2026. Vedi memory `feature_ai_spending_analysis.md` per architettura completa. Richiede `ANTHROPIC_API_KEY` in secrets.toml. **Ordine implementazione:** (1) schema DB + taxonomy manager UI, (2) profilo famiglia editabile, (3) scrubbing + amount-based matching giroconti, (4) UI categorizzazione con AI suggest, (5) analisi AI con output strutturato, (6) batch retroattivo. |
 
 ### 🟢 Bassa priorità
 
@@ -465,6 +466,99 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | 13 ✅ | **Data freshness indicator** — riepilogo allineamento dati nella sidebar | `app.py` | Completato 27/09/2026. Expander "📡 Allineamento dati" nella sidebar: snapshot, backfill ETF, quote fondi, ultima tx. |
 | 14 ✅ | **Month-end checklist** — pannello guidato 4 passi per validare il mese | `app.py` | Completato 27/09/2026. Nuova sezione "📋 Fine mese" nel nav con progress bar e 4 passi guidati. |
 | 15 ✅ | **Gestione Asset — elimina per nome** — selectbox mostra `nome (ISIN)` invece del solo ISIN | `app.py` | Completato 27/09/2026. `format_func` su 3 selectbox (fondi, ETF, azioni). |
+| 17 | **Distribuzione desktop (Windows / macOS)** — eseguibile standalone installabile, DB locale, solo chiamate online per dati aggiornati | `database.py`, `config.yaml`, `app.py`, packaging scripts | Vedi dettaglio sotto. |
+
+---
+
+## Feature #17 — Distribuzione desktop (Windows / macOS)
+
+Obiettivo: pacchettizzare l'app come eseguibile installabile che gira interamente in locale, mantenendo solo le chiamate di rete strettamente necessarie (prezzi ETF/azioni via yfinance, quote fondi se esposti via API, opzionalmente sync Supabase cloud).
+
+### Architettura target
+
+| Componente | Attuale (cloud) | Target (locale) |
+|---|---|---|
+| Database | Supabase Postgres hosted | SQLite locale (`~/.piano-familiare/piano.db`) |
+| Auth | Supabase `app_users` | SQLite stessa tabella; stesso schema e logica PBKDF2 |
+| Config | Supabase `config_params` | SQLite `config_params`; import/export JSON |
+| File XLS | `data/input/` | Cartella locale scelta dall'utente |
+| Prezzi ETF/azioni | yfinance (già online) | Invariato — yfinance resta online |
+| Quote fondi | Supabase `quote_fondi` | Inserimento manuale locale; sync opzionale da cloud |
+| Backup | — | Export JSON/SQLite con un click |
+
+### Chiamate di rete mantenute (invariate)
+
+- **yfinance** — prezzi storici e correnti ETF/azioni
+- **Claude API** (se feature #16 attiva) — categorizzazione AI + analisi spese
+- **Sync opzionale Supabase** — per chi vuole tenere allineati cloud e locale (non obbligatorio)
+
+### Stack di packaging
+
+- **Electron + Streamlit embedded** — Electron lancia Streamlit come processo figlio su porta locale (127.0.0.1:8501); webview punta a localhost. Un installer NSIS (Windows) / DMG (macOS) distribuisce tutto.
+- Alternativa più semplice: **PyInstaller + launcher script** — crea un `.exe` / `.app` che avvia Streamlit; l'utente interagisce dal browser. Meno integrato ma molto più rapido da implementare.
+- Python bundled con PyInstaller (no dipendenza Python installato sul PC dell'utente).
+
+### Layer database da astrarre
+
+`src/database.py` va separato in:
+- `src/db_backend.py` — interfaccia astratta (Protocol/ABC): `get`, `upsert`, `delete`, query base
+- `src/db_supabase.py` — implementazione attuale (invariata)
+- `src/db_sqlite.py` — implementazione SQLite con stesso schema (migrate con `alembic` o script SQL)
+
+`DATABASE_BACKEND` in `secrets.toml` / variabile d'ambiente: `supabase` (default) | `sqlite`.
+
+### Ordine implementazione
+
+1. Astrazione `db_backend.py` con Protocol — nessuna rottura per il cloud
+2. `db_sqlite.py` — SQLite con schema identico a Supabase; migration script da `docs/setup_supabase_schema.sql`
+3. Switch runtime via `secrets.toml → DATABASE_BACKEND`
+4. Test parità funzionale cloud ↔ locale
+5. PyInstaller build script (Windows first, poi macOS)
+6. Electron wrapper opzionale per esperienza nativa (no browser esterno)
+7. Installer NSIS / DMG
+
+### Note critiche
+
+- `config.yaml` e `data/` restano in cartella applicazione — stesso vincolo attuale (non sovrascrivere)
+- Credenziali yfinance: nessuna (API pubblica) — invariato
+- `ANTHROPIC_API_KEY` se feature #16 attiva: rimane in `secrets.toml` locale
+- Auth TOTP (2FA): `pyotp` non richiede rete — funziona offline
+- Backup SQLite: copia del file `.db` è sufficiente come backup completo
+
+---
+
+## Supabase keep-alive (⏳ da implementare)
+
+Il free tier di Supabase mette il progetto in **standby dopo 7 giorni senza attività**, costringendo a riabilitarlo manualmente dalla dashboard.
+
+**Soluzione: GitHub Actions cron** — ping alla REST API ogni 4 giorni.
+
+File da creare: **`.github/workflows/keep-supabase-alive.yml`**
+
+```yaml
+name: Keep Supabase alive
+
+on:
+  schedule:
+    - cron: '0 8 */4 * *'   # ogni 4 giorni alle 08:00 UTC
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/config_params?select=chiave&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+```
+
+**Secrets GitHub da aggiungere** (repo → Settings → Secrets and variables → Actions):
+- `SUPABASE_URL` — es. `https://xxxx.supabase.co`
+- `SUPABASE_ANON_KEY` — chiave **anon** (pubblica, non la service role key)
+
+Alternativa senza codice: **cron-job.org** — job HTTP GET con header `apikey: <anon_key>` ogni 4 giorni.
 
 ---
 

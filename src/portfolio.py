@@ -262,6 +262,9 @@ def get_azioni_snapshot(config: dict,
     if not azioni:
         return pd.DataFrame()
 
+    azioni = [az for az in azioni if az.get('ticker_yf') or az.get('ticker')]
+    if not azioni:
+        return pd.DataFrame()
     tickers = tuple(az.get('ticker_yf') or az.get('ticker') for az in azioni)
     raw = _batch_download(tickers, "1y")
 
