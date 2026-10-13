@@ -219,14 +219,14 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 09/10/2026
+## Stato tecnico al 13/10/2026
 
 ### Branch corrente: `main` = `dev` — allineati
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `47b158f` | merge: 5 fix da code review — auth logout, NaN guard, bollo alert |
-| `dev` | `47b158f` | (rebase su main — allineati) |
+| `main` | `2a1b6cc` | merge: 4 fix da code review settimanale su main |
+| `dev` | `2a1b6cc` | (rebase su main — allineati) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -266,6 +266,15 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 **Prerequisito schema:** `ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;` (già in `docs/setup_supabase_schema.sql`).
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 13/10/2026 (code review settimanale):**
+
+| Commit | Contenuto |
+|---|---|
+| `e804192` | fix: 6 fix da code review automatico (sicurezza, efficienza, refactoring) |
+| `ec4dd17` | fix: 4 fix da code review automatico (sicurezza, robustezza) |
+| `7524872` | fix: 4 fix da code review settimanale (sicurezza, robustezza, refactoring) |
+| `2a1b6cc` | merge: 4 fix da code review settimanale su main |
 
 **Commit principali della sessione del 09/10/2026 (code review fix):**
 
@@ -359,6 +368,20 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | S-NEW-06 | Auto-rehash password legacy (plaintext → PBKDF2) al primo login riuscito | `src/database.py` |
 | S-NEW-07 | Rivalidazione `is_active` ogni 5 min in sessione — revoca accesso utenti disattivati | `src/database.py`, `app.py` |
 | S-NEW-08 | Allowlist `_ALLOWED_TOKEN_FIELDS` + `.limit(1)` in `verifica_token` — blocca column injection | `src/database.py` |
+
+### ✅ Fix sicurezza e robustezza (12-13/10/2026)
+
+| # | Fix | File |
+|---|---|---|
+| WK-S1 | `totp_secret` rimosso dal SELECT di `verifica_credenziali` — non serve fuori dal flusso TOTP | `src/database.py` |
+| WK-S2 | Timing guard per username enumeration: fake hash su utente inesistente (user-not-found path) | `src/database.py` |
+| WK-S3 | Wizard: legacy password hashata con PBKDF2 subito se plaintext — non più salvata as-is in `app_users` | `app.py` |
+| WK-S4 | Timing guard aggiunto anche nel blocco `except` di `verifica_credenziali` — copre errori DB | `src/database.py` |
+| WK-R1 | Filtro asset senza ticker prima di `_batch_download` — evita `None` nel tuple passato a `yf.download` | `src/portfolio.py` |
+| WK-R2 | Guard `zero/NaN` su `serie.iloc[0]` in `get_azioni_snapshot` — evita `inf` silenzioso su perf 1y | `src/portfolio.py` |
+| WK-R3 | `carica_posizioni`: limite alzato a 1000 con log warning se troncato | `src/positions.py` |
+| WK-E1 | `get_azioni_snapshot` usa `_batch_download` invece di N chiamate yfinance sequenziali | `src/portfolio.py` |
+| WK-RF1 | `_AUTH_LOCKOUT_DELAYS`/`_AUTH_MAX_FAILURES` estratte come costanti modulo — rimossi alias locali duplicati nelle funzioni login e TOTP | `app.py` |
 
 ### ✅ Fix performance (24-26/09/2026)
 
