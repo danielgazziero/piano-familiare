@@ -308,13 +308,6 @@ def demo_get_etf_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     return _demo_price_series(ticker, period).to_frame(name='price')
 
 
-def demo_get_etf_history_chart(ticker: str, period: str = "1y") -> pd.DataFrame:
-    series = _demo_price_series(ticker, period)
-    hist = series.to_frame(name='price')
-    first = hist['price'].iloc[0]
-    hist['indexed'] = (hist['price'] / first * 100).round(2) if first else 100.0
-    return hist
-
 
 # ─── Posizioni ────────────────────────────────────────────────
 

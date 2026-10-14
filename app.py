@@ -376,6 +376,7 @@ def _auth_login():
                         "_auth_user_id": user['id'],
                         "_auth_username": user['username'],
                         "_auth_is_admin": user.get('is_admin', False),
+                        "_auth_active_ts": time.time(),
                     })
                     st.session_state.pop("_auth_view", None)
                 st.rerun()
@@ -455,6 +456,7 @@ def _auth_totp_verify():
                     "_auth_user_id": _user_id,
                     "_auth_username": _username,
                     "_auth_is_admin": _is_admin,
+                    "_auth_active_ts": time.time(),
                 })
                 st.rerun()
             else:
@@ -1150,7 +1152,7 @@ if sezione == "🏠 Stato di famiglia":
                 'liquidita_persona1': liq_dan, 'liquidita_persona2': liq_ale,
                 'conto_comune': conto_com, 'debiti_totale': debiti_man,
                 'affitto_accantonato': p_saved.get('affitto_accantonato',
-                                                    config['patrimonio']['affitto_accantonato'])
+                                                    config.get('patrimonio', {}).get('affitto_accantonato', 0))
             }
             if salva_params_persistenti(nuovi_params):
                 st.session_state['params'].update(nuovi_params)
@@ -1163,7 +1165,7 @@ if sezione == "🏠 Stato di famiglia":
         'liquidita_persona1': liq_dan, 'liquidita_persona2': liq_ale,
         'conto_comune': conto_com, 'debiti_totale': debiti_man,
         'affitto_accantonato': p_saved.get('affitto_accantonato',
-                                            config['patrimonio']['affitto_accantonato'])
+                                            config.get('patrimonio', {}).get('affitto_accantonato', 0))
     }
 
     etf_df   = get_etf_perf()
@@ -1207,7 +1209,8 @@ if sezione == "🏠 Stato di famiglia":
 
     # ── Bollo threshold alert ──────────────────────────────────
     # Soglia da Supabase config_params (fallback config.yaml); editabile senza redeploy
-    _bollo_soglia = float(p_saved.get('bollo_soglia_liquidita') or _cfg_p.get('bollo_soglia_liquidita', 5000))
+    _bs_raw = p_saved.get('bollo_soglia_liquidita')
+    _bollo_soglia = float(_bs_raw if _bs_raw is not None else _cfg_p.get('bollo_soglia_liquidita', 5000))
     # snap['liquidita'] include affitto_accantonato — escludiamo: il bollo riguarda solo i conti correnti
     _liq_conti = float(snap['liquidita']) - float(params_correnti.get('affitto_accantonato') or 0)
     if _liq_conti > _bollo_soglia:
