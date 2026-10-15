@@ -277,11 +277,13 @@ def _auth_wizard():
                     "_auth_user_id": user['id'],
                     "_auth_username": user['username'],
                     "_auth_is_admin": True,
+                    "_auth_active_ts": time.time(),
                 })
                 st.success(f"Account **{user['username']}** creato. Benvenuto!")
                 st.rerun()
             except Exception as _ex:
-                if 'duplicate' in str(_ex).lower() or 'unique' in str(_ex).lower():
+                _ex_msg = (getattr(_ex, 'message', None) or str(_ex)).lower()
+                if 'duplicate' in _ex_msg or 'unique' in _ex_msg:
                     st.error("Username o email già in uso.")
                 else:
                     st.error(f"Errore nella creazione: {type(_ex).__name__}")
@@ -719,7 +721,7 @@ def _frag_storico_etf():
             if _h.empty:
                 continue
             first = _h['price'].iloc[0]
-            _indexed = (_h['price'] / first * 100).round(2) if first else _h['price']
+            _indexed = (_h['price'] / first * 100).round(2) if first and not pd.isna(first) else _h['price']
             fig.add_trace(go.Scatter(x=_h.index, y=_indexed,
                                       name=nome, line=dict(color=pal[i%len(pal)], width=2)))
     else:
@@ -732,7 +734,7 @@ def _frag_storico_etf():
             if _series.empty:
                 continue
             first = _series.iloc[0]
-            _indexed = (_series / first * 100).round(2) if first else _series
+            _indexed = (_series / first * 100).round(2) if first and not pd.isna(first) else _series
             fig.add_trace(go.Scatter(x=_series.index, y=_indexed,
                                       name=nome, line=dict(color=pal[i%len(pal)], width=2)))
     fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
@@ -2593,7 +2595,8 @@ elif sezione == "👥 Utenti":
                     else:
                         st.error("Errore nella creazione. Username o email già in uso?")
                 except Exception as _ex4:
-                    if 'duplicate' in str(_ex4).lower() or 'unique' in str(_ex4).lower():
+                    _ex4_msg = (getattr(_ex4, 'message', None) or str(_ex4)).lower()
+                    if 'duplicate' in _ex4_msg or 'unique' in _ex4_msg:
                         st.error("Username o email già in uso.")
                     else:
                         st.error(f"Errore: {type(_ex4).__name__}")

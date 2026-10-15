@@ -469,6 +469,9 @@ def verify_password(pwd: str, stored: str) -> bool:
     return _hmac2.compare_digest(pwd, stored or '')
 
 
+_FAKE_HASH = "pbkdf2$sha256$fakesalt$" + "a" * 64
+
+
 def salva_params_batch(params: dict) -> bool:
     """Salva più parametri in un unico batch upsert invece di N round-trip sequenziali."""
     if not params:
@@ -698,7 +701,6 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
     Verifica username + password. Restituisce il record utente o None.
     Aggiorna last_login in caso di successo.
     """
-    _FAKE_HASH = "pbkdf2$sha256$fakesalt$" + "a" * 64
     try:
         client = get_client()
         res = (client.table('app_users')
@@ -714,7 +716,7 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         if not verify_password(password, stored) or user_data is None:
             return None
         # S-NEW-06: auto-rehash plaintext legacy al primo login riuscito
-        if not user_data['password_hash'].startswith('pbkdf2$'):
+        if user_data.get('password_hash') and not user_data['password_hash'].startswith('pbkdf2$'):
             try:
                 aggiorna_password_utente(user_data['id'], hash_password(password))
             except Exception:

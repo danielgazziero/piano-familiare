@@ -253,14 +253,14 @@ def get_azioni_snapshot(config: dict,
     azioni = [az for az in azioni if az.get('ticker_yf') or az.get('ticker')]
     if not azioni:
         return pd.DataFrame()
-    tickers = tuple(az.get('ticker_yf') or az.get('ticker') for az in azioni)
-    raw = _batch_download(tickers, "1y")
+    unique_tickers = tuple(dict.fromkeys(az.get('ticker_yf') or az.get('ticker') for az in azioni))
+    raw = _batch_download(unique_tickers, "1y")
 
     rows = []
     for az in azioni:
         ticker = az.get('ticker_yf') or az.get('ticker')
         quantita = az.get('quantita', 0)
-        serie = _extract_series(raw, ticker, len(tickers))
+        serie = _extract_series(raw, ticker, len(unique_tickers))
         prezzo_attuale = valore_attuale = perf_ytd = perf_1y = None
         if not serie.empty:
             prezzo_attuale = round(float(serie.iloc[-1]), 2)
@@ -274,7 +274,7 @@ def get_azioni_snapshot(config: dict,
             serie_ytd = serie[idx >= ys]
             if not serie_ytd.empty:
                 p0_ytd = float(serie_ytd.iloc[0])
-                if p0_ytd:
+                if p0_ytd and not pd.isna(p0_ytd):
                     perf_ytd = round((float(serie_ytd.iloc[-1]) / p0_ytd - 1) * 100, 2)
 
         rows.append({
@@ -289,7 +289,7 @@ def get_azioni_snapshot(config: dict,
 
 def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
                          azioni_df=None, aggiornamenti_manuali=None) -> dict:
-    p = config['patrimonio'].copy()
+    p = config.get('patrimonio', {}).copy()
     if aggiornamenti_manuali:
         p.update(aggiornamenti_manuali)
 

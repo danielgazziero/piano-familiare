@@ -219,14 +219,14 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 13/10/2026
+## Stato tecnico al 14/10/2026
 
-### Branch corrente: `main` = `dev` — allineati
+### Branch corrente: `dev` — 1 commit avanti rispetto a `main`
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `043b58a` | merge: aggiorna CLAUDE.md stato 13/10/2026 |
-| `dev` | `043b58a` | (rebase su main — allineati) |
+| `main` | `2af716b` | merge: 6 fix da code review settimanale su main |
+| `dev` | `863b3c3` | fix: 8 fix da code review settimanale (auth, robustezza, efficienza) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -266,6 +266,12 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 **Prerequisito schema:** `ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;` (già in `docs/setup_supabase_schema.sql`).
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 14/10/2026 (code review settimanale automatico):**
+
+| Commit | Data | Contenuto |
+|---|---|---|
+| `863b3c3` | 14/10 | fix: 8 fix da code review settimanale (auth, robustezza, efficienza) |
 
 **Commit principali della sessione del 12-13/10/2026 (code review settimanale automatico):**
 
@@ -371,6 +377,19 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | S-NEW-06 | Auto-rehash password legacy (plaintext → PBKDF2) al primo login riuscito | `src/database.py` |
 | S-NEW-07 | Rivalidazione `is_active` ogni 5 min in sessione — revoca accesso utenti disattivati | `src/database.py`, `app.py` |
 | S-NEW-08 | Allowlist `_ALLOWED_TOKEN_FIELDS` + `.limit(1)` in `verifica_token` — blocca column injection | `src/database.py` |
+
+### ✅ Fix code review settimanale (14/10/2026)
+
+| # | Fix | File |
+|---|---|---|
+| WK2-CR1 | `_auth_wizard()` setta `_auth_active_ts` al login — evita DB call su ogni rerun dopo il primo avvio | `app.py` |
+| WK2-CR2 | Ripristinato `user_data.get('password_hash')` guard in `verifica_credenziali` prima di `.startswith('pbkdf2$')` — rimosso per errore nel refactor WK-S2 | `src/database.py` |
+| WK2-CR3 | `patrimonio_snapshot`: `config['patrimonio']` → `config.get('patrimonio', {})` — KeyError su config parziale | `src/portfolio.py` |
+| WK2-CR4 | `get_azioni_snapshot`: deduplicazione tickers con `dict.fromkeys()` prima di `_batch_download` — ticker doppio causava branch errato in `_extract_series` → dati azzerati | `src/portfolio.py` |
+| WK2-CR5 | Guard `pd.isna(p0_ytd)` su calcolo `perf_ytd` — `bool(float('nan'))` è True in Python; allineato a `perf_1y` | `src/portfolio.py` |
+| WK2-CR6 | Guard NaN su `first` nei grafici ETF confronto (DEMO e live): `if first and not pd.isna(first)` | `app.py` |
+| WK2-CR7 | `str(_ex)` → `getattr(_ex, 'message', None) or str(_ex)` per detect duplicate-key in wizard e invite path | `app.py` |
+| WK2-CR8 | `_FAKE_HASH` promossa a costante di modulo — rimossa allocazione locale a ogni call di `verifica_credenziali` | `src/database.py` |
 
 ### ✅ Fix sicurezza e robustezza (12-13/10/2026)
 
