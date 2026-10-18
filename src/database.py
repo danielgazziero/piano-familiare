@@ -465,8 +465,7 @@ def verify_password(pwd: str, stored: str) -> bool:
         h = hashlib.pbkdf2_hmac(algo, pwd.encode('utf-8'), salt.encode(), 260_000)
         return _hmac.compare_digest(h.hex(), expected)
     # Fallback plaintext per migrazione (prima modifica password)
-    import hmac as _hmac2
-    return _hmac2.compare_digest(pwd, stored or '')
+    return _hmac.compare_digest(pwd.encode('utf-8'), (stored or '').encode('utf-8'))
 
 
 _FAKE_HASH = "pbkdf2$sha256$fakesalt$" + "a" * 64
@@ -714,7 +713,8 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         user_data = res.data[0] if res.data else None
         stored = user_data['password_hash'] if user_data else _FAKE_HASH
         if user_data and not (stored or '').startswith('pbkdf2$'):
-            # Password legacy in chiaro: esegue comunque un PBKDF2 fittizio per uniformare i tempi
+            # Legacy in chiaro: confronto costante + un solo PBKDF2 fittizio,
+            # cosi' il costo resta pari a quello del percorso con hash.
             verify_password(password, _FAKE_HASH)
         if not verify_password(password, stored) or user_data is None:
             return None
@@ -733,16 +733,20 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         return None
 
 
-def get_server_login_state(username: str) -> dict:
+_FAIL_STATE_CLEAN = {"n": 0, "locked_until": 0.0}
+_FAIL_STATE_LOCKED_ON_ERROR_S = 30
+_FAIL_STATE_TTL_S = 24 * 3600
+
+
+def _read_fail_state(key: str, label: str) -> dict:
     """
-    Legge il contatore di fallimenti login server-side per un username.
-    Restituisce {"n": int, "locked_until": float_epoch} — persiste tra sessioni.
-    Fail-open: in caso di errore DB restituisce stato pulito (non blocca).
+    Legge un contatore di fallimenti da config_params.
+    Fail-closed: su errore DB restituisce un blocco breve (senza DB il login
+    non puo' comunque riuscire, quindi non c'e' costo per l'utente legittimo).
     """
+    import time as _time
     try:
-        key = f"_auth_fail_{username.strip().lower()[:50]}"
-        client = get_client()
-        res = (client.table('config_params')
+        res = (get_client().table('config_params')
                .select('valore')
                .eq('chiave', key)
                .limit(1)
@@ -752,26 +756,50 @@ def get_server_login_state(username: str) -> dict:
                 return json.loads(res.data[0]['valore'])
             except (json.JSONDecodeError, TypeError):
                 pass
-        return {"n": 0, "locked_until": 0.0}
+        return dict(_FAIL_STATE_CLEAN)
     except Exception as e:
-        print(f"  [!] get_server_login_state: {type(e).__name__}")
-        return {"n": 0, "locked_until": 0.0}
+        print(f"  [!] {label}: {type(e).__name__}")
+        return {"n": 0, "locked_until": _time.time() + _FAIL_STATE_LOCKED_ON_ERROR_S}
 
 
-def set_server_login_state(username: str, n: int, locked_until: float) -> None:
-    """Scrive il contatore di fallimenti login server-side."""
+def _write_fail_state(key: str, n: int, locked_until: float, label: str) -> None:
     try:
-        import time as _time
-        key = f"_auth_fail_{username.strip().lower()[:50]}"
-        client = get_client()
-        client.table('config_params').upsert(
+        get_client().table('config_params').upsert(
             {'chiave': key,
              'valore': json.dumps({"n": n, "locked_until": locked_until}),
              'updated_at': datetime.now().isoformat()},
             on_conflict='chiave'
         ).execute()
     except Exception as e:
-        print(f"  [!] set_server_login_state: {type(e).__name__}")
+        print(f"  [!] {label}: {type(e).__name__}")
+
+
+def _prune_login_fail_rows() -> None:
+    """Elimina i contatori login piu' vecchi di 24h (evita crescita illimitata
+    di config_params per username inesistenti tentati da un attaccante)."""
+    try:
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(seconds=_FAIL_STATE_TTL_S)).isoformat()
+        (get_client().table('config_params').delete()
+         .like('chiave', r'\_auth\_fail\_%')
+         .lt('updated_at', cutoff)
+         .execute())
+    except Exception as e:
+        print(f"  [!] _prune_login_fail_rows: {type(e).__name__}")
+
+
+def get_server_login_state(username: str) -> dict:
+    """Contatore fallimenti login server-side per username (fail-closed)."""
+    return _read_fail_state(f"_auth_fail_{username.strip().lower()[:50]}",
+                            "get_server_login_state")
+
+
+def set_server_login_state(username: str, n: int, locked_until: float) -> None:
+    """Scrive il contatore di fallimenti login server-side."""
+    _write_fail_state(f"_auth_fail_{username.strip().lower()[:50]}",
+                      n, locked_until, "set_server_login_state")
+    if n > 0:
+        _prune_login_fail_rows()
 
 
 def reset_server_login_state(username: str) -> None:
@@ -780,43 +808,14 @@ def reset_server_login_state(username: str) -> None:
 
 
 def get_server_totp_state(user_id: int) -> dict:
-    """
-    Legge il contatore di fallimenti TOTP server-side per un user_id.
-    Restituisce {"n": int, "locked_until": float_epoch} — persiste tra sessioni.
-    Fail-open: in caso di errore DB restituisce stato pulito.
-    """
-    try:
-        key = f"_totp_fail_{user_id}"
-        client = get_client()
-        res = (client.table('config_params')
-               .select('valore')
-               .eq('chiave', key)
-               .limit(1)
-               .execute())
-        if res.data:
-            try:
-                return json.loads(res.data[0]['valore'])
-            except (json.JSONDecodeError, TypeError):
-                pass
-        return {"n": 0, "locked_until": 0.0}
-    except Exception as e:
-        print(f"  [!] get_server_totp_state: {type(e).__name__}")
-        return {"n": 0, "locked_until": 0.0}
+    """Contatore fallimenti TOTP server-side per user_id (fail-closed)."""
+    return _read_fail_state(f"_totp_fail_{user_id}", "get_server_totp_state")
 
 
 def set_server_totp_state(user_id: int, n: int, locked_until: float) -> None:
     """Scrive il contatore di fallimenti TOTP server-side."""
-    try:
-        key = f"_totp_fail_{user_id}"
-        client = get_client()
-        client.table('config_params').upsert(
-            {'chiave': key,
-             'valore': json.dumps({"n": n, "locked_until": locked_until}),
-             'updated_at': datetime.now().isoformat()},
-            on_conflict='chiave'
-        ).execute()
-    except Exception as e:
-        print(f"  [!] set_server_totp_state: {type(e).__name__}")
+    _write_fail_state(f"_totp_fail_{user_id}", n, locked_until,
+                      "set_server_totp_state")
 
 
 def reset_server_totp_state(user_id: int) -> None:

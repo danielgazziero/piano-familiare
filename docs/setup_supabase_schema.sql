@@ -124,27 +124,42 @@ ALTER TABLE posizioni       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE prezzi_storici  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE backfill_stato  ENABLE ROW LEVEL SECURITY;
 
--- Policy: accesso completo (uso personale con chiave segreta)
+-- Policy: accesso solo service_role (la anon key non puo' leggere/scrivere).
+-- Rimuove eventuali vecchie policy permissive "full_access" (USING true).
+DROP POLICY IF EXISTS "full_access" ON patrimonio_log;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON patrimonio_log  FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON patrimonio_log FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON quote_fondi;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON quote_fondi     FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON quote_fondi FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON transazioni;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON transazioni     FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON transazioni FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON config_params;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON config_params   FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON config_params FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON posizioni;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON posizioni       FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON posizioni FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON prezzi_storici;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON prezzi_storici  FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON prezzi_storici FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON backfill_stato;
 DO $$ BEGIN
-  CREATE POLICY "full_access" ON backfill_stato  FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "service_only" ON backfill_stato FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── Indici per performance ────────────────────────────────────
