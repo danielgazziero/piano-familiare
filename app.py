@@ -1101,7 +1101,7 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
-                  '_plotly_tpl_dark','_totp_info_cache']:
+                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -1170,10 +1170,124 @@ if sezione == "🏠 Stato di famiglia":
                                             config.get('patrimonio', {}).get('affitto_accantonato', 0))
     }
 
+    # ── Asset illiquidi: carica cache prima della UI ──────────
+    if 'blocked_assets_cache' not in st.session_state:
+        from database import carica_blocked_assets_correnti as _cabc_init
+        st.session_state['blocked_assets_cache'] = _cabc_init() if db_ok else []
+
+    # ── Asset illiquidi UI ────────────────────────────────────
+    if db_ok:
+        from database import (salva_blocked_asset as _sba,
+                               carica_blocked_assets_log as _cabl,
+                               elimina_blocked_asset as _eba)
+        _TIPI_ILLIQUIDI = ['immobile', 'tfr', 'previdenza', 'altro']
+        with st.expander("🏦 Asset illiquidi (immobili, TFR, previdenza...)", expanded=False):
+            st.caption("Valorizzazioni periodiche di asset non quotati. Ogni aggiornamento viene salvato con la data, costruendo uno storico nel tempo.")
+            # Refresh blocklist dalla cache di sessione
+            _bl = st.session_state.get('blocked_assets_cache', [])
+            if _bl:
+                st.markdown(f"**Totale asset illiquidi: € {sum(float(a.get('valore',0) or 0) for a in _bl):,.0f}**")
+                _bl_df = pd.DataFrame(_bl)[['asset_nome','asset_tipo','valore','data']]
+                _bl_df['data'] = pd.to_datetime(_bl_df['data']).dt.strftime('%d/%m/%Y')
+                _bl_df['valore'] = _bl_df['valore'].apply(lambda v: f"€ {float(v):,.0f}")
+                _bl_df.columns = ['Asset', 'Tipo', 'Valore', 'Ultima valoriz.']
+                st.dataframe(_bl_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nessun asset illiquido ancora registrato.")
+
+            st.divider()
+            st.markdown("##### Registra valorizzazione")
+            _nomi_esistenti = [a['asset_nome'] for a in _bl] if _bl else []
+            _modo = st.radio("", ["Aggiorna asset esistente", "Aggiungi nuovo asset"],
+                             horizontal=True, key="ba_modo",
+                             disabled=not _bl)
+            if not _bl or _modo == "Aggiungi nuovo asset":
+                with st.form("ba_nuovo"):
+                    _bn_nome = st.text_input("Nome asset", max_chars=80,
+                                              placeholder="es. Casa Via Roma, TFR Azienda X")
+                    _bn_tipo = st.selectbox("Tipo", _TIPI_ILLIQUIDI)
+                    _bn_val  = st.number_input("Valore stimato (€)", min_value=0, step=1000)
+                    _bn_data = st.date_input("Data valorizzazione", value=date.today())
+                    _bn_nota = st.text_input("Nota (opzionale)", max_chars=200)
+                    if st.form_submit_button("💾 Salva"):
+                        _bn_nome = _bn_nome.strip()
+                        if not _bn_nome:
+                            st.error("Il nome asset è obbligatorio.")
+                        else:
+                            _aid = _bn_nome.lower().replace(' ', '_')[:40]
+                            if _sba(_aid, _bn_nome, _bn_tipo, _bn_val,
+                                    _bn_data.isoformat(), _bn_nota or None):
+                                st.session_state.pop('blocked_assets_cache', None)
+                                st.session_state.pop('saved_today', None)
+                                st.success(f"✓ {_bn_nome} salvato")
+                                st.rerun()
+                            else:
+                                st.error("Errore durante il salvataggio.")
+            else:
+                _sel_nome = st.selectbox("Asset da aggiornare", _nomi_esistenti, key="ba_sel")
+                _sel_asset = next((a for a in _bl if a['asset_nome'] == _sel_nome), {})
+                with st.form("ba_update"):
+                    _bu_val  = st.number_input("Nuovo valore (€)", min_value=0, step=1000,
+                                                value=int(_sel_asset.get('valore', 0) or 0))
+                    _bu_data = st.date_input("Data valorizzazione", value=date.today())
+                    _bu_nota = st.text_input("Nota (opzionale)", max_chars=200)
+                    _col_s, _col_d = st.columns([3, 1])
+                    with _col_s:
+                        _do_save = st.form_submit_button("💾 Aggiorna valore")
+                    with _col_d:
+                        _do_del  = st.form_submit_button("🗑️ Elimina asset", type="secondary")
+                    if _do_save:
+                        _aid = _sel_asset.get('asset_id',
+                               _sel_nome.lower().replace(' ', '_')[:40])
+                        if _sba(_aid, _sel_nome, _sel_asset.get('asset_tipo', 'altro'),
+                                _bu_val, _bu_data.isoformat(), _bu_nota or None):
+                            st.session_state.pop('blocked_assets_cache', None)
+                            st.session_state.pop('saved_today', None)
+                            st.success(f"✓ {_sel_nome} aggiornato")
+                            st.rerun()
+                        else:
+                            st.error("Errore durante il salvataggio.")
+                    elif _do_del:
+                        _aid = _sel_asset.get('asset_id',
+                               _sel_nome.lower().replace(' ', '_')[:40])
+                        if _eba(_aid):
+                            st.session_state.pop('blocked_assets_cache', None)
+                            st.session_state.pop('saved_today', None)
+                            st.success(f"✓ {_sel_nome} eliminato")
+                            st.rerun()
+                        else:
+                            st.error("Errore durante l'eliminazione.")
+
+            # Grafico storico valorizzazioni
+            if _bl:
+                _log_ba = _cabl(giorni=730)
+                if not _log_ba.empty:
+                    st.markdown("##### Storico valorizzazioni")
+                    _asset_nomi = sorted(_log_ba['asset_nome'].unique())
+                    _sel_chart = st.multiselect("Mostra", _asset_nomi,
+                                                 default=_asset_nomi[:3], key="ba_chart_sel")
+                    if _sel_chart:
+                        fig_ba = go.Figure()
+                        for _an in _sel_chart:
+                            _s = _log_ba[_log_ba['asset_nome'] == _an].sort_values('data')
+                            fig_ba.add_trace(go.Scatter(
+                                x=_s['data'], y=_s['valore'].round(0),
+                                name=_an, mode='lines+markers',
+                                line=dict(width=2)
+                            ))
+                        fig_ba.update_layout(height=220, xaxis_title="",
+                                              yaxis_title="€", margin=dict(t=10, b=0),
+                                              legend=dict(orientation="h", y=1.08))
+                        _plotly_chart(fig_ba, use_container_width=True, theme=None)
+
+    _blocked_list = st.session_state.get('blocked_assets_cache', [])
+    _blocked_totale = sum(float(a.get('valore', 0) or 0) for a in _blocked_list)
+
     etf_df   = get_etf_perf()
     fondi_df = get_fondi()
     azioni_df= get_azioni()
-    snap = patrimonio_snapshot(config, etf_df, fondi_df, azioni_df, params_correnti)
+    snap = patrimonio_snapshot(config, etf_df, fondi_df, azioni_df, params_correnti,
+                               blocked_assets_totale=_blocked_totale)
 
     # Auto-save silenzioso (lazy: gira quando i dati ETF/azioni sono già caricati qui sopra)
     if db_ok and 'saved_today' not in st.session_state:
