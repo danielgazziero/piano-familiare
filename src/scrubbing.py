@@ -34,6 +34,19 @@ _TRASFERIMENTO_RE = re.compile(
 _PROPRIO_RE = re.compile(r'(?<!^)(?<![.!?] )\b[A-Z][a-zàèéìòù]{2,}\b')
 
 
+_DIZ_RE = None
+
+
+def _oscura_dizionario(testo: str) -> str:
+    """Oscura nomi/cognomi italiani comuni (anche in maiuscolo) non configurati in Privacy."""
+    global _DIZ_RE
+    if _DIZ_RE is None:
+        from nomi_italiani import TUTTI
+        alt = '|'.join(re.escape(n) for n in sorted(TUTTI, key=len, reverse=True))
+        _DIZ_RE = re.compile(r'(?<![\w\[])(?:' + alt + r')(?![\w\]])', re.IGNORECASE)
+    return _DIZ_RE.sub('[NOME]', testo)
+
+
 def _nome_pattern(nome: str):
     """Match case-insensitive del nome come parola intera (non dentro altre parole)."""
     return re.compile(r'(?<!\w)' + re.escape(nome) + r'(?!\w)', re.IGNORECASE)
@@ -73,7 +86,8 @@ def scrub(testo: str, nomi: list, rigido: bool = True) -> str:
     2. persone introdotte da 'A FAVORE DI', 'ORDINANTE', 'BENEFICIARIO'...
     3. email, IBAN (anche con spazi), codice fiscale, carta, telefono
     4. numeri lunghi (>=6 cifre: riferimenti, conti, pratiche)
-    5. modalità rigida: per bonifici/giroconti il testo libero è omesso
+    5. dizionario di nomi/cognomi italiani comuni (anche in maiuscolo)
+    6. modalità rigida: per bonifici/giroconti il testo libero è omesso
        (restano solo tipo operazione e le parole dopo CAUSALE, già ripulite)
     """
     if not testo:
@@ -87,6 +101,7 @@ def scrub(testo: str, nomi: list, rigido: bool = True) -> str:
     risultato = _CARD_RE.sub('[CARTA]', risultato)
     risultato = _PHONE_RE.sub('[TEL]', risultato)
     risultato = _oscura_trigger(risultato)
+    risultato = _oscura_dizionario(risultato)
     risultato = _NUM_RE.sub('[NUM]', risultato)
     m = _TRASFERIMENTO_RE.match(risultato) if rigido else None
     if m:

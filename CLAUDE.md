@@ -429,11 +429,14 @@ Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (
 | AI-R1 | I due flussi AI duplicati unificati in `_ui_categorizzazione_ai()`; costante `MODEL_NAME` | `app.py`, `src/ai_categorize.py` |
 | AI-U1 | Anteprima "cosa viene inviato" con colonna ⚠️; righe sospette escluse dall'invio salvo spunta esplicita; tabella con colonne larghe, etichette leggibili ("Casa › Utenze"), `hash_tx` nascosto | `app.py` |
 
-**Limite noto:** un nome tutto in maiuscolo, non configurato e non preceduto da «a favore di»/«ordinante» non viene né oscurato né segnalato → controllare sempre l'anteprima e aggiungere i nomi in "🔒 Privacy".
+| AI-S6 | Dizionario di ~270 nomi/cognomi italiani comuni (`src/nomi_italiani.py`, esclude parole ambigue come CONTI/COSTA/ROSA) oscurato anche in maiuscolo, se il nome non è configurato | `src/scrubbing.py`, `src/nomi_italiani.py` |
+| AI-B1 | `salva_transazioni()`: `insert(..., ignore_duplicates=True)` non è più accettato da supabase-py 2.31 (eccezione catturata → ritorno 0, import estratti conto silenziosamente vuoto). Ora `upsert(records, on_conflict='hash_tx', ignore_duplicates=True)`; verificato: 1ª chiamata inserisce, 2ª ritorna 0 | `src/database.py` |
 
-**Dati di prova:** `scripts/seed_dati_fittizi.py` (anteprima di default; `--carica` inserisce 24 tx fittizie con `conto = 'TEST-FITTIZIO'` / `'TEST-FITTIZIO-2'` e categoria NULL; `--pulisci` le elimina senza toccare i dati reali).
+**Limite noto:** un nome raro, non configurato, non nel dizionario e non preceduto da «a favore di»/«ordinante» non viene né oscurato né segnalato → controllare sempre l'anteprima e aggiungere i nomi in "🔒 Privacy".
 
-**Bug aperto (non corretto):** `salva_transazioni()` usa `insert(..., ignore_duplicates=True)`, parametro non più accettato da supabase-py 2.31 → eccezione catturata e ritorno 0 (l'import estratti conto potrebbe non salvare nulla). Fix: `upsert(records, on_conflict='hash_tx', ignore_duplicates=True)`.
+**Da decidere (design):** `salva_transazioni()` salva in `categoria` la categoria legacy di `adapters._categorize()` ("Spesa alimentare", "Shopping online"…), mentre Feature #16 cerca `categoria IS NULL` per le tx da categorizzare e usa gli id della taxonomy (`alimentari`, `casa`…). Le tx importate dai nuovi estratti conto non risultano quindi "senza categoria". Opzioni: salvare la categoria legacy in `raw_categoria` e lasciare `categoria` NULL all'import, oppure mappare legacy → taxonomy.
+
+**Dati di prova:** non c'è più uno script nel repo; chiedere a Claude di generare dati fittizi (usare un `conto` riconoscibile tipo `TEST-FITTIZIO` e ripulirli subito dopo).
 
 ### ✅ Fix code review settimanale e onboarding (18/10/2026)
 

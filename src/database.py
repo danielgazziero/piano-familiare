@@ -423,8 +423,11 @@ def salva_transazioni(df_tx: pd.DataFrame) -> int:
 
         if not records:
             return 0
-        # Batch insert — ON CONFLICT DO NOTHING su hash_tx; response.data contiene solo le righe inserite
-        resp = client.table('transazioni').insert(records, ignore_duplicates=True).execute()
+        # Batch upsert con ignore_duplicates (ON CONFLICT DO NOTHING su hash_tx); response.data contiene solo le righe inserite
+        # (supabase-py >= 2.x: insert() non accetta più ignore_duplicates)
+        resp = (client.table('transazioni')
+                .upsert(records, on_conflict='hash_tx', ignore_duplicates=True)
+                .execute())
         return len(resp.data) if resp.data else 0
     except Exception as e:
         print(f"  [!] Errore salvataggio transazioni: {type(e).__name__}")
