@@ -219,14 +219,14 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ---
 
-## Stato tecnico al 14/10/2026
+## Stato tecnico al 18/10/2026
 
-### Branch corrente: `dev` — 1 commit avanti rispetto a `main`
+### Branch corrente: `dev` — allineato a `main`
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `2af716b` | merge: 6 fix da code review settimanale su main |
-| `dev` | `863b3c3` | fix: 8 fix da code review settimanale (auth, robustezza, efficienza) |
+| `main` | `3dc6d9d` | merge: config.yaml senza asset, wizard con inserimento e upload |
+| `dev` | `3dc6d9d` | (rebase su main, stesso commit) |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -267,6 +267,17 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 **Prerequisito schema:** `ALTER TABLE asset_catalog ADD COLUMN IF NOT EXISTS target_pct NUMERIC DEFAULT 0;` (già in `docs/setup_supabase_schema.sql`).
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
+
+**Commit principali della sessione del 18/10/2026 (code review settimanale + onboarding senza dati di esempio):**
+
+| Commit | Contenuto |
+|---|---|
+| `2389378` | fix: soglia bollo robusta, `quantita or 0`, timing guard legacy, workflow keep-alive con `env` |
+| `c7cec33` | fix: RLS `service_only` nello schema SQL, lockout fail-closed + pulizia contatori, `verify_password` legacy, requirements con limiti superiori, workflow `pip-audit` |
+| `9fb0d3f` | fix: yfinance MultiIndex su singolo ticker (azioni, prezzi storici); guard Simulatore con dati incompleti |
+| `8fcae18` | fix: palette confronto ETF ciclica (IndexError con >4 ETF) |
+| `4b80995` | feat: `config.yaml` senza asset; wizard con inserimento manuale e upload (CSV/XLSX asset, estratti conto XLS) |
+| `3dc6d9d` | merge su main — main e dev allineati |
 
 **Commit principali della sessione del 14/10/2026 (code review settimanale automatico):**
 
@@ -378,6 +389,28 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | S-NEW-06 | Auto-rehash password legacy (plaintext → PBKDF2) al primo login riuscito | `src/database.py` |
 | S-NEW-07 | Rivalidazione `is_active` ogni 5 min in sessione — revoca accesso utenti disattivati | `src/database.py`, `app.py` |
 | S-NEW-08 | Allowlist `_ALLOWED_TOKEN_FIELDS` + `.limit(1)` in `verifica_token` — blocca column injection | `src/database.py` |
+
+### ✅ Fix code review settimanale e onboarding (18/10/2026)
+
+| # | Fix | File |
+|---|---|---|
+| WK3-S1 | `docs/setup_supabase_schema.sql`: policy `full_access USING (true)` sostituite da `service_only` (`auth.role() = 'service_role'`) + `DROP POLICY IF EXISTS full_access`. Il DB di produzione aveva già solo `service_only` (verificato) — era lo schema in `docs/` a essere disallineato | `docs/setup_supabase_schema.sql` |
+| WK3-S2 | Lockout login/TOTP **fail-closed**: su errore DB blocco di 30 s (senza DB il login non riesce comunque). Helper unificati `_read_fail_state` / `_write_fail_state` | `src/database.py` |
+| WK3-S3 | Contatori `_auth_fail_<username>` più vecchi di 24h eliminati a ogni scrittura (`_prune_login_fail_rows`) — un attaccante non può gonfiare `config_params` con username inventati | `src/database.py` |
+| WK3-S4 | `verify_password`: confronto legacy in chiaro su bytes UTF-8 (`compare_digest` su str non-ASCII lanciava `TypeError`) | `src/database.py` |
+| WK3-S5 | `requirements.txt` con limiti superiori (`<major+1`, compatibili con pandas 3 / plotly 7 installati); `.github/workflows/pip-audit.yml` (lunedì 07:00 UTC + su modifica requirements) | `requirements.txt`, `.github/workflows/` |
+| WK3-R1 | `_extract_series` e download storico: yfinance recente restituisce colonne MultiIndex anche per 1 ticker → `float(Series)` `TypeError` in "Azioni Accenture". Ora `Close` DataFrame viene ridotto alla prima colonna | `src/portfolio.py`, `src/prices.py` |
+| WK3-R2 | Simulatore strategie: se `simula_scenario_completo` ritorna DataFrame vuoto (nascita figlio / scadenza Generali mancanti) mostra un avviso invece di `KeyError` | `app.py` |
+| WK3-R3 | Confronto ETF candidati: `pal_c[i % len(pal_c)]` (IndexError con più di 4 ETF) | `app.py` |
+| WK3-F1 | `config.yaml`: `etf`, `fondi_bancari.titoli`, `azioni` vuoti; `patrimonio` a zero. Gli asset vivono solo in Supabase (`asset_catalog`, `posizioni`) | `config.yaml` |
+| WK3-F2 | Nuovo `src/wizard_assets.py`: negli step ETF / Fondi / Azioni elenco asset, form di inserimento (ISIN validato, quantità → `posizioni`, quota fondo → `quote_fondi`) e import CSV/XLSX con modello scaricabile (max 10 MB, 300 righe, righe invalide scartate e riportate) | `src/wizard_assets.py`, `src/wizard.py` |
+| WK3-F3 | Step "Parser banca": upload estratti conto XLS/XLSX con scelta banca/conto; `parse_uploaded_file()` usa file temporaneo sempre eliminato; dedup via `hash_tx` | `src/parser.py`, `src/wizard_assets.py` |
+| WK3-F4 | Step "Rebalancing" legge gli ETF dal catalogo DB (non più da `config.yaml`); `positions.imposta_posizione()` crea o sostituisce la quantità corrente | `src/wizard.py`, `src/positions.py` |
+
+**Note operative emerse:**
+- L'app usa `SUPABASE_SECRET` (chiave `sb_secret_...`, ruolo `service_role`) — [src/database.py:23](src/database.py:23). `SUPABASE_KEY` (`sb_publishable_...`) serve solo al workflow keep-alive; con RLS `service_only` la anon key legge liste vuote ma risponde 200.
+- Unità `ter`: fondi in frazione (0.02 = 2%), ETF in percentuale (0.20 = 0.20%). Il wizard converte l'input % dei fondi.
+- Gli ETF in `config.yaml → etf_breakdown` (geo/settore) restano: sono dati pubblici da factsheet.
 
 ### ✅ Fix code review settimanale (14/10/2026)
 
@@ -609,7 +642,7 @@ Alternativa senza codice: **cron-job.org** — job HTTP GET con header `apikey: 
 ## Note critiche
 
 - **xlrd==1.2.0** — fissato a questa versione, NON aggiornare (rompe il parsing BIFF8)
-- **config.yaml** — non sovrascrivere quando si aggiorna il codice
+- **config.yaml** — non sovrascrivere quando si aggiorna il codice; **non inserirvi asset o importi reali** (vanno in Supabase tramite wizard / Gestione Asset)
 - **data/** — non sovrascrivere quando si aggiorna il codice
 - Le credenziali Supabase vanno in `.streamlit/secrets.toml` (gitignored) o variabili d'ambiente — mai hardcodate
 - `inizializza_posizioni()` va chiamata solo una volta
