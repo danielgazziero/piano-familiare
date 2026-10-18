@@ -226,7 +226,7 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
 | `main` | `366a7ff` | merge: Feature #11 — Blocked Assets storico su main |
-| `dev` | (pending) | feat: Feature #16 step 1 — schema DB transazioni, taxonomy manager UI |
+| `dev` | (pending) | feat: Feature #16 step 2 — profilo famiglia con storico decorrenze |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -542,7 +542,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | 9 ✅ | **Bollo threshold alert** — avviso se cash > soglia configurabile | `app.py`, `config.yaml` | Completato 07/10/2026. Calcola `snap['liquidita'] - affitto_accantonato`; soglia da `config_params.bollo_soglia_liquidita` (fallback `config.yaml`, default €5.000) — editabile da Supabase senza redeploy. |
 | 10 | **YoY cash flow** — delta vs anno precedente per inflows/expenses/net CF | `app.py`, `app_state.py` | Estensione sezione transazioni. |
 | 11 ✅ | **Blocked Assets storico** — valorizzazioni periodiche asset illiquidi (immobili, TFR, previdenza) | `database.py`, `portfolio.py`, `app.py` | Completato 18/10/2026. Tabella `blocked_assets_log (data, asset_id, asset_nome, asset_tipo, valore, nota)`. Incluso in `totale_eur` di `patrimonio_snapshot()`. UI in "🏦 Asset illiquidi" con storico grafico. |
-| 16 🟡 | **AI Spending Analysis** — categorizzazione transazioni + analisi AI con benchmark ISTAT e confronto storico | `app.py`, `simulator.py`, `database.py`, `config.yaml`, `config_params` | **Step 1 completato 18/10/2026**: schema DB (`sottocategoria`, `tag TEXT[]`, `categoria_confermata`), `_DEFAULT_TAXONOMY` + `carica_taxonomy()` / `salva_taxonomy()` / `aggiorna_categoria_tx()` in `database.py`, sezione "💳 Analisi spese" con taxonomy manager CRUD. **Ordine implementazione rimanente:** (2) profilo famiglia editabile, (3) scrubbing + amount-based matching giroconti, (4) UI categorizzazione con AI suggest, (5) analisi AI con output strutturato, (6) batch retroattivo. Richiede `ANTHROPIC_API_KEY` in secrets.toml. |
+| 16 🟡 | **AI Spending Analysis** — categorizzazione transazioni + analisi AI con benchmark ISTAT e confronto storico | `app.py`, `simulator.py`, `database.py`, `config.yaml`, `config_params` | **Step 1 completato 18/10/2026**: schema DB, taxonomy manager UI. **Step 2 completato 18/10/2026**: `carica_profilo_famiglia()` / `salva_profilo_famiglia()` / `get_profilo_attivo()` in `database.py`; expander "👨‍👩‍👧 Profilo famiglia" con storico decorrenze in "💳 Analisi spese". **Ordine implementazione rimanente:** (3) scrubbing + amount-based matching giroconti, (4) UI categorizzazione con AI suggest, (5) analisi AI con output strutturato, (6) batch retroattivo. Richiede `ANTHROPIC_API_KEY` in secrets.toml. |
 
 ### 🟢 Bassa priorità
 

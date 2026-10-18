@@ -843,6 +843,43 @@ def aggiorna_categoria_tx(hash_tx: str, categoria: str,
 
 
 # ─────────────────────────────────────────────────────────────
+# AI SPENDING ANALYSIS — Profilo famiglia
+# ─────────────────────────────────────────────────────────────
+
+def carica_profilo_famiglia() -> list:
+    """
+    Carica lo storico del profilo famiglia da config_params.profilo_famiglia_storia.
+    Restituisce lista di dict [{tipo_famiglia, area_geografica, num_adulti, num_figli,
+    fascia_eta, dal, al}] ordinata per dal DESC. al=None significa periodo attivo.
+    """
+    val = carica_param('profilo_famiglia_storia')
+    if val and isinstance(val, list):
+        return sorted(val, key=lambda x: x.get('dal', ''), reverse=True)
+    return []
+
+
+def salva_profilo_famiglia(storia: list) -> bool:
+    """Salva lo storico del profilo famiglia in config_params.profilo_famiglia_storia."""
+    return salva_param('profilo_famiglia_storia', storia)
+
+
+def get_profilo_attivo(storia: list, per_data: str = None) -> Optional[dict]:
+    """
+    Restituisce il profilo attivo per la data indicata (default oggi).
+    'Attivo' = al è None, oppure dal <= per_data <= al.
+    """
+    if not storia:
+        return None
+    target = per_data or date.today().isoformat()
+    for entry in sorted(storia, key=lambda x: x.get('dal', ''), reverse=True):
+        dal = entry.get('dal', '')
+        al  = entry.get('al')
+        if dal <= target and (al is None or al >= target):
+            return entry
+    return None
+
+
+# ─────────────────────────────────────────────────────────────
 # GESTIONE UTENTI — tabella app_users
 # ─────────────────────────────────────────────────────────────
 

@@ -1103,7 +1103,7 @@ with st.sidebar:
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
                   '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
-                  'taxonomy_cache']:
+                  'taxonomy_cache','profilo_famiglia_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -2520,8 +2520,147 @@ elif sezione == "💳 Analisi spese":
                 st.session_state['taxonomy_cache'] = _copy_tax.deepcopy(_deftax)
                 st.rerun()
 
-    st.info("💡 Prossimi step: Profilo famiglia (step 2), Categorizzazione AI transazioni (step 4), "
-            "Analisi spese (step 5).")
+    # ── Profilo famiglia ──────────────────────────────────────
+    from database import (carica_profilo_famiglia as _cpf,
+                          salva_profilo_famiglia  as _spf,
+                          get_profilo_attivo      as _gpa)
+
+    if 'profilo_famiglia_cache' not in st.session_state:
+        st.session_state['profilo_famiglia_cache'] = _cpf()
+
+    _pf_storia = st.session_state['profilo_famiglia_cache']
+    _pf_attivo = _gpa(_pf_storia)
+
+    _TIPI_FAM = {
+        "single":              "Single",
+        "coppia":              "Coppia senza figli",
+        "coppia_con_figlio":   "Coppia con figlio/i",
+        "famiglia_numerosa":   "Famiglia numerosa (3+ figli)",
+    }
+    _AREE_GEO = {
+        "nord":   "Nord Italia",
+        "centro": "Centro Italia",
+        "sud":    "Sud Italia",
+        "estero": "Estero",
+    }
+    _FASCE_ETA = ["25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60+"]
+
+    with st.expander("👨‍👩‍👧 Profilo famiglia", expanded=not bool(_pf_attivo)):
+        st.caption("Il profilo è usato per il confronto benchmark ISTAT nelle analisi AI.")
+
+        # Profilo corrente
+        if _pf_attivo:
+            _pf_c1, _pf_c2, _pf_c3, _pf_c4 = st.columns(4)
+            _pf_c1.metric("Tipo", _TIPI_FAM.get(_pf_attivo.get('tipo_famiglia',''), '—'))
+            _pf_c2.metric("Area", _AREE_GEO.get(_pf_attivo.get('area_geografica',''), '—'))
+            _pf_c3.metric("Adulti", _pf_attivo.get('num_adulti', '—'))
+            _pf_c4.metric("Figli", _pf_attivo.get('num_figli', '—'))
+            st.caption(f"Attivo dal: {_pf_attivo.get('dal','—')} | "
+                       f"Fascia età: {_pf_attivo.get('fascia_eta','—')}")
+        else:
+            st.info("Nessun profilo configurato. Compila il form per iniziare.")
+
+        st.divider()
+
+        # Scelta modalità
+        _pf_mode = st.radio(
+            "Modalità",
+            ["✏️ Modifica profilo corrente", "🆕 Nuova decorrenza da oggi"],
+            horizontal=True,
+            key="pf_mode_radio",
+            help="'Modifica' aggiorna i dati in-place. "
+                 "'Nuova decorrenza' chiude il periodo corrente e ne apre uno nuovo.",
+        ) if _pf_attivo else "✏️ Modifica profilo corrente"
+
+        with st.form("profilo_famiglia_form"):
+            _pff1, _pff2 = st.columns(2)
+            with _pff1:
+                _pf_tipo = st.selectbox(
+                    "Tipo famiglia",
+                    list(_TIPI_FAM.keys()),
+                    format_func=lambda k: _TIPI_FAM[k],
+                    index=list(_TIPI_FAM.keys()).index(
+                        _pf_attivo.get('tipo_famiglia', 'coppia')) if _pf_attivo else 0,
+                    key="pf_tipo_sel",
+                )
+                _pf_adulti = st.number_input("N. adulti", min_value=1, max_value=6,
+                                             value=int(_pf_attivo.get('num_adulti', 2)) if _pf_attivo else 2,
+                                             key="pf_adulti_inp")
+                _pf_fascia = st.selectbox(
+                    "Fascia età (persona1)",
+                    _FASCE_ETA,
+                    index=_FASCE_ETA.index(_pf_attivo['fascia_eta'])
+                          if _pf_attivo and _pf_attivo.get('fascia_eta') in _FASCE_ETA else 2,
+                    key="pf_fascia_sel",
+                )
+            with _pff2:
+                _pf_area = st.selectbox(
+                    "Area geografica",
+                    list(_AREE_GEO.keys()),
+                    format_func=lambda k: _AREE_GEO[k],
+                    index=list(_AREE_GEO.keys()).index(
+                        _pf_attivo.get('area_geografica', 'nord')) if _pf_attivo else 0,
+                    key="pf_area_sel",
+                )
+                _pf_figli = st.number_input("N. figli", min_value=0, max_value=8,
+                                            value=int(_pf_attivo.get('num_figli', 0)) if _pf_attivo else 0,
+                                            key="pf_figli_inp")
+
+            if st.form_submit_button("💾 Salva profilo", type="primary"):
+                _new_entry = {
+                    'tipo_famiglia':   _pf_tipo,
+                    'area_geografica': _pf_area,
+                    'num_adulti':      int(_pf_adulti),
+                    'num_figli':       int(_pf_figli),
+                    'fascia_eta':      _pf_fascia,
+                    'dal':             date.today().isoformat(),
+                    'al':              None,
+                }
+                if _pf_attivo and _pf_mode == "✏️ Modifica profilo corrente":
+                    # Aggiorna il periodo corrente senza chiuderlo
+                    _new_entry['dal'] = _pf_attivo.get('dal', date.today().isoformat())
+                    _pf_storia_new = [e for e in _pf_storia
+                                      if e.get('dal') != _pf_attivo.get('dal')]
+                    _pf_storia_new.append(_new_entry)
+                else:
+                    # Chiude il periodo attivo e apre uno nuovo
+                    from datetime import timedelta as _td
+                    _ieri = (date.today() - _td(days=1)).isoformat()
+                    _pf_storia_new = []
+                    for _e in _pf_storia:
+                        if _e.get('al') is None and _e.get('dal') == _pf_attivo.get('dal') if _pf_attivo else False:
+                            _pf_storia_new.append({**_e, 'al': _ieri})
+                        else:
+                            _pf_storia_new.append(_e)
+                    _pf_storia_new.append(_new_entry)
+
+                if _spf(_pf_storia_new):
+                    st.session_state['profilo_famiglia_cache'] = sorted(
+                        _pf_storia_new, key=lambda x: x.get('dal', ''), reverse=True)
+                    st.success("✅ Profilo salvato.")
+                    st.rerun()
+                else:
+                    st.error("Errore durante il salvataggio.")
+
+        # Storico periodi
+        if len(_pf_storia) > 1:
+            with st.expander("📅 Storico periodi"):
+                import pandas as _pd_pf
+                _hist_rows = []
+                for _e in sorted(_pf_storia, key=lambda x: x.get('dal',''), reverse=True):
+                    _hist_rows.append({
+                        "Dal": _e.get('dal',''),
+                        "Al":  _e.get('al') or "corrente",
+                        "Tipo": _TIPI_FAM.get(_e.get('tipo_famiglia',''), _e.get('tipo_famiglia','')),
+                        "Area": _AREE_GEO.get(_e.get('area_geografica',''), _e.get('area_geografica','')),
+                        "Adulti": _e.get('num_adulti',''),
+                        "Figli": _e.get('num_figli',''),
+                        "Fascia età": _e.get('fascia_eta',''),
+                    })
+                st.dataframe(_pd_pf.DataFrame(_hist_rows), use_container_width=True, hide_index=True)
+
+    st.info("💡 Prossimi step: Categorizzazione AI transazioni (step 3-4), "
+            "Analisi spese con benchmark (step 5).")
 
 
 # ─────────────────────────────────────────────────────────────
