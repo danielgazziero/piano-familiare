@@ -308,7 +308,6 @@ def demo_get_etf_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     return _demo_price_series(ticker, period).to_frame(name='price')
 
 
-
 # ─── Posizioni ────────────────────────────────────────────────
 
 def demo_carica_posizioni() -> pd.DataFrame:

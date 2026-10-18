@@ -713,6 +713,9 @@ def verifica_credenziali(username: str, password: str) -> Optional[dict]:
         # fake hash otherwise — uniformizes user-found vs. user-not-found paths.
         user_data = res.data[0] if res.data else None
         stored = user_data['password_hash'] if user_data else _FAKE_HASH
+        if user_data and not (stored or '').startswith('pbkdf2$'):
+            # Password legacy in chiaro: esegue comunque un PBKDF2 fittizio per uniformare i tempi
+            verify_password(password, _FAKE_HASH)
         if not verify_password(password, stored) or user_data is None:
             return None
         # S-NEW-06: auto-rehash plaintext legacy al primo login riuscito
