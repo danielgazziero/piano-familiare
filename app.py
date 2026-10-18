@@ -559,10 +559,28 @@ SC_DASH   = {'base':'solid','worst':'dash','best':'dot'}
 
 # ── INIT — una volta per sessione ────────────────────────────
 @st.cache_data(ttl=3600)
-def get_config():
+def _load_cfg():
     return load_config(BASE_DIR / 'config.yaml')
 
-config = get_config()
+
+_CFG_ASSET_KEYS = ('etf', 'etf_breakdown', 'fondi_bancari', 'azioni')
+
+
+def get_config():
+    """Config da config.yaml. In modalità reale con DB raggiungibile e catalogo asset vuoto
+    (utente nuovo, wizard non compilato) gli asset di esempio di config.yaml NON vengono mostrati.
+    Restituisce sempre una copia: l'oggetto cachato non viene mai mutato."""
+    cfg = _load_cfg()
+    if not _DEMO and db_ok:
+        cat = st.session_state.get('asset_catalog')
+        if cat is not None and cat.empty:
+            cfg = dict(cfg)
+            for k in _CFG_ASSET_KEYS:
+                cfg[k] = {'etf': [], 'azioni': [], 'etf_breakdown': {},
+                          'fondi_bancari': {'titoli': []}}[k]
+    return cfg
+
+config = _load_cfg()
 
 # Connessione DB (una volta per sessione)
 db_ok = init_db_connection()
@@ -588,6 +606,7 @@ if 'asset_catalog' not in st.session_state:
     st.session_state['asset_catalog'] = get_asset_catalog() if db_ok else pd.DataFrame()
 
 _catalog = st.session_state.get('asset_catalog', pd.DataFrame())
+config = get_config()  # ricalcolata ora che il catalogo e' noto (vedi get_config)
 
 # Carica quote fondi persistenti
 if 'quote_map' not in st.session_state:
@@ -773,7 +792,7 @@ def _frag_confronto_candidati():
                 _first = _ser.iloc[0]
                 _idx = (_ser / _first * 100).round(2) if _first else _ser
                 fig_c.add_trace(go.Scatter(x=_ser.index, y=_idx,
-                                           name=nome, line=dict(color=pal_c[i], width=2)))
+                                           name=nome, line=dict(color=pal_c[i % len(pal_c)], width=2)))
     fig_c.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
     fig_c.update_layout(title="Confronto (base 100)", height=320,
                          legend=dict(orientation="h",y=1.08))
