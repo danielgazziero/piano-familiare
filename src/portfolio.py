@@ -34,7 +34,11 @@ def _extract_series(raw: pd.DataFrame, ticker: str, n_tickers: int) -> pd.Series
     if raw.empty:
         return pd.Series(dtype=float)
     if n_tickers == 1:
-        return raw.get('Close', pd.Series(dtype=float)).dropna()
+        # yfinance recente restituisce colonne MultiIndex anche per 1 ticker
+        close1 = raw.get('Close', pd.Series(dtype=float))
+        if isinstance(close1, pd.DataFrame):
+            close1 = close1.iloc[:, 0] if close1.shape[1] else pd.Series(dtype=float)
+        return close1.dropna()
     close = raw.get('Close', pd.DataFrame())
     if isinstance(close, pd.Series) or close.empty:
         return pd.Series(dtype=float)

@@ -193,7 +193,11 @@ def scarica_tutti_storici(isins: List[str], data_inizio: date,
                 series = pd.Series(dtype=float)
             elif len(tickers_list) == 1:
                 # Singolo ticker: colonne flat
-                series = raw.get('Close', pd.Series(dtype=float)).dropna()
+                # yfinance recente: colonne MultiIndex anche per 1 ticker
+                _c1 = raw.get('Close', pd.Series(dtype=float))
+                if isinstance(_c1, pd.DataFrame):
+                    _c1 = _c1.iloc[:, 0] if _c1.shape[1] else pd.Series(dtype=float)
+                series = _c1.dropna()
             else:
                 # Multi-ticker: MultiIndex (field, ticker)
                 close = raw.get('Close', pd.DataFrame())
