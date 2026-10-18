@@ -83,60 +83,8 @@ migrazione_fondi:
 # ─── ETF IN PORTAFOGLIO / PAC ────────────────────────────────
 # Metadati pubblici degli asset (ISIN, ticker, nomi).
 # Valori e quantità reali → Supabase (asset_catalog, posizioni).
-etf:
-  - ticker_yf: "CSPX.L"
-    ticker_bi: "CSPX"
-    nome: "iShares Core S&P 500"
-    isin: "IE00B5BMR087"
-    valore_iniziale: 0
-    proprietario: "persona1"
-    stato: "attivo"
-    data_acquisto: "2024-01-01"
-    in_portafoglio: true
-    target_pct: 50
-    note: "Su Directa — già in portafoglio"
+etf: []   # Asset reali: catalogo su Supabase (wizard / Gestione Asset)
 
-  - ticker_yf: "ACWE.MI"
-    ticker_bi: "ACWE"
-    nome: "SPDR MSCI ACWI (Figlio/a)"
-    isin: "IE00B44Z5B48"
-    valore_iniziale: 0
-    proprietario: "figlio"
-    stato: "da_avviare"
-    target_pct: 100
-    note: "Conto minore Directa — avviare dopo CF figlio/a"
-
-  - ticker_yf: "IWDA.AS"
-    ticker_bi: "IWDA"
-    nome: "iShares Core MSCI World"
-    isin: "IE00B4L5Y983"
-    valore_iniziale: 0
-    proprietario: "persona1"
-    stato: "da_avviare"
-    target_pct: 50
-    note: "PAC Persona 1 — avviare ottobre 2026"
-
-  - ticker_yf: "EMAE.MI"
-    ticker_bi: "EMAE"
-    nome: "SPDR MSCI EM Asia"
-    isin: "IE00B466KX20"
-    ter: 0.55
-    valore_iniziale: 0
-    proprietario: "persona1"
-    stato: "candidato"
-    target_pct: 0
-    note: "Emergenti Asia — valutare come complemento a IWDA. TER 0.55%"
-
-  - ticker_yf: "MWRD.MI"
-    ticker_bi: "MWRD"
-    nome: "Amundi Core MSCI World"
-    isin: "IE000BI8OT95"
-    ter: 0.12
-    valore_iniziale: 0
-    proprietario: "persona1"
-    stato: "candidato"
-    target_pct: 0
-    note: "Alternativa low-cost a IWDA. TER 0.12%"
 
 # ─── BREAKDOWN GEO/SETTORIALE ETF ────────────────────────────
 # Fonte: factsheet ETF ufficiali (iShares, SPDR).
@@ -205,81 +153,13 @@ etf_breakdown:
 # quantita e valore_quota_ref → Supabase (posizioni, asset_catalog)
 fondi_bancari:
   aliquota_capital_gain: 0.26
-  titoli:
-    - nome: "ARCA AZ EUROPA CLIMA"
-      isin: "IT0001033486"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.020
+  titoli: []   # Fondi reali: catalogo su Supabase
 
-    - nome: "ARCA AZ AMERICA CLIMA P"
-      isin: "IT0001033502"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.020
-
-    - nome: "EURIZON AZ EMERG P"
-      isin: "IT0001031928"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.025
-
-    - nome: "JPMF GLO SUST EQ ACC"
-      isin: "LU2293888439"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.022
-      fallback_tickers: ["LU2293888439.PA"]
-
-    - nome: "EURIZON AZ AMER P"
-      isin: "IT0001050126"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.020
-
-    - nome: "EURIZ AZ AREA EURO P"
-      isin: "IT0001050225"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.019
-
-    - nome: "EURIZON AZ INT P"
-      isin: "IT0001080446"
-      quantita: 0
-      ticker_yf: null
-      valore_quota_ref: 0
-      data_ref: ""
-      data_acquisto: "2020-01-01"
-      ter: 0.018
 
 # ─── AZIONI — metadati pubblici ──────────────────────────────
 # quantita reale → Supabase (posizioni)
-azioni:
-  - nome: "Accenture PLC"
-    ticker_yf: "ACN"
-    quantita: 0
-    isin: "IE00B4BNMY34"
-    tipo: "azioni_dipendente"
-    data_acquisto: "2022-01-01"
-    note: "RSU/stock plan — verificare lock-up e tassazione separata"
+azioni: []   # Azioni reali: catalogo su Supabase
+
 
 # ─── COSTI FIGLIO/A PER ETÀ ──────────────────────────────────
 costi_figlio:

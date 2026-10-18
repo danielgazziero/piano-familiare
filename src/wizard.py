@@ -277,7 +277,6 @@ def _step_generali(config: dict, params_db: dict) -> dict | None:
 def _step_etf(config: dict, params_db: dict) -> dict | None:
     st.markdown("Configura gli importi PAC (Piano di Accumulo del Capitale) mensili per gli ETF attivi.")
     a_cfg = config.get('allocazione', {})
-    etf_list = config.get('etf', [])
 
     st.subheader("Importi PAC mensili")
     c1, c2 = st.columns(2)
@@ -293,13 +292,9 @@ def _step_etf(config: dict, params_db: dict) -> dict | None:
                                  value=_p(params_db, 'pac_figlio', a_cfg.get('pac_figlio', 0)),
                                  step=50, min_value=0, key="wiz_pacf")
 
-    if etf_list:
-        st.subheader("ETF in catalogo")
-        st.caption("Lo stato (attivo/da_avviare/candidato) si gestisce in **⚙️ Gestione Asset** dopo il wizard.")
-        for e in etf_list:
-            stato = e.get('stato', 'N/D')
-            icon = "🟢" if stato == "attivo" else ("🟡" if stato == "da_avviare" else "⚪")
-            st.caption(f"{icon} **{e.get('ticker_bi', '')}** — {e.get('nome', '')} · {stato}")
+    st.divider()
+    from wizard_assets import render_asset_step
+    render_asset_step('etf')
 
     return {
         'pac_persona1_ora':       int(pac1),
@@ -309,72 +304,20 @@ def _step_etf(config: dict, params_db: dict) -> dict | None:
 
 
 def _step_fondi(config: dict, params_db: dict) -> dict:
-    """Salvataggio custom → quote_fondi table. Ritorna {} per segnalare che non usa salva_params_batch."""
-    st.markdown("Inserisci le quote attuali dei fondi bancari. I valori vengono salvati nella tabella `quote_fondi` su Supabase.")
-    titoli = config.get('fondi_bancari', {}).get('titoli', [])
-    if not titoli:
-        st.info("Nessun fondo configurato in config.yaml.")
-        return {}
-
-    righe = []
-    for i, f in enumerate(titoli):
-        isin = f.get('isin', '')
-        nome = f.get('nome', isin)
-        with st.expander(f"📄 {nome}", expanded=False):
-            c1, c2 = st.columns(2)
-            q   = c1.number_input("Quote possedute",   value=float(f.get('quantita', 0)),
-                                   step=0.001, format="%.3f", min_value=0.0, key=f"wiz_fq_{i}")
-            qta = c2.number_input("Valore quota attuale (€)", value=float(f.get('valore_quota_ref', 0)),
-                                   step=0.001, format="%.4f", min_value=0.0, key=f"wiz_fv_{i}")
-            if q > 0 and qta > 0:
-                st.caption(f"Valore posizione: **€ {q*qta:,.2f}**")
-            righe.append({'isin': isin, 'nome': nome, 'quantita': q,
-                          'quota': qta, 'valore': round(q * qta, 2)})
-
-    if st.session_state.get('_wiz_save_fondi'):
-        righe_da_salvare = [r for r in righe if r['quota'] > 0]
-        if righe_da_salvare:
-            try:
-                from database import salva_quote_fondi as _sqf
-                _sqf(righe_da_salvare)
-                st.success(f"✓ Quote salvate per {len(righe_da_salvare)} fondi.")
-            except Exception as ex:
-                st.error(f"Errore salvataggio quote: {type(ex).__name__}")
-        st.session_state.pop('_wiz_save_fondi', None)
-    else:
-        if st.button("💾 Salva quote ora", key="btn_save_fondi_wiz"):
-            st.session_state['_wiz_save_fondi'] = True
-            st.rerun()
-
-    st.caption("Le quote possono essere aggiornate in qualsiasi momento da **🏦 Fondi bancari → Aggiorna quote**.")
+    """Asset salvati direttamente su Supabase (asset_catalog, posizioni, quote_fondi)."""
+    st.markdown("Aggiungi i fondi bancari che possiedi (a mano o da file). "
+                "Le quote si aggiornano poi ogni mese da **🏦 Fondi bancari → Aggiorna quote**.")
+    from wizard_assets import render_asset_step
+    render_asset_step('fondo')
     return {}
 
 
 def _step_azioni(config: dict, params_db: dict) -> dict | None:
-    st.markdown("Azioni Accenture (RSU / stock plan) — valorizzate in USD tramite yfinance.")
-    azioni_cfg = config.get('azioni', [{}])
-    az = azioni_cfg[0] if azioni_cfg else {}
-
-    c1, c2 = st.columns(2)
-    with c1:
-        q_az = st.number_input("Quote RSU possedute",
-                                value=float(_p(params_db, 'quantita_acn', 0)),
-                                step=1.0, min_value=0.0, format="%.2f", key="wiz_q_acn")
-        pmc  = st.number_input("Prezzo medio di carico (USD)",
-                                value=float(_p(params_db, 'pmc_acn_usd', 0)),
-                                step=1.0, min_value=0.0, format="%.2f", key="wiz_pmc_acn")
-    with c2:
-        st.info(
-            "💡 Per registrare acquisti/vendite future usa "
-            "**📉 Portafoglio storico → Registra acquisto / vendita parziale**."
-        )
-        if az.get('note'):
-            st.caption(f"Nota: {az['note']}")
-
-    return {
-        'quantita_acn': float(q_az),
-        'pmc_acn_usd':  float(pmc),
-    }
+    st.markdown("Azioni (es. RSU / stock plan) — valorizzate tramite yfinance, in valuta del titolo. "
+                "Per acquisti/vendite future usa **📉 Portafoglio storico**.")
+    from wizard_assets import render_asset_step
+    render_asset_step('azione')
+    return {}
 
 
 def _step_parser(config: dict, params_db: dict) -> dict | None:
@@ -390,6 +333,10 @@ def _step_parser(config: dict, params_db: dict) -> dict | None:
             pattern = b.get('pattern_template', '').replace('{nome}', f'<nome_{b.get("intestatario","?")}>')
             st.caption(f"**{b['nome']}** — `{pattern}`")
         st.caption("Il nome viene sostituito automaticamente al posto di `{nome}` nel pattern.")
+
+    from wizard_assets import render_transactions_upload
+    render_transactions_upload(config)
+    st.divider()
 
     st.subheader("Keyword bonifici interni")
     kw_raw = params_db.get('transfer_keywords', '')
@@ -477,7 +424,13 @@ def _step_rebalancing(config: dict, params_db: dict) -> dict | None:
         "Definisci i pesi target per il ribilanciamento del portafoglio ETF. "
         "La somma deve essere 100%. Alimenterà la feature **Rebalancing alert** (in sviluppo)."
     )
-    etf_attivi = [e for e in config.get('etf', []) if e.get('stato') in ('attivo', 'da_avviare')]
+    from database import carica_asset_catalog
+    _cat = carica_asset_catalog()
+    etf_attivi = ([e for e in _cat[_cat['tipo'] == 'etf'].to_dict('records')
+                   if e.get('stato') in ('attivo', 'da_avviare')]
+                  if not _cat.empty and 'tipo' in _cat.columns else [])
+    if not etf_attivi:
+        st.info("Nessun ETF attivo nel catalogo: aggiungili nello step **ETF & PAC**.")
 
     rb_raw = params_db.get('rebalancing_targets', '')
     try:
@@ -488,7 +441,7 @@ def _step_rebalancing(config: dict, params_db: dict) -> dict | None:
     targets = {}
     totale  = 0
     for e in etf_attivi:
-        ticker = e.get('ticker_bi', e.get('isin', '?'))
+        ticker = e.get('ticker_bi') or e.get('isin', '?')
         nome   = e.get('nome', ticker)
         default_pct = rb.get(ticker, 0)
         val = st.number_input(
@@ -538,7 +491,7 @@ def _step_riepilogo(config: dict, params_db: dict) -> dict:
     st.divider()
     st.markdown("**Prossimi passi consigliati:**")
     st.markdown("""
-- 📥 Copia i file XLS bancari in `data/input/` e premi **🔄 Aggiorna tutto**
+- 📥 Carica altri estratti conto dal passo **Parser banca** del wizard (o da `data/input/` in locale)
 - ⚙️ Vai in **Gestione Asset** per aggiungere ETF, fondi e azioni al catalogo
 - 📉 Vai in **Portafoglio storico** per registrare le quantità RSU Accenture
 - 🏦 Vai in **Fondi bancari** per aggiornare le quote mensilmente
