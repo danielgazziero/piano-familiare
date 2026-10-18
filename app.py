@@ -1103,7 +1103,8 @@ with st.sidebar:
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
                   '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
-                  'taxonomy_cache','profilo_famiglia_cache']:
+                  'taxonomy_cache','profilo_famiglia_cache',
+                  'nomi_anonimiz_cache','tx_senza_cat_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -2659,8 +2660,128 @@ elif sezione == "💳 Analisi spese":
                     })
                 st.dataframe(_pd_pf.DataFrame(_hist_rows), use_container_width=True, hide_index=True)
 
-    st.info("💡 Prossimi step: Categorizzazione AI transazioni (step 3-4), "
-            "Analisi spese con benchmark (step 5).")
+    # ── Scrubbing anonimizzazione ─────────────────────────────
+    from database import (carica_nomi_anonimizzare as _cna,
+                          salva_nomi_anonimizzare  as _sna,
+                          carica_tx_senza_categoria as _ctx_sc)
+
+    if 'nomi_anonimiz_cache' not in st.session_state:
+        st.session_state['nomi_anonimiz_cache'] = _cna()
+
+    _nomi_anon = st.session_state['nomi_anonimiz_cache']
+
+    with st.expander("🔒 Privacy & Anonimizzazione", expanded=not bool(_nomi_anon)):
+        st.caption(
+            "Questi nomi vengono sostituiti con `[NOME]` in ogni testo inviato all'AI. "
+            "Aggiungi nomi propri, ragioni sociali o qualsiasi stringa da oscurare."
+        )
+
+        # Lista corrente
+        if _nomi_anon:
+            for _ni, _nn in enumerate(_nomi_anon):
+                _nc1, _nc2 = st.columns([8, 1])
+                with _nc1:
+                    st.write(f"• `{_nn}`")
+                with _nc2:
+                    if st.button("🗑️", key=f"del_nome_{_ni}"):
+                        _nomi_anon.pop(_ni)
+                        if _sna(_nomi_anon):
+                            st.session_state['nomi_anonimiz_cache'] = _nomi_anon
+                        st.rerun()
+        else:
+            st.info("Nessun nome configurato. Aggiungi almeno i nomi dei membri della famiglia.")
+
+        with st.form("add_nome_anon_form"):
+            _new_nome = st.text_input("Nome / stringa da oscurare", max_chars=100,
+                                      placeholder="es. Mario, Rossi, MARIO ROSSI")
+            if st.form_submit_button("+ Aggiungi"):
+                _new_nome = _new_nome.strip()
+                if _new_nome and _new_nome not in _nomi_anon:
+                    _nomi_anon.append(_new_nome)
+                    if _sna(_nomi_anon):
+                        st.session_state['nomi_anonimiz_cache'] = list(_nomi_anon)
+                        st.success(f"✅ '{_new_nome}' aggiunto.")
+                    st.rerun()
+                elif _new_nome in _nomi_anon:
+                    st.warning("Nome già presente.")
+
+        # Preview scrubbing
+        if _nomi_anon:
+            st.divider()
+            st.markdown("**Preview scrubbing**")
+            _prev_input = st.text_area(
+                "Testo di prova (es. una causale bancaria)",
+                placeholder="PAGAMENTO MARIO ROSSI IT60X0542811101000000123456",
+                key="scrub_preview_txt",
+                height=80,
+            )
+            if _prev_input.strip():
+                from scrubbing import scrub as _scrub_fn
+                _prev_out = _scrub_fn(_prev_input, _nomi_anon)
+                st.code(_prev_out, language=None)
+
+    # ── Giroconti sospetti ────────────────────────────────────
+    with st.expander("🔀 Giroconti sospetti (amount-based matching)"):
+        st.caption(
+            "Addebiti e accrediti di pari importo su conti diversi entro 3 giorni "
+            "vengono proposti come giroconti interni. Confermali per escluderli "
+            "dall'analisi spese."
+        )
+
+        if st.button("🔍 Cerca giroconti", key="cerca_giroconti_btn"):
+            st.session_state.pop('tx_senza_cat_cache', None)
+
+        if 'tx_senza_cat_cache' not in st.session_state:
+            with st.spinner("Caricamento transazioni..."):
+                st.session_state['tx_senza_cat_cache'] = _ctx_sc(limit=500)
+
+        _tx_sc = st.session_state['tx_senza_cat_cache']
+
+        if not _tx_sc:
+            st.info("Nessuna transazione senza categoria nel DB. "
+                    "Importa gli estratti conto dalla sezione 'Fine mese'.")
+        else:
+            from scrubbing import find_giroconti as _find_gc
+            _gc_candidates = _find_gc(_tx_sc)
+
+            if not _gc_candidates:
+                st.success(f"Nessun giroconto rilevato su {len(_tx_sc)} transazioni non categorizzate.")
+            else:
+                st.info(f"Trovati **{len(_gc_candidates)}** candidati su {len(_tx_sc)} transazioni. "
+                        "Conferma quelli corretti per categorizzarli come 'Trasferimento interno'.")
+
+                from database import aggiorna_categoria_tx as _agg_cat
+                _gc_confermati = 0
+                for _gc in _gc_candidates:
+                    with st.container(border=True):
+                        _gca, _gcb, _gcc = st.columns([3, 3, 2])
+                        with _gca:
+                            st.markdown(f"**Addebito** — {_gc['data_addebito']}")
+                            st.write(f"Conto: `{_gc['conto_da'] or '—'}`")
+                            st.caption(_gc['desc_addebito'][:80] or '—')
+                        with _gcb:
+                            st.markdown(f"**Accredito** — {_gc['data_accredito']}")
+                            st.write(f"Conto: `{_gc['conto_a'] or '—'}`")
+                            st.caption(_gc['desc_accredito'][:80] or '—')
+                        with _gcc:
+                            st.metric("Importo", f"€ {_gc['importo']:,.2f}")
+                            st.caption(f"Δ {_gc['delta_giorni']} gg")
+                            if st.button("✅ Conferma giroconto",
+                                         key=f"gc_ok_{_gc['hash_addebito']}"):
+                                _ok1 = _agg_cat(_gc['hash_addebito'],
+                                                'trasferimento_interno',
+                                                sottocategoria=None, tag=[], confermata=True)
+                                _ok2 = _agg_cat(_gc['hash_accredito'],
+                                                'trasferimento_interno',
+                                                sottocategoria=None, tag=[], confermata=True)
+                                if _ok1 and _ok2:
+                                    _gc_confermati += 1
+                                    st.session_state.pop('tx_senza_cat_cache', None)
+                                    st.success("Categorizzato come trasferimento interno.")
+                                    st.rerun()
+
+    st.info("💡 Prossimi step: Categorizzazione AI transazioni (step 4), "
+            "Analisi spese con benchmark ISTAT (step 5).")
 
 
 # ─────────────────────────────────────────────────────────────

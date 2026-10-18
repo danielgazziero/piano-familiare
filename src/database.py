@@ -879,6 +879,40 @@ def get_profilo_attivo(storia: list, per_data: str = None) -> Optional[dict]:
     return None
 
 
+# AI SPENDING ANALYSIS — Nomi da anonimizzare
+def carica_nomi_anonimizzare() -> list:
+    """Lista nomi (stringhe) da sostituire con [NOME] prima di ogni chiamata AI."""
+    val = carica_param('nomi_da_anonimizzare')
+    if val and isinstance(val, list):
+        return [str(n) for n in val if n]
+    return []
+
+
+def salva_nomi_anonimizzare(nomi: list) -> bool:
+    """Salva lista nomi in config_params.nomi_da_anonimizzare."""
+    return salva_param('nomi_da_anonimizzare', [str(n) for n in nomi if n])
+
+
+# AI SPENDING ANALYSIS — Carica transazioni senza categoria
+def carica_tx_senza_categoria(limit: int = 500) -> list:
+    """
+    Restituisce le transazioni (dict) prive di categoria, ordinate per data DESC.
+    Esclude importi positivi (accrediti) già classificati come reddito.
+    """
+    try:
+        client = get_client()
+        res = (client.table('transazioni')
+               .select('hash_tx, data, importo, descrizione, conto')
+               .is_('categoria', 'null')
+               .order('data', desc=True)
+               .limit(limit)
+               .execute())
+        return res.data or []
+    except Exception as e:
+        print(f"  [!] Errore carica_tx_senza_categoria: {type(e).__name__}")
+        return []
+
+
 # ─────────────────────────────────────────────────────────────
 # GESTIONE UTENTI — tabella app_users
 # ─────────────────────────────────────────────────────────────
