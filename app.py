@@ -2078,8 +2078,13 @@ elif sezione == "🎯 Simulatore strategie":
         anni_s  = st.slider("Orizzonte (anni)",5,25,18)
         tutti_sc= st.checkbox("Mostra 3 scenari (3%/7%/10%)")
 
-        if tutti_sc:
-            sc = confronta_scenari(config)
+        fig_sc = None
+        sc = confronta_scenari(config) if tutti_sc else None
+        df_sc = None if tutti_sc else simula_scenario_completo(config,pd_s,pf_s,rs/100,anni_s)
+        if (sc is not None and any(d.empty for d in sc.values())) or (df_sc is not None and df_sc.empty):
+            st.info("Dati insufficienti per lo scenario: completa nascita figlio, scadenza Generali "
+                    "e valori patrimoniali (wizard di configurazione).")
+        elif tutti_sc:
             fig_sc = go.Figure()
             pal_sc = {'Conservativo (3%)': COLORS['arancio'],
                        'Base (7%)': COLORS['blu'], 'Ottimista (10%)': COLORS['verde']}
@@ -2088,7 +2093,6 @@ elif sezione == "🎯 Simulatore strategie":
                 fig_sc.add_trace(go.Scatter(x=df_sc_s['anno'],y=df_sc_s['totale'],
                                              name=nome,line=dict(color=pal_sc[nome],width=2)))
         else:
-            df_sc = simula_scenario_completo(config,pd_s,pf_s,rs/100,anni_s)
             fig_sc = go.Figure()
             for col,nome,col_c in [('etf_persona1',f'ETF {_N1}',COLORS['blu']),
                                      ('etf_figlio',f'ETF {_NF}',COLORS['azzurro']),
@@ -2096,9 +2100,10 @@ elif sezione == "🎯 Simulatore strategie":
                                      ('generali','Generali',COLORS['rosso'])]:
                 fig_sc.add_trace(go.Scatter(x=df_sc['anno'],y=df_sc[col],
                                              name=nome,stackgroup='one',line=dict(color=col_c)))
-        fig_sc.update_layout(height=400,xaxis_title="Anni",yaxis_title="€",
-                              legend=dict(orientation="h",y=1.08))
-        _plotly_chart(fig_sc, use_container_width=True, theme=None)
+        if fig_sc is not None:
+            fig_sc.update_layout(height=400,xaxis_title="Anni",yaxis_title="€",
+                                  legend=dict(orientation="h",y=1.08))
+            _plotly_chart(fig_sc, use_container_width=True, theme=None)
 
 
 # ─────────────────────────────────────────────────────────────
