@@ -1107,7 +1107,7 @@ with st.sidebar:
                   'nomi_anonimiz_cache','tx_senza_cat_cache',
                   'spese_analisi_cache','spese_report_cache',
                   'batch_retro_riepilogo_cache','batch_retro_tx_cache',
-                  'batch_retro_ai_cache','_retro_last_sel']:
+                  'batch_retro_ai_cache','_retro_last_sel','ai_suggest_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)

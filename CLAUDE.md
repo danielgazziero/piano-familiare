@@ -47,6 +47,8 @@ app.py
   └─ src/parser.py      # orchestratore parsing XLS bancari
        └─ src/adapters.py    # parser specifici per banca
   └─ src/prices.py      # download storico prezzi via yfinance
+  └─ src/scrubbing.py   # anonimizzazione causali prima di ogni chiamata AI (+ src/nomi_italiani.py)
+  └─ src/ai_categorize.py  # Claude API: categorizzazione tx + analisi spese
   └─ config.yaml        # dati statici di riferimento e valori di fallback
 ```
 
@@ -76,7 +78,7 @@ Tutte le chiamate Supabase/yfinance costose sono messe in cache la prima volta e
  'nomi_anonimiz_cache', 'tx_senza_cat_cache',
  'spese_analisi_cache', 'spese_report_cache',
  'batch_retro_riepilogo_cache', 'batch_retro_tx_cache',
- 'batch_retro_ai_cache', '_retro_last_sel']
+ 'batch_retro_ai_cache', '_retro_last_sel', 'ai_suggest_cache']
 ```
 
 Per `port_storico_cache` e `eventi_storico_cache` la cache è un dict keyed per `data_da`.
@@ -150,7 +152,7 @@ APP_BASE_URL  = "https://tua-app.streamlit.app"
 |---|---|
 | `patrimonio_log` | Snapshot giornaliero patrimonio totale per componente (upsert per `data`) |
 | `quote_fondi` | Quote fondi bancari nel tempo (upsert per `data, isin`) |
-| `transazioni` | Movimenti bancari da XLS (deduplicati via `hash_tx` SHA-256) |
+| `transazioni` | Movimenti bancari da XLS (deduplicati via `hash_tx` SHA-256); `categoria` è NULL all'import e viene assegnata dalla Feature #16 (id taxonomy) |
 | `config_params` | Key-value store per valori manuali (liquidità, conto comune, ecc.) |
 | `posizioni` | Quantità asset per intervallo date (`data_inizio`, `data_fine` NULL=attiva) |
 | `prezzi_storici` | Prezzi giornalieri ETF/azioni (upsert per `isin, data`) |
@@ -230,8 +232,8 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `3a4e098` (+ docs) | merge: fix review AI spese (sicurezza, efficienza, refactoring), `salva_transazioni` upsert, import con `categoria` NULL |
-| `dev` | `3a4e098` (+ docs) | allineato a main dopo rebase; `origin/main` e `origin/dev` pubblicati |
+| `main` | `91a7868` (+ docs) | merge: fix review AI spese (sicurezza, efficienza, refactoring), `salva_transazioni` upsert, import con `categoria` NULL |
+| `dev` | `91a7868` (+ docs) | allineato a main dopo rebase; `origin/main` e `origin/dev` pubblicati |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -415,30 +417,31 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 
 ### ✅ Fix review giornaliera — AI spese: sicurezza, efficienza, refactoring (18/10/2026)
 
-Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (scrubbing a più livelli + UI revisione), `db4b739` (upsert `salva_transazioni` + dizionario nomi), `1555d84` (import con categoria NULL), merge su main `3a4e098`.
-
-**Operativo:** per attivare il riepilogo mensile veloce eseguire una volta nel SQL Editor di Supabase `UNCATEGORIZED_MONTHLY_RPC_SQL` (in `src/database.py`); senza, funziona col fallback. Dopo modifiche a moduli in `src/` riavviare Streamlit (i moduli importati restano in memoria). Branch locale `claude/practical-hellman-9f6774` (worktree) obsoleto: eliminabile.
+Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (scrubbing a più livelli + UI revisione), `db4b739` (upsert `salva_transazioni` + dizionario nomi), `1555d84` (import con categoria NULL), merge su main `3a4e098`; docs `91a7868`.
 
 | # | Fix | File |
 |---|---|---|
 | AI-S1 | `scrub()` riscritto: IBAN con spazi, email, carte, telefoni, CF, numeri ≥6 cifre; nomi a parola intera (no "Ana"→"B[NOME]NA"); niente `upper()` globale | `src/scrubbing.py` |
 | AI-S2 | Difesa a più livelli anche se il nome non è configurato: nomi famiglia da `params` (`nome_persona1/2`, `nome_figlio`), ogni parola del nome, persone dopo «a favore di»/«ordinante»/«beneficiario», modalità rigida per bonifici (solo tipo + causale), `sospetta_pii()` | `src/scrubbing.py` |
 | AI-S3 | `categorizza_batch(tx, tax, nomi)` solleva errore se `nomi` è vuoto; output del modello validato contro tassonomia e `hash_tx` del batch (anti prompt injection) | `src/ai_categorize.py` |
-| AI-S4 | Suggerimenti AI **non** preconfermati; sottocategoria validata sulla categoria al salvataggio | `app.py` |
+| AI-S4 | Suggerimenti AI **non** preconfermati; sottocategoria validata sulla categoria al salvataggio (la categoria si deduce dalla sottocategoria se vuota) | `app.py` |
 | AI-S5 | Output analisi AI ripulito da immagini/link/URL/HTML (`_sanitize_markdown`) prima di `st.markdown` | `src/ai_categorize.py` |
+| AI-S6 | Dizionario di ~270 nomi/cognomi italiani comuni (`src/nomi_italiani.py`, esclude parole ambigue come CONTI/COSTA/ROSA) oscurato anche in maiuscolo se il nome non è configurato | `src/scrubbing.py`, `src/nomi_italiani.py` |
 | AI-E1 | `aggiorna_categoria_tx_bulk()`: una `UPDATE … IN (…)` per gruppo di valori uguali (chunk da 100) invece di una richiesta per tx | `src/database.py` |
-| AI-E2 | Riepilogo mensile via RPC `get_uncategorized_monthly` (SQL in `UNCATEGORIZED_MONTHLY_RPC_SQL`, da eseguire una volta nel SQL Editor), fallback con `select('data')` | `src/database.py` |
-| AI-R1 | I due flussi AI duplicati unificati in `_ui_categorizzazione_ai()`; costante `MODEL_NAME` | `app.py`, `src/ai_categorize.py` |
+| AI-E2 | Riepilogo mensile via RPC `get_uncategorized_monthly` (SQL in `UNCATEGORIZED_MONTHLY_RPC_SQL`), fallback con `select('data')`. **RPC già creata su Supabase di produzione il 18/10/2026** (verificata: risponde, 0 righe perché nessuna tx senza categoria) | `src/database.py` |
+| AI-R1 | I due flussi AI duplicati unificati in `_ui_categorizzazione_ai()`; costante `MODEL_NAME`; `iterrows()` rimosso | `app.py`, `src/ai_categorize.py` |
 | AI-U1 | Anteprima "cosa viene inviato" con colonna ⚠️; righe sospette escluse dall'invio salvo spunta esplicita; tabella con colonne larghe, etichette leggibili ("Casa › Utenze"), `hash_tx` nascosto | `app.py` |
-
-| AI-S6 | Dizionario di ~270 nomi/cognomi italiani comuni (`src/nomi_italiani.py`, esclude parole ambigue come CONTI/COSTA/ROSA) oscurato anche in maiuscolo, se il nome non è configurato | `src/scrubbing.py`, `src/nomi_italiani.py` |
 | AI-B1 | `salva_transazioni()`: `insert(..., ignore_duplicates=True)` non è più accettato da supabase-py 2.31 (eccezione catturata → ritorno 0, import estratti conto silenziosamente vuoto). Ora `upsert(records, on_conflict='hash_tx', ignore_duplicates=True)`; verificato: 1ª chiamata inserisce, 2ª ritorna 0 | `src/database.py` |
+| AI-B2 | Disallineamento import ↔ Feature #16: `salva_transazioni()` salva `categoria = NULL` (prima la categoria legacy, che impediva a Feature #16 di vedere le tx importate). L'etichetta legacy si ricalcola in lettura: `carica_transazioni()` imposta `category` = nome taxonomy se `categoria` è valorizzata, altrimenti `adapters.categorizza_legacy(raw_categoria, descrizione)` (funzione pura). Nessuna migrazione schema | `src/database.py`, `src/adapters.py` |
+| AI-B3 | `ai_suggest_cache` aggiunta alle chiavi svuotate da "🔄 Aggiorna tutto" | `app.py` |
 
 **Limite noto:** un nome raro, non configurato, non nel dizionario e non preceduto da «a favore di»/«ordinante» non viene né oscurato né segnalato → controllare sempre l'anteprima e aggiungere i nomi in "🔒 Privacy".
 
-| AI-B2 | Disallineamento import ↔ Feature #16: `salva_transazioni()` ora salva `categoria = NULL` (prima la categoria legacy di `_categorize`, che impediva a Feature #16 di vedere le tx importate). L'etichetta legacy si ricalcola in lettura: `carica_transazioni()` imposta `category` = nome taxonomy se `categoria` è valorizzata, altrimenti `adapters.categorizza_legacy(raw_categoria, descrizione)` (funzione pura, estratta da `BankAdapter._categorize`). Nessuna migrazione schema; nel DB non c'erano righe con categoria legacy | `src/database.py`, `src/adapters.py` |
-
-**Dati di prova:** non c'è più uno script nel repo; chiedere a Claude di generare dati fittizi (usare un `conto` riconoscibile tipo `TEST-FITTIZIO` e ripulirli subito dopo).
+**Note operative:**
+- Dopo modifiche a moduli in `src/` riavviare Streamlit (i moduli importati restano in memoria; sintomo: `ImportError` su nomi appena aggiunti).
+- Si parte da zero con le transazioni: il codice legacy (`categorizza_legacy`, categoria legacy nel parser) è innocuo e rimovibile quando non servirà più.
+- Dati di prova: non c'è uno script nel repo; chiedere a Claude di generare dati fittizi (usare un `conto` riconoscibile tipo `TEST-FITTIZIO` e ripulirli subito dopo).
+- Branch locale `claude/practical-hellman-9f6774` (worktree) obsoleto: eliminabile.
 
 ### ✅ Fix code review settimanale e onboarding (18/10/2026)
 
