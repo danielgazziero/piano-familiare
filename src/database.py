@@ -415,7 +415,9 @@ def salva_transazioni(df_tx: pd.DataFrame) -> int:
                 'data': row['date'].date().isoformat(),
                 'importo': float(row['amount']),
                 'descrizione': str(row['description'])[:500],
-                'categoria': str(row['category']),
+                # NULL: la categoria viene assegnata dalla Feature #16 (taxonomy);
+                # l'etichetta legacy si ricalcola in lettura da raw_categoria + descrizione
+                'categoria': None,
                 'conto': str(row['account']),
                 'raw_categoria': str(row.get('raw_category', '')),
                 'hash_tx': hash_tx
@@ -440,7 +442,7 @@ def carica_transazioni(mesi: int = 12) -> pd.DataFrame:
         client = get_client()
         data_inizio = (date.today() - pd.Timedelta(days=mesi*31)).isoformat()
         res = (client.table('transazioni')
-               .select('data, importo, descrizione, categoria, conto')
+               .select('data, importo, descrizione, categoria, raw_categoria, conto')
                .gte('data', data_inizio)
                .order('data', desc=True)
                .limit(5000)
@@ -451,7 +453,15 @@ def carica_transazioni(mesi: int = 12) -> pd.DataFrame:
         df['date'] = pd.to_datetime(df['data'])
         df['amount'] = pd.to_numeric(df['importo'], errors='coerce')
         df['description'] = df['descrizione']
-        df['category'] = df['categoria']
+        # categoria: nome taxonomy se assegnata, altrimenti etichetta legacy ricalcolata
+        from adapters import categorizza_legacy
+        cat_nomi = {c['id']: c['nome'] for c in carica_taxonomy().get('categorie', [])}
+        df['category'] = [
+            cat_nomi.get(cat, cat) if isinstance(cat, str) and cat
+            else categorizza_legacy(raw if isinstance(raw, str) else '',
+                                    desc if isinstance(desc, str) else '')
+            for cat, raw, desc in zip(df['categoria'], df['raw_categoria'], df['descrizione'])
+        ]
         df['account'] = df['conto']
         df['month'] = df['date'].dt.to_period('M')
         df['income'] = df['amount'].clip(lower=0)

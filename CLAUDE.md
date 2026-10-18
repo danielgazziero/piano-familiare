@@ -434,7 +434,7 @@ Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (
 
 **Limite noto:** un nome raro, non configurato, non nel dizionario e non preceduto da «a favore di»/«ordinante» non viene né oscurato né segnalato → controllare sempre l'anteprima e aggiungere i nomi in "🔒 Privacy".
 
-**Da decidere (design):** `salva_transazioni()` salva in `categoria` la categoria legacy di `adapters._categorize()` ("Spesa alimentare", "Shopping online"…), mentre Feature #16 cerca `categoria IS NULL` per le tx da categorizzare e usa gli id della taxonomy (`alimentari`, `casa`…). Le tx importate dai nuovi estratti conto non risultano quindi "senza categoria". Opzioni: salvare la categoria legacy in `raw_categoria` e lasciare `categoria` NULL all'import, oppure mappare legacy → taxonomy.
+| AI-B2 | Disallineamento import ↔ Feature #16: `salva_transazioni()` ora salva `categoria = NULL` (prima la categoria legacy di `_categorize`, che impediva a Feature #16 di vedere le tx importate). L'etichetta legacy si ricalcola in lettura: `carica_transazioni()` imposta `category` = nome taxonomy se `categoria` è valorizzata, altrimenti `adapters.categorizza_legacy(raw_categoria, descrizione)` (funzione pura, estratta da `BankAdapter._categorize`). Nessuna migrazione schema; nel DB non c'erano righe con categoria legacy | `src/database.py`, `src/adapters.py` |
 
 **Dati di prova:** non c'è più uno script nel repo; chiedere a Claude di generare dati fittizi (usare un `conto` riconoscibile tipo `TEST-FITTIZIO` e ripulirli subito dopo).
 
