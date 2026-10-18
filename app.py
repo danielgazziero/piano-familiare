@@ -968,6 +968,7 @@ with st.sidebar:
         "🎯 Simulatore strategie",
         _SEZIONE_FIGLIO,
         "📋 Fine mese",
+        "💳 Analisi spese",
         "⚙️ Gestione Asset",
     ]
     if st.session_state.get("_auth_is_admin"):
@@ -1101,7 +1102,10 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
-                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache']:
+                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
+                  'taxonomy_cache','profilo_famiglia_cache',
+                  'nomi_anonimiz_cache','tx_senza_cat_cache',
+                  'spese_analisi_cache','spese_report_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -2359,6 +2363,685 @@ elif sezione == "📋 Fine mese":
         _mancanti = 4 - _completati
         st.caption(f"Il passo 3 (aggiorna liquidità) richiede sempre un'azione manuale. "
                    f"{'Manca ancora il passo 3 manuale.' if _completati >= 3 else ''}")
+
+
+# ─────────────────────────────────────────────────────────────
+# SEZIONE: ANALISI SPESE
+# ─────────────────────────────────────────────────────────────
+elif sezione == "💳 Analisi spese":
+    st.title("💳 Analisi spese")
+    st.caption("Categorizza le transazioni e analizza le spese con AI.")
+
+    if not db_ok:
+        st.warning("Funzionalità disponibile solo con connessione al DB.")
+        st.stop()
+
+    from database import (carica_taxonomy as _carica_tax,
+                          salva_taxonomy   as _salva_tax)
+
+    # Carica taxonomy in cache di sessione (si invalida su Aggiorna tutto)
+    if 'taxonomy_cache' not in st.session_state:
+        st.session_state['taxonomy_cache'] = _carica_tax()
+
+    _tax = st.session_state['taxonomy_cache']
+
+    # ── Taxonomy manager ─────────────────────────────────────
+    with st.expander("⚙️ Categorie & Tag", expanded=True):
+        _tab_cat, _tab_tag = st.tabs(["🗂️ Categorie", "🏷️ Tag globali"])
+
+        # ── Tab Categorie ─────────────────────────────────────
+        with _tab_cat:
+            _tax_cats = _tax.get('categorie', [])
+            _n_attive = sum(bool(c.get('attiva', True)) for c in _tax_cats)
+            st.caption(f"{_n_attive} categorie attive su {len(_tax_cats)} totali.")
+
+            # Panoramica
+            if _tax_cats:
+                import pandas as _pd_tax
+                _overview = _pd_tax.DataFrame([{
+                    "": c.get('icona', '📌'),
+                    "Categoria": c.get('nome', c.get('id', '')),
+                    "Sottocategorie": len(c.get('sottocategorie', [])),
+                    "Attiva": "✅" if c.get('attiva', True) else "⬜",
+                } for c in _tax_cats])
+                st.dataframe(_overview, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # Seleziona categoria da modificare
+            if _tax_cats:
+                _cat_labels = [f"{c.get('icona','📌')} {c.get('nome', c.get('id',''))}"
+                               for c in _tax_cats]
+                _sel_ci = st.selectbox(
+                    "Modifica categoria",
+                    range(len(_tax_cats)),
+                    format_func=lambda i: _cat_labels[i],
+                    key="tax_sel_cat",
+                )
+                _sel_cat = _tax_cats[_sel_ci]
+
+                _tcc1, _tcc2 = st.columns(2)
+                with _tcc1:
+                    _cur_att = _sel_cat.get('attiva', True)
+                    if st.button("⬜ Disattiva" if _cur_att else "✅ Attiva",
+                                 key="tax_toggle_att"):
+                        _tax['categorie'][_sel_ci]['attiva'] = not _cur_att
+                        st.rerun()
+                with _tcc2:
+                    if st.button("🗑️ Elimina categoria", key="tax_del_cat",
+                                 help="Rimuove la categoria e tutte le sue sottocategorie"):
+                        _tax['categorie'].pop(_sel_ci)
+                        st.session_state.pop('tax_sel_cat', None)
+                        st.rerun()
+
+                # Sottocategorie della categoria selezionata
+                st.markdown(f"**Sottocategorie di {_sel_cat.get('nome', '')}:**")
+                _sel_subs = _sel_cat.get('sottocategorie', [])
+                if _sel_subs:
+                    for _si, _sub in enumerate(_sel_subs):
+                        _sc1, _sc2 = st.columns([8, 1])
+                        with _sc1:
+                            st.write(f"• {_sub.get('nome', '')}")
+                        with _sc2:
+                            if st.button("🗑️", key=f"del_sub_{_sel_ci}_{_si}"):
+                                _tax['categorie'][_sel_ci]['sottocategorie'].pop(_si)
+                                st.rerun()
+                else:
+                    st.caption("Nessuna sottocategoria.")
+
+                with st.form(key=f"add_sub_form_{_sel_ci}"):
+                    _new_sub_nome = st.text_input("Nuova sottocategoria", max_chars=60)
+                    if st.form_submit_button("+ Aggiungi"):
+                        if _new_sub_nome.strip():
+                            _new_sub_id = _new_sub_nome.strip().lower().replace(' ', '_')[:40]
+                            _tax['categorie'][_sel_ci]['sottocategorie'].append(
+                                {'id': _new_sub_id, 'nome': _new_sub_nome.strip(), 'attiva': True})
+                            st.rerun()
+
+            st.divider()
+            with st.form("add_cat_form"):
+                st.markdown("**+ Nuova categoria**")
+                _fc1, _fc2 = st.columns([1, 4])
+                with _fc1:
+                    _new_ico = st.text_input("Icona", value="📌", max_chars=4,
+                                             key="new_cat_ico")
+                with _fc2:
+                    _new_cat_nome = st.text_input("Nome categoria", max_chars=50,
+                                                  key="new_cat_nome")
+                if st.form_submit_button("Aggiungi categoria"):
+                    if _new_cat_nome.strip():
+                        _new_cid = _new_cat_nome.strip().lower().replace(' ', '_')[:40]
+                        _tax['categorie'].append({
+                            'id': _new_cid,
+                            'nome': _new_cat_nome.strip(),
+                            'icona': _new_ico or '📌',
+                            'attiva': True,
+                            'sottocategorie': [],
+                        })
+                        st.rerun()
+
+        # ── Tab Tag globali ──────────────────────────────────
+        with _tab_tag:
+            _tax_tags = _tax.get('tag', [])
+            st.caption("Tag trasversali applicabili a qualunque categoria "
+                       "(es. spese una-tantum, rimborsabili...).")
+            if _tax_tags:
+                for _ti, _tag_item in enumerate(_tax_tags):
+                    _tg1, _tg2 = st.columns([8, 1])
+                    with _tg1:
+                        st.write(f"• `{_tag_item}`")
+                    with _tg2:
+                        if st.button("🗑️", key=f"del_tag_{_ti}"):
+                            _tax['tag'].pop(_ti)
+                            st.rerun()
+            else:
+                st.caption("Nessun tag definito.")
+
+            with st.form("add_tag_form"):
+                _new_tag_val = st.text_input("Nuovo tag", max_chars=40)
+                if st.form_submit_button("+ Aggiungi tag"):
+                    _new_tag_norm = _new_tag_val.strip().lower().replace(' ', '_')
+                    if _new_tag_norm and _new_tag_norm not in _tax_tags:
+                        _tax['tag'].append(_new_tag_norm)
+                        st.rerun()
+
+        st.divider()
+        _ts1, _ts2 = st.columns(2)
+        with _ts1:
+            if st.button("💾 Salva categorie & tag", type="primary", key="tax_save_btn"):
+                if _salva_tax(_tax):
+                    st.session_state.pop('taxonomy_cache', None)
+                    st.success("✅ Taxonomy salvata.")
+                    st.rerun()
+                else:
+                    st.error("Errore durante il salvataggio.")
+        with _ts2:
+            if st.button("↩️ Ripristina default", key="tax_reset_btn"):
+                from database import _DEFAULT_TAXONOMY as _deftax
+                import copy as _copy_tax
+                st.session_state['taxonomy_cache'] = _copy_tax.deepcopy(_deftax)
+                st.rerun()
+
+    # ── Profilo famiglia ──────────────────────────────────────
+    from database import (carica_profilo_famiglia as _cpf,
+                          salva_profilo_famiglia  as _spf,
+                          get_profilo_attivo      as _gpa)
+
+    if 'profilo_famiglia_cache' not in st.session_state:
+        st.session_state['profilo_famiglia_cache'] = _cpf()
+
+    _pf_storia = st.session_state['profilo_famiglia_cache']
+    _pf_attivo = _gpa(_pf_storia)
+
+    _TIPI_FAM = {
+        "single":              "Single",
+        "coppia":              "Coppia senza figli",
+        "coppia_con_figlio":   "Coppia con figlio/i",
+        "famiglia_numerosa":   "Famiglia numerosa (3+ figli)",
+    }
+    _AREE_GEO = {
+        "nord":   "Nord Italia",
+        "centro": "Centro Italia",
+        "sud":    "Sud Italia",
+        "estero": "Estero",
+    }
+    _FASCE_ETA = ["25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60+"]
+
+    with st.expander("👨‍👩‍👧 Profilo famiglia", expanded=not bool(_pf_attivo)):
+        st.caption("Il profilo è usato per il confronto benchmark ISTAT nelle analisi AI.")
+
+        # Profilo corrente
+        if _pf_attivo:
+            _pf_c1, _pf_c2, _pf_c3, _pf_c4 = st.columns(4)
+            _pf_c1.metric("Tipo", _TIPI_FAM.get(_pf_attivo.get('tipo_famiglia',''), '—'))
+            _pf_c2.metric("Area", _AREE_GEO.get(_pf_attivo.get('area_geografica',''), '—'))
+            _pf_c3.metric("Adulti", _pf_attivo.get('num_adulti', '—'))
+            _pf_c4.metric("Figli", _pf_attivo.get('num_figli', '—'))
+            st.caption(f"Attivo dal: {_pf_attivo.get('dal','—')} | "
+                       f"Fascia età: {_pf_attivo.get('fascia_eta','—')}")
+        else:
+            st.info("Nessun profilo configurato. Compila il form per iniziare.")
+
+        st.divider()
+
+        # Scelta modalità
+        _pf_mode = st.radio(
+            "Modalità",
+            ["✏️ Modifica profilo corrente", "🆕 Nuova decorrenza da oggi"],
+            horizontal=True,
+            key="pf_mode_radio",
+            help="'Modifica' aggiorna i dati in-place. "
+                 "'Nuova decorrenza' chiude il periodo corrente e ne apre uno nuovo.",
+        ) if _pf_attivo else "✏️ Modifica profilo corrente"
+
+        with st.form("profilo_famiglia_form"):
+            _pff1, _pff2 = st.columns(2)
+            with _pff1:
+                _pf_tipo = st.selectbox(
+                    "Tipo famiglia",
+                    list(_TIPI_FAM.keys()),
+                    format_func=lambda k: _TIPI_FAM[k],
+                    index=list(_TIPI_FAM.keys()).index(
+                        _pf_attivo.get('tipo_famiglia', 'coppia')) if _pf_attivo else 0,
+                    key="pf_tipo_sel",
+                )
+                _pf_adulti = st.number_input("N. adulti", min_value=1, max_value=6,
+                                             value=int(_pf_attivo.get('num_adulti', 2)) if _pf_attivo else 2,
+                                             key="pf_adulti_inp")
+                _pf_fascia = st.selectbox(
+                    "Fascia età (persona1)",
+                    _FASCE_ETA,
+                    index=_FASCE_ETA.index(_pf_attivo['fascia_eta'])
+                          if _pf_attivo and _pf_attivo.get('fascia_eta') in _FASCE_ETA else 2,
+                    key="pf_fascia_sel",
+                )
+            with _pff2:
+                _pf_area = st.selectbox(
+                    "Area geografica",
+                    list(_AREE_GEO.keys()),
+                    format_func=lambda k: _AREE_GEO[k],
+                    index=list(_AREE_GEO.keys()).index(
+                        _pf_attivo.get('area_geografica', 'nord')) if _pf_attivo else 0,
+                    key="pf_area_sel",
+                )
+                _pf_figli = st.number_input("N. figli", min_value=0, max_value=8,
+                                            value=int(_pf_attivo.get('num_figli', 0)) if _pf_attivo else 0,
+                                            key="pf_figli_inp")
+
+            if st.form_submit_button("💾 Salva profilo", type="primary"):
+                _new_entry = {
+                    'tipo_famiglia':   _pf_tipo,
+                    'area_geografica': _pf_area,
+                    'num_adulti':      int(_pf_adulti),
+                    'num_figli':       int(_pf_figli),
+                    'fascia_eta':      _pf_fascia,
+                    'dal':             date.today().isoformat(),
+                    'al':              None,
+                }
+                if _pf_attivo and _pf_mode == "✏️ Modifica profilo corrente":
+                    # Aggiorna il periodo corrente senza chiuderlo
+                    _new_entry['dal'] = _pf_attivo.get('dal', date.today().isoformat())
+                    _pf_storia_new = [e for e in _pf_storia
+                                      if e.get('dal') != _pf_attivo.get('dal')]
+                    _pf_storia_new.append(_new_entry)
+                else:
+                    # Chiude il periodo attivo e apre uno nuovo
+                    from datetime import timedelta as _td
+                    _ieri = (date.today() - _td(days=1)).isoformat()
+                    _pf_storia_new = []
+                    for _e in _pf_storia:
+                        if _e.get('al') is None and _e.get('dal') == _pf_attivo.get('dal') if _pf_attivo else False:
+                            _pf_storia_new.append({**_e, 'al': _ieri})
+                        else:
+                            _pf_storia_new.append(_e)
+                    _pf_storia_new.append(_new_entry)
+
+                if _spf(_pf_storia_new):
+                    st.session_state['profilo_famiglia_cache'] = sorted(
+                        _pf_storia_new, key=lambda x: x.get('dal', ''), reverse=True)
+                    st.success("✅ Profilo salvato.")
+                    st.rerun()
+                else:
+                    st.error("Errore durante il salvataggio.")
+
+        # Storico periodi
+        if len(_pf_storia) > 1:
+            with st.expander("📅 Storico periodi"):
+                import pandas as _pd_pf
+                _hist_rows = []
+                for _e in sorted(_pf_storia, key=lambda x: x.get('dal',''), reverse=True):
+                    _hist_rows.append({
+                        "Dal": _e.get('dal',''),
+                        "Al":  _e.get('al') or "corrente",
+                        "Tipo": _TIPI_FAM.get(_e.get('tipo_famiglia',''), _e.get('tipo_famiglia','')),
+                        "Area": _AREE_GEO.get(_e.get('area_geografica',''), _e.get('area_geografica','')),
+                        "Adulti": _e.get('num_adulti',''),
+                        "Figli": _e.get('num_figli',''),
+                        "Fascia età": _e.get('fascia_eta',''),
+                    })
+                st.dataframe(_pd_pf.DataFrame(_hist_rows), use_container_width=True, hide_index=True)
+
+    # ── Scrubbing anonimizzazione ─────────────────────────────
+    from database import (carica_nomi_anonimizzare as _cna,
+                          salva_nomi_anonimizzare  as _sna,
+                          carica_tx_senza_categoria as _ctx_sc)
+
+    if 'nomi_anonimiz_cache' not in st.session_state:
+        st.session_state['nomi_anonimiz_cache'] = _cna()
+
+    _nomi_anon = st.session_state['nomi_anonimiz_cache']
+
+    with st.expander("🔒 Privacy & Anonimizzazione", expanded=not bool(_nomi_anon)):
+        st.caption(
+            "Questi nomi vengono sostituiti con `[NOME]` in ogni testo inviato all'AI. "
+            "Aggiungi nomi propri, ragioni sociali o qualsiasi stringa da oscurare."
+        )
+
+        # Lista corrente
+        if _nomi_anon:
+            for _ni, _nn in enumerate(_nomi_anon):
+                _nc1, _nc2 = st.columns([8, 1])
+                with _nc1:
+                    st.write(f"• `{_nn}`")
+                with _nc2:
+                    if st.button("🗑️", key=f"del_nome_{_ni}"):
+                        _nomi_anon.pop(_ni)
+                        if _sna(_nomi_anon):
+                            st.session_state['nomi_anonimiz_cache'] = _nomi_anon
+                        st.rerun()
+        else:
+            st.info("Nessun nome configurato. Aggiungi almeno i nomi dei membri della famiglia.")
+
+        with st.form("add_nome_anon_form"):
+            _new_nome = st.text_input("Nome / stringa da oscurare", max_chars=100,
+                                      placeholder="es. Mario, Rossi, MARIO ROSSI")
+            if st.form_submit_button("+ Aggiungi"):
+                _new_nome = _new_nome.strip()
+                if _new_nome and _new_nome not in _nomi_anon:
+                    _nomi_anon.append(_new_nome)
+                    if _sna(_nomi_anon):
+                        st.session_state['nomi_anonimiz_cache'] = list(_nomi_anon)
+                        st.success(f"✅ '{_new_nome}' aggiunto.")
+                    st.rerun()
+                elif _new_nome in _nomi_anon:
+                    st.warning("Nome già presente.")
+
+        # Preview scrubbing
+        if _nomi_anon:
+            st.divider()
+            st.markdown("**Preview scrubbing**")
+            _prev_input = st.text_area(
+                "Testo di prova (es. una causale bancaria)",
+                placeholder="PAGAMENTO MARIO ROSSI IT60X0542811101000000123456",
+                key="scrub_preview_txt",
+                height=80,
+            )
+            if _prev_input.strip():
+                from scrubbing import scrub as _scrub_fn
+                _prev_out = _scrub_fn(_prev_input, _nomi_anon)
+                st.code(_prev_out, language=None)
+
+    # ── Giroconti sospetti ────────────────────────────────────
+    with st.expander("🔀 Giroconti sospetti (amount-based matching)"):
+        st.caption(
+            "Addebiti e accrediti di pari importo su conti diversi entro 3 giorni "
+            "vengono proposti come giroconti interni. Confermali per escluderli "
+            "dall'analisi spese."
+        )
+
+        if st.button("🔍 Cerca giroconti", key="cerca_giroconti_btn"):
+            st.session_state.pop('tx_senza_cat_cache', None)
+
+        if 'tx_senza_cat_cache' not in st.session_state:
+            with st.spinner("Caricamento transazioni..."):
+                st.session_state['tx_senza_cat_cache'] = _ctx_sc(limit=500)
+
+        _tx_sc = st.session_state['tx_senza_cat_cache']
+
+        if not _tx_sc:
+            st.info("Nessuna transazione senza categoria nel DB. "
+                    "Importa gli estratti conto dalla sezione 'Fine mese'.")
+        else:
+            from scrubbing import find_giroconti as _find_gc
+            _gc_candidates = _find_gc(_tx_sc)
+
+            if not _gc_candidates:
+                st.success(f"Nessun giroconto rilevato su {len(_tx_sc)} transazioni non categorizzate.")
+            else:
+                st.info(f"Trovati **{len(_gc_candidates)}** candidati su {len(_tx_sc)} transazioni. "
+                        "Conferma quelli corretti per categorizzarli come 'Trasferimento interno'.")
+
+                from database import aggiorna_categoria_tx as _agg_cat
+                _gc_confermati = 0
+                for _gc in _gc_candidates:
+                    with st.container(border=True):
+                        _gca, _gcb, _gcc = st.columns([3, 3, 2])
+                        with _gca:
+                            st.markdown(f"**Addebito** — {_gc['data_addebito']}")
+                            st.write(f"Conto: `{_gc['conto_da'] or '—'}`")
+                            st.caption(_gc['desc_addebito'][:80] or '—')
+                        with _gcb:
+                            st.markdown(f"**Accredito** — {_gc['data_accredito']}")
+                            st.write(f"Conto: `{_gc['conto_a'] or '—'}`")
+                            st.caption(_gc['desc_accredito'][:80] or '—')
+                        with _gcc:
+                            st.metric("Importo", f"€ {_gc['importo']:,.2f}")
+                            st.caption(f"Δ {_gc['delta_giorni']} gg")
+                            if st.button("✅ Conferma giroconto",
+                                         key=f"gc_ok_{_gc['hash_addebito']}"):
+                                _ok1 = _agg_cat(_gc['hash_addebito'],
+                                                'trasferimento_interno',
+                                                sottocategoria=None, tag=[], confermata=True)
+                                _ok2 = _agg_cat(_gc['hash_accredito'],
+                                                'trasferimento_interno',
+                                                sottocategoria=None, tag=[], confermata=True)
+                                if _ok1 and _ok2:
+                                    _gc_confermati += 1
+                                    st.session_state.pop('tx_senza_cat_cache', None)
+                                    st.success("Categorizzato come trasferimento interno.")
+                                    st.rerun()
+
+    # ── Categorizzazione AI ───────────────────────────────────
+    with st.expander("✨ Categorizzazione AI transazioni"):
+        st.caption(
+            "Claude analizza le causali anonimizzate e suggerisce categoria e sottocategoria. "
+            "Rivedi i suggerimenti nel tabellone, correggi dove necessario e salva."
+        )
+
+        # Verifica API key
+        _ai_key_ok = bool(st.secrets.get('ANTHROPIC_API_KEY', ''))
+        if not _ai_key_ok:
+            st.warning(
+                "🔑 `ANTHROPIC_API_KEY` non configurata. "
+                "Aggiungila in `.streamlit/secrets.toml` per abilitare la categorizzazione AI."
+            )
+
+        # Verifica nomi anonimizzazione configurati
+        if not _nomi_anon:
+            st.warning(
+                "⚠️ Nessun nome configurato nell'expander 'Privacy & Anonimizzazione'. "
+                "Aggiungi i nomi dei membri della famiglia prima di procedere."
+            )
+
+        # Carica (o riusa) transazioni senza categoria
+        if 'tx_senza_cat_cache' not in st.session_state:
+            with st.spinner("Caricamento transazioni..."):
+                st.session_state['tx_senza_cat_cache'] = _ctx_sc(limit=500)
+
+        _tx_da_cat = [t for t in st.session_state.get('tx_senza_cat_cache', [])
+                      if float(t.get('importo', 0)) < 0]
+
+        st.metric("Transazioni da categorizzare (uscite)", len(_tx_da_cat))
+
+        if not _tx_da_cat:
+            st.info("Nessuna uscita senza categoria. "
+                    "Importa estratti conto dalla sezione '📋 Fine mese'.")
+        elif _ai_key_ok and _nomi_anon:
+            # Pulsante analisi AI
+            _col_ai1, _col_ai2 = st.columns([2, 5])
+            with _col_ai1:
+                _run_ai = st.button("✨ Analizza con AI", type="primary",
+                                    key="run_ai_cat_btn",
+                                    help="Invia le causali anonimizzate a Claude Haiku")
+            with _col_ai2:
+                _batch_info = f"{min(50, len(_tx_da_cat))} tx per batch · modello: claude-haiku-5-5"
+                st.caption(_batch_info)
+
+            if _run_ai:
+                from scrubbing import scrub_batch as _scrub_batch
+                from ai_categorize import categorizza_batch as _cat_batch
+
+                _desc_orig = [t.get('descrizione') or '' for t in _tx_da_cat]
+                _desc_anon = _scrub_batch(_desc_orig, _nomi_anon)
+
+                _tx_input = [
+                    {'hash_tx': t['hash_tx'],
+                     'descrizione_anonimizzata': _desc_anon[i],
+                     'importo': float(t.get('importo', 0))}
+                    for i, t in enumerate(_tx_da_cat)
+                ]
+
+                with st.spinner(f"Analisi AI in corso ({len(_tx_da_cat)} transazioni)..."):
+                    try:
+                        _ai_res = _cat_batch(_tx_input, _tax)
+                        # Mappa hash_tx → suggerimento
+                        _ai_map = {r['hash_tx']: r for r in _ai_res}
+                        st.session_state['ai_suggest_cache'] = _ai_map
+                        st.success(f"✅ Ricevuti suggerimenti per {len(_ai_res)} transazioni.")
+                    except RuntimeError as _err:
+                        st.error(str(_err))
+
+            # Costruisce DataFrame per data_editor
+            _ai_map = st.session_state.get('ai_suggest_cache', {})
+            _cat_ids   = [c['id']   for c in _tax.get('categorie', []) if c.get('attiva', True)]
+            _cat_nomi  = [c['nome'] for c in _tax.get('categorie', []) if c.get('attiva', True)]
+            _id2nome   = dict(zip(_cat_ids, _cat_nomi))
+            _nome2id   = dict(zip(_cat_nomi, _cat_ids))
+
+            # Mappa sottocategorie: cat_id -> list di sub-id
+            _cat2subs = {
+                c['id']: [s['id'] for s in c.get('sottocategorie', []) if s.get('attiva', True)]
+                for c in _tax.get('categorie', []) if c.get('attiva', True)
+            }
+            _all_subs = sorted({sid for sids in _cat2subs.values() for sid in sids})
+
+            import pandas as _pd_ai
+            _editor_rows = []
+            for _t in _tx_da_cat:
+                _htx  = _t['hash_tx']
+                _sug  = _ai_map.get(_htx, {})
+                _cat_id = _sug.get('categoria') or ''
+                _sub_id = _sug.get('sottocategoria') or ''
+                _editor_rows.append({
+                    'hash_tx':       _htx,
+                    'Data':          str(_t.get('data', '')),
+                    'Descrizione':   (_t.get('descrizione') or '')[:80],
+                    'Importo €':     float(_t.get('importo', 0)),
+                    'Categoria':     _id2nome.get(_cat_id, ''),
+                    'Sottocategoria': _sub_id,
+                    'Tag':           '',
+                    'Conferma':      bool(_sug),
+                })
+            _df_editor = _pd_ai.DataFrame(_editor_rows)
+
+            if not _df_editor.empty:
+                st.markdown("**Revisiona e correggi i suggerimenti AI:**")
+                _edited = st.data_editor(
+                    _df_editor,
+                    column_config={
+                        'hash_tx':    st.column_config.Column(disabled=True, width='small'),
+                        'Data':       st.column_config.Column(disabled=True, width='small'),
+                        'Descrizione': st.column_config.Column(disabled=True),
+                        'Importo €':  st.column_config.NumberColumn(
+                            disabled=True, format="€ %.2f", width='small'),
+                        'Categoria':  st.column_config.SelectboxColumn(
+                            options=_cat_nomi, width='medium'),
+                        'Sottocategoria': st.column_config.SelectboxColumn(
+                            options=[None] + _all_subs, width='medium'),
+                        'Tag':        st.column_config.SelectboxColumn(
+                            options=[None] + list(_tax.get('tag', [])), width='small'),
+                        'Conferma':   st.column_config.CheckboxColumn(width='small'),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key='cat_editor',
+                    num_rows='fixed',
+                )
+
+                _n_da_salvare = int(_edited['Conferma'].sum())
+                st.caption(f"{_n_da_salvare} righe selezionate per il salvataggio.")
+
+                if st.button("💾 Salva categorizzazioni", type="primary",
+                             key="salva_cat_btn",
+                             disabled=_n_da_salvare == 0):
+                    from database import aggiorna_categoria_tx as _agg_cat
+                    _salvate = 0
+                    _errori  = 0
+                    for _, _row in _edited[_edited['Conferma']].iterrows():
+                        _cat_nome_sel = _row.get('Categoria') or ''
+                        _cat_id_sel   = _nome2id.get(_cat_nome_sel) or 'altro'
+                        _sub_sel      = _row.get('Sottocategoria') or None
+                        _tag_val      = _row.get('Tag') or None
+                        _tag_list     = [_tag_val] if _tag_val else []
+                        _ok = _agg_cat(
+                            _row['hash_tx'],
+                            _cat_id_sel,
+                            sottocategoria=_sub_sel if _sub_sel else None,
+                            tag=_tag_list,
+                            confermata=True,
+                        )
+                        if _ok:
+                            _salvate += 1
+                        else:
+                            _errori += 1
+
+                    st.session_state.pop('tx_senza_cat_cache', None)
+                    st.session_state.pop('ai_suggest_cache', None)
+                    if _errori == 0:
+                        st.success(f"✅ {_salvate} transazioni categorizzate e salvate.")
+                    else:
+                        st.warning(f"Salvate {_salvate}, errori: {_errori}.")
+                    st.rerun()
+
+    # ── Analisi AI spese ─────────────────────────────────────
+    from database import carica_spese_categorizzate as _csc2
+    from simulator import calcola_analisi_spese      as _calc_analisi
+    from ai_categorize import analizza_spese_ai      as _analisi_ai
+
+    with st.expander("📊 Analisi AI spese"):
+        st.caption(
+            "KPI mensili, semafori per categoria vs media 12 mesi e benchmark ISTAT, "
+            "e suggerimenti AI concreti per ottimizzare le spese."
+        )
+
+        if not _nomi_anon:
+            st.warning("⚠️ Prima configura almeno un nome nella sezione 🔒 Privacy.")
+        else:
+            if st.button("🔄 Ricarica dati spese", key="ricarica_spese_btn"):
+                st.session_state.pop('spese_analisi_cache', None)
+                st.session_state.pop('spese_report_cache', None)
+                st.rerun()
+
+            if 'spese_analisi_cache' not in st.session_state:
+                with st.spinner("Caricamento transazioni categorizzate..."):
+                    st.session_state['spese_analisi_cache'] = _csc2(limit=2000)
+
+            _tx_cat = st.session_state.get('spese_analisi_cache', [])
+
+            if not _tx_cat:
+                st.info("Nessuna transazione categorizzata. Prima usa ✨ Categorizzazione AI.")
+            else:
+                _bench_cfg = config.get('benchmark_istat', {})
+                _analisi   = _calc_analisi(_tx_cat, _bench_cfg)
+                _kpi       = _analisi['kpi']
+                _sem       = _analisi['semafori']
+                _n_mesi    = _analisi['n_mesi_storico']
+
+                # ── KPI cards ────────────────────────────────
+                _col1, _col2, _col3, _col4 = st.columns(4)
+                with _col1:
+                    st.metric("💸 Spese mese", f"€{_kpi['totale_mese']:,.0f}")
+                with _col2:
+                    _dp = _kpi['delta_pct']
+                    st.metric(
+                        "📊 vs media 12m",
+                        f"{_dp:+.1f}%",
+                        delta=f"{_dp:+.1f}%",
+                        delta_color="inverse",
+                    )
+                with _col3:
+                    st.metric("🏆 Top categoria", _kpi['top_categoria'])
+                with _col4:
+                    st.metric("📅 Mesi storico", str(_n_mesi))
+
+                st.divider()
+
+                # ── Tabella semafori ──────────────────────────
+                st.markdown("**🚦 Spese per categoria**")
+                if _sem:
+                    _df_sem = pd.DataFrame(_sem)
+                    _df_sem['Mese (€)']     = _df_sem['mese_eur'].apply(lambda x: f"€{x:,.0f}")
+                    _df_sem['Media 12m (€)'] = _df_sem['media_12m_eur'].apply(lambda x: f"€{x:,.0f}")
+                    _df_sem['ISTAT (€)']    = _df_sem['benchmark_eur'].apply(
+                        lambda x: f"€{x:,.0f}" if x is not None else 'N/D'
+                    )
+                    st.dataframe(
+                        _df_sem[['semaforo', 'categoria', 'Mese (€)', 'trend',
+                                 'Media 12m (€)', 'ISTAT (€)']].rename(columns={
+                            'semaforo':  '',
+                            'categoria': 'Categoria',
+                            'trend':     'Trend',
+                        }),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                st.divider()
+
+                # ── Analisi AI ───────────────────────────────
+                st.markdown("**✨ Analisi AI**")
+                _ai_key_ok2 = bool(st.secrets.get('ANTHROPIC_API_KEY', ''))
+                if not _ai_key_ok2:
+                    st.warning(
+                        "⚠️ `ANTHROPIC_API_KEY` non configurata — "
+                        "aggiungi la chiave in `.streamlit/secrets.toml` per attivare l'analisi AI."
+                    )
+                else:
+                    if st.button("✨ Genera analisi AI", key="genera_analisi_ai_btn"):
+                        st.session_state.pop('spese_report_cache', None)
+                        with st.spinner("Claude sta analizzando le spese..."):
+                            try:
+                                _report = _analisi_ai(_sem, _kpi, _nomi_anon)
+                                st.session_state['spese_report_cache'] = _report
+                            except RuntimeError as _ae:
+                                st.error(f"Errore analisi AI: {_ae}")
+                        st.rerun()
+
+                    _report = st.session_state.get('spese_report_cache')
+                    if _report:
+                        st.markdown(_report)
+
+    st.info("💡 Prossimo step: Batch retroattivo — categorizza mesi precedenti (step 6).")
 
 
 # ─────────────────────────────────────────────────────────────

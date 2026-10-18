@@ -306,3 +306,144 @@ def calcola_fire_metrics(patrimonio_attuale: float, spese_annue: float,
         'coast_raggiunto': patrimonio_attuale >= coast_target,
         'anni_a_fire': anni_a_fire,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# AI SPENDING ANALYSIS — aggregazione e semafori spese
+# ─────────────────────────────────────────────────────────────
+
+def aggrega_spese_per_categoria(transazioni: list, anno: int = None, mese: int = None) -> dict:
+    """
+    Somma le uscite (importo < 0) per categoria, escludendo trasferimenti interni.
+    Filtra opzionalmente per anno e/o mese.
+    Restituisce {categoria: importo_totale_assoluto}.
+    """
+    from collections import defaultdict
+    totali: dict = defaultdict(float)
+    for t in transazioni:
+        try:
+            importo = float(t.get('importo', 0))
+        except (ValueError, TypeError):
+            continue
+        if importo >= 0:
+            continue
+        cat = (t.get('categoria') or '').strip()
+        if not cat or cat == 'trasferimento_interno':
+            continue
+        try:
+            d = date.fromisoformat(str(t['data']))
+        except (ValueError, TypeError):
+            continue
+        if anno is not None and d.year != anno:
+            continue
+        if mese is not None and d.month != mese:
+            continue
+        totali[cat] += abs(importo)
+    return {k: round(v, 2) for k, v in totali.items()}
+
+
+def calcola_analisi_spese(transazioni: list, benchmark_istat: dict) -> dict:
+    """
+    Calcola KPI e semafori di spesa per categoria.
+
+    Args:
+        transazioni: lista dict con chiavi data, importo, categoria
+        benchmark_istat: dict {nome_categoria: eur_mensile} da config.yaml
+
+    Returns:
+        {kpi: {...}, semafori: [...], n_mesi_storico: int}
+    """
+    from collections import defaultdict
+
+    today = date.today()
+    anno_c, mese_c = today.year, today.month
+
+    spese_mese = aggrega_spese_per_categoria(transazioni, anno=anno_c, mese=mese_c)
+
+    # Raccoglie totali per (anno, mese) — ultimi 12 mesi
+    mesi_map: dict = defaultdict(lambda: defaultdict(float))
+    for t in transazioni:
+        try:
+            importo = float(t.get('importo', 0))
+        except (ValueError, TypeError):
+            continue
+        if importo >= 0:
+            continue
+        cat = (t.get('categoria') or '').strip()
+        if not cat or cat == 'trasferimento_interno':
+            continue
+        try:
+            d = date.fromisoformat(str(t['data']))
+        except (ValueError, TypeError):
+            continue
+        delta = (anno_c - d.year) * 12 + (mese_c - d.month)
+        if 0 <= delta < 12:
+            mesi_map[(d.year, d.month)][cat] += abs(importo)
+
+    n_mesi = len(mesi_map)
+    media_12m: dict = {}
+    if n_mesi > 0:
+        totali_12m: dict = defaultdict(float)
+        for md in mesi_map.values():
+            for cat, v in md.items():
+                totali_12m[cat] += v
+        media_12m = {cat: round(v / n_mesi, 2) for cat, v in totali_12m.items()}
+
+    bench_norm = {k.lower().strip(): float(v) for k, v in benchmark_istat.items()}
+
+    def _bench(cat_nome: str):
+        cn = cat_nome.lower().strip()
+        if cn in bench_norm:
+            return bench_norm[cn]
+        for k, v in bench_norm.items():
+            if k in cn or cn in k:
+                return v
+        return None
+
+    semafori = []
+    for cat in sorted(set(spese_mese) | set(media_12m)):
+        m_eur = round(spese_mese.get(cat, 0.0), 2)
+        avg_eur = round(media_12m.get(cat, 0.0), 2)
+        b_eur = _bench(cat)
+
+        if avg_eur > 0:
+            trend = '↑' if m_eur > avg_eur * 1.10 else ('↓' if m_eur < avg_eur * 0.90 else '→')
+        else:
+            trend = '→'
+
+        sopra_media = avg_eur > 0 and m_eur > avg_eur * 1.30
+        sopra_bench = b_eur and m_eur > b_eur * 1.30
+        quasi_media = avg_eur > 0 and m_eur > avg_eur * 1.10
+        quasi_bench = b_eur and m_eur > b_eur * 1.10
+
+        if sopra_media or sopra_bench:
+            semaforo = '🔴'
+        elif quasi_media or quasi_bench:
+            semaforo = '🟡'
+        else:
+            semaforo = '🟢'
+
+        semafori.append({
+            'categoria':    cat,
+            'mese_eur':     m_eur,
+            'media_12m_eur': avg_eur,
+            'benchmark_eur': b_eur,
+            'trend':        trend,
+            'semaforo':     semaforo,
+        })
+
+    totale_mese = round(sum(spese_mese.values()), 2)
+    totale_media = round(sum(media_12m.values()), 2)
+    delta_pct = round((totale_mese - totale_media) / totale_media * 100, 1) if totale_media > 0 else 0.0
+    top_cat = max(spese_mese, key=lambda k: spese_mese[k]) if spese_mese else 'N/D'
+
+    return {
+        'kpi': {
+            'totale_mese':     totale_mese,
+            'totale_media_12m': totale_media,
+            'top_categoria':   top_cat,
+            'delta_pct':       delta_pct,
+        },
+        'semafori':       semafori,
+        'n_mesi_storico': n_mesi,
+    }
