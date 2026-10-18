@@ -2787,10 +2787,51 @@ elif sezione == "💳 Analisi spese":
     def _ui_categorizzazione_ai(tx_list, *, ai_cache_key, key_prefix, editor_key,
                                 clear_keys, con_tag, nomi, tax, titolo_review):
         """Flusso condiviso: scrub → Claude → tabella di revisione → salvataggio bulk."""
-        from scrubbing import scrub_batch
+        from scrubbing import scrub_batch, sospetta_pii
         from ai_categorize import categorizza_batch, MODEL_NAME
         from database import aggiorna_categoria_tx_bulk
         import pandas as pd
+
+        # Nomi da oscurare: quelli configurati in Privacy + i nomi di famiglia dai parametri
+        _p = st.session_state.get('params', {})
+        _gen = {'persona 1', 'persona 2', 'figlio', ''}
+        nomi_eff = list(dict.fromkeys(
+            list(nomi) + [str(_p.get(k) or '').strip()
+                          for k in ('nome_persona1', 'nome_persona2', 'nome_figlio')
+                          if str(_p.get(k) or '').strip().lower() not in _gen]))
+
+        desc_anon = scrub_batch([t.get('descrizione') or '' for t in tx_list], nomi_eff)
+        sospette = [sospetta_pii(d) for d in desc_anon]
+        n_sosp = sum(sospette)
+
+        with st.expander(f"🔍 Anteprima: testo che verrà inviato a Claude ({len(tx_list)} tx)",
+                         expanded=bool(n_sosp)):
+            st.caption(
+                "Questo è l'unico testo delle causali che lascia l'app (insieme a importo e "
+                "hash). Oltre ai nomi configurati vengono oscurati: persone dopo «a favore di», "
+                "«ordinante», «beneficiario», email, IBAN, carte, telefoni, numeri lunghi. "
+                "Per bonifici e giroconti si invia solo il tipo di operazione e la causale.")
+            st.dataframe(
+                pd.DataFrame({
+                    '⚠️': ['⚠️' if s else '' for s in sospette],
+                    'Originale (solo qui)': [(t.get('descrizione') or '')[:120]
+                                             for t in tx_list],
+                    'Inviato a Claude': [d[:120] for d in desc_anon]}),
+                hide_index=True, use_container_width=True,
+                column_config={'⚠️': st.column_config.Column(width=50),
+                               'Originale (solo qui)': st.column_config.Column(width=420),
+                               'Inviato a Claude': st.column_config.Column(width=420)})
+            invia_sosp = False
+            if n_sosp:
+                st.warning(
+                    f"⚠️ {n_sosp} causali contengono parole che sembrano nomi propri e NON "
+                    "vengono inviate. Aggiungi quei nomi in 🔒 Privacy per includerle, oppure "
+                    "spunta qui sotto per inviarle comunque.")
+                invia_sosp = st.checkbox("Invia comunque le righe segnalate",
+                                         key=f"{key_prefix}_invia_sosp")
+
+        idx_invio = [i for i, s in enumerate(sospette) if invia_sosp or not s] if n_sosp \
+            else list(range(len(tx_list)))
 
         col_b, col_c = st.columns([2, 5])
         with col_b:
@@ -2798,39 +2839,57 @@ elif sezione == "💳 Analisi spese":
                                key=f"{key_prefix}_ai_btn",
                                help="Invia le causali anonimizzate a Claude Haiku")
         with col_c:
-            st.caption(f"{len(tx_list)} tx · modello: {MODEL_NAME}")
+            st.caption(f"{len(idx_invio)} tx da inviare su {len(tx_list)} · "
+                       f"modello: {MODEL_NAME}")
 
         if run_ai:
-            desc_anon = scrub_batch([t.get('descrizione') or '' for t in tx_list], nomi)
-            tx_input = [{'hash_tx': t['hash_tx'],
+            # blocco di sicurezza: nessun nome oscurabile deve comparire nel testo inviato
+            _residui = [n for n in nomi_eff if n.strip() and any(
+                n.strip().lower() in desc_anon[i].lower() for i in idx_invio)]
+            if _residui:
+                st.error("⛔ Invio bloccato: la causale contiene ancora un nome da anonimizzare.")
+                return
+            tx_input = [{'hash_tx': tx_list[i]['hash_tx'],
                          'descrizione_anonimizzata': desc_anon[i],
-                         'importo': float(t.get('importo', 0))}
-                        for i, t in enumerate(tx_list)]
-            with st.spinner(f"Analisi AI in corso ({len(tx_list)} transazioni)..."):
+                         'importo': float(tx_list[i].get('importo', 0))}
+                        for i in idx_invio]
+            with st.spinner(f"Analisi AI in corso ({len(tx_input)} transazioni)..."):
                 try:
-                    ris = categorizza_batch(tx_input, tax, nomi)
+                    ris = categorizza_batch(tx_input, tax, nomi_eff)
                     st.session_state[ai_cache_key] = {r['hash_tx']: r for r in ris}
                     st.success(f"✅ Ricevuti suggerimenti per {len(ris)} transazioni.")
                 except RuntimeError as err:
                     st.error(str(err))
 
         ai_map = st.session_state.get(ai_cache_key, {})
+
+        # Etichette leggibili: "🏠 Casa", "Casa › Utenze", "Una tantum"
         attive = [c for c in tax.get('categorie', []) if c.get('attiva', True)]
-        id2nome = {c['id']: c['nome'] for c in attive}
-        nome2id = {c['nome']: c['id'] for c in attive}
-        cat2subs = {c['id']: [s['id'] for s in c.get('sottocategorie', [])
-                              if s.get('attiva', True)] for c in attive}
-        all_subs = sorted({sid for sids in cat2subs.values() for sid in sids})
+        cat_label = {c['id']: f"{c.get('icona', '')} {c['nome']}".strip() for c in attive}
+        label2cat = {v: k for k, v in cat_label.items()}
+        sub_label, label2sub = {}, {}
+        cat2subs = {}
+        for c in attive:
+            cat2subs[c['id']] = []
+            for s in c.get('sottocategorie', []):
+                if s.get('attiva', True):
+                    lab = f"{c['nome']} › {s['nome']}"
+                    sub_label[(c['id'], s['id'])] = lab
+                    label2sub[lab] = (c['id'], s['id'])
+                    cat2subs[c['id']].append(s['id'])
+        tag_label = {t: str(t).replace('_', ' ').capitalize() for t in tax.get('tag', [])}
+        label2tag = {v: k for k, v in tag_label.items()}
 
         righe = []
         for t in tx_list:
             sug = ai_map.get(t['hash_tx'], {})
+            cid = sug.get('categoria') or ''
             riga = {'hash_tx': t['hash_tx'],
                     'Data': str(t.get('data', '')),
-                    'Descrizione': (t.get('descrizione') or '')[:80],
+                    'Descrizione': (t.get('descrizione') or '')[:120],
                     'Importo €': float(t.get('importo', 0)),
-                    'Categoria': id2nome.get(sug.get('categoria') or '', ''),
-                    'Sottocategoria': sug.get('sottocategoria') or ''}
+                    'Categoria': cat_label.get(cid, ''),
+                    'Sottocategoria': sub_label.get((cid, sug.get('sottocategoria')), '')}
             if con_tag:
                 riga['Tag'] = ''
             riga['Conferma'] = False
@@ -2840,24 +2899,26 @@ elif sezione == "💳 Analisi spese":
             return
 
         cfg = {
-            'hash_tx': st.column_config.Column(disabled=True, width='small'),
-            'Data': st.column_config.Column(disabled=True, width='small'),
-            'Descrizione': st.column_config.Column(disabled=True),
+            'hash_tx': None,  # nascosta, serve solo per il salvataggio
+            'Data': st.column_config.Column(disabled=True, width=95),
+            'Descrizione': st.column_config.Column(disabled=True, width=380),
             'Importo €': st.column_config.NumberColumn(
-                disabled=True, format="€ %.2f", width='small'),
+                disabled=True, format="€ %.2f", width=95),
             'Categoria': st.column_config.SelectboxColumn(
-                options=list(id2nome.values()), width='medium'),
+                options=list(cat_label.values()), width=230),
             'Sottocategoria': st.column_config.SelectboxColumn(
-                options=[None] + all_subs, width='medium'),
-            'Conferma': st.column_config.CheckboxColumn(width='small'),
+                options=[''] + list(sub_label.values()), width=300),
+            'Conferma': st.column_config.CheckboxColumn(width=85),
         }
         if con_tag:
             cfg['Tag'] = st.column_config.SelectboxColumn(
-                options=[None] + list(tax.get('tag', [])), width='small')
+                options=[''] + list(tag_label.values()), width=160)
         st.markdown(titolo_review)
+        st.caption("Suggerimento: passa il mouse sulla tabella e usa l'icona ⛶ in alto a destra "
+                   "per vederla a schermo intero.")
         edited = st.data_editor(df, column_config=cfg, hide_index=True,
                                 use_container_width=True, key=editor_key,
-                                num_rows='fixed')
+                                num_rows='fixed', row_height=38)
         n_sel = int(edited['Conferma'].sum())
         st.caption(f"{n_sel} righe selezionate per il salvataggio.")
 
@@ -2865,12 +2926,16 @@ elif sezione == "💳 Analisi spese":
                      key=f"{key_prefix}_salva_btn", disabled=n_sel == 0):
             da_salvare = []
             for row in edited[edited['Conferma']].to_dict('records'):
-                cat_id = nome2id.get(row.get('Categoria') or '') or 'altro'
-                sub = row.get('Sottocategoria') or None
-                if sub not in cat2subs.get(cat_id, []):
-                    sub = None  # sottocategoria non appartenente alla categoria
-                tag_val = row.get('Tag') if con_tag else None
-                da_salvare.append({'hash_tx': row['hash_tx'], 'categoria': cat_id,
+                cat_id = label2cat.get(row.get('Categoria') or '')
+                sub = None
+                coppia = label2sub.get(row.get('Sottocategoria') or '')
+                if coppia:
+                    if cat_id is None:
+                        cat_id = coppia[0]  # categoria dedotta dalla sottocategoria
+                    if coppia[0] == cat_id:
+                        sub = coppia[1]     # altrimenti incoerente → scartata
+                tag_val = label2tag.get(row.get('Tag') or '') if con_tag else None
+                da_salvare.append({'hash_tx': row['hash_tx'], 'categoria': cat_id or 'altro',
                                    'sottocategoria': sub,
                                    'tag': [tag_val] if tag_val else []})
             salvate, errori = aggiorna_categoria_tx_bulk(da_salvare)

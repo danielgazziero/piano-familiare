@@ -14,6 +14,24 @@ _EMAIL_RE = re.compile(r'[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}', re.IGNORECASE
 _CARD_RE  = re.compile(r'\b(?:\d[ \-]?){12,18}\d\b')
 # Telefoni IT (fissi/mobili), con prefisso +39/0039 opzionale
 _PHONE_RE = re.compile(r'(?<!\d)(?:(?:\+|00)39[ .\-]?)?(?:3\d{2}|0\d{1,3})[ .\-]?\d{6,7}(?!\d)')
+_NUM_RE   = re.compile(r'(?<!\w)\d{6,}(?!\w)')
+
+# Frasi che introducono una persona (beneficiario/ordinante): le parole che le seguono
+# vengono oscurate anche se il nome non è tra quelli configurati.
+_TRIGGER_RE = re.compile(
+    r'\b(A FAVORE DI|A FAVORE|FAVORE DI|BENEFICIARIO|BENEF\.?|ORDINANTE|ORD\.?|'
+    r'DISPOSTO DA|INTESTATO A|DA PARTE DI|MITTENTE|DESTINATARIO|ORDINATO DA|'
+    r'A CARICO DI|COGNOME E NOME|NOMINATIVO)\b[:.\- ]*'
+    r'((?:[^\W\d_]{2,}(?:[ ]+|$)){1,4})',
+    re.IGNORECASE)
+# parole che chiudono il nome (non fanno parte della persona)
+_STOP = {'CAUSALE', 'IBAN', 'RIF', 'CRO', 'TRN', 'PER', 'ADDEBITO', 'ACCREDITO',
+         'IMPORTO', 'DATA', 'CARTA', 'CONTO', 'NUM', 'ESEGUITO', 'SEPA'}
+# operazioni tra privati: in modalità rigida si invia solo il tipo di operazione
+_TRASFERIMENTO_RE = re.compile(
+    r'^\s*(BONIFICO|BON\.|GIROCONTO|GIRO |SCT|SEPA CREDIT|ACCREDITO BONIFICO|'
+    r'DISPOSIZIONE DI BONIFICO|BONIF)', re.IGNORECASE)
+_PROPRIO_RE = re.compile(r'(?<!^)(?<![.!?] )\b[A-Z][a-zàèéìòù]{2,}\b')
 
 
 def _nome_pattern(nome: str):
@@ -21,32 +39,76 @@ def _nome_pattern(nome: str):
     return re.compile(r'(?<!\w)' + re.escape(nome) + r'(?!\w)', re.IGNORECASE)
 
 
-def scrub(testo: str, nomi: list) -> str:
+def _oscura_trigger(testo: str) -> str:
+    def _sost(m):
+        parole = re.findall(r'[^\W\d_]{2,}', m.group(2))
+        tenute = []
+        for w in parole:
+            if w.upper() in _STOP:
+                break
+            tenute.append(w)
+        if not tenute:
+            return m.group(0)
+        resto = ' '.join(parole[len(tenute):])
+        return f"{m.group(1)} [NOME] {resto} "
+    return _TRIGGER_RE.sub(_sost, testo)
+
+
+def _espandi_nomi(nomi: list) -> list:
+    """Nome completo + ogni singola parola (>=3 lettere): 'Mario Rossi' → anche 'Mario', 'Rossi'."""
+    out = set()
+    for n in nomi or []:
+        n = (n or '').strip()
+        if not n:
+            continue
+        out.add(n)
+        out.update(t for t in re.split(r"[\s\-']+", n) if len(t) >= 3)
+    return sorted(out, key=len, reverse=True)  # più lunghi per primi
+
+
+def scrub(testo: str, nomi: list, rigido: bool = True) -> str:
     """
-    Anonimizza una stringa:
-    1. Sostituisce ogni nome in `nomi` (parola intera, case-insensitive) con [NOME]
-    2. Sostituisce email, IBAN (anche con spazi), codici fiscali, numeri carta
-       e telefoni con segnaposto
-    Il testo originale non viene alterato oltre alle sostituzioni.
+    Anonimizza una stringa. Livelli di difesa (anche se il nome non è configurato):
+    1. nomi configurati: nome completo e ogni sua parola, come parola intera
+    2. persone introdotte da 'A FAVORE DI', 'ORDINANTE', 'BENEFICIARIO'...
+    3. email, IBAN (anche con spazi), codice fiscale, carta, telefono
+    4. numeri lunghi (>=6 cifre: riferimenti, conti, pratiche)
+    5. modalità rigida: per bonifici/giroconti il testo libero è omesso
+       (restano solo tipo operazione e le parole dopo CAUSALE, già ripulite)
     """
     if not testo:
         return testo
     risultato = str(testo)
-    # nomi più lunghi per primi, così "Mario Rossi" prevale su "Mario"
-    for nome in sorted({(n or '').strip() for n in nomi}, key=len, reverse=True):
-        if nome:
-            risultato = _nome_pattern(nome).sub('[NOME]', risultato)
+    for nome in _espandi_nomi(nomi):
+        risultato = _nome_pattern(nome).sub('[NOME]', risultato)
     risultato = _EMAIL_RE.sub('[EMAIL]', risultato)
     risultato = _IBAN_RE.sub('[IBAN]', risultato)
     risultato = _CF_RE.sub('[CF]', risultato)
     risultato = _CARD_RE.sub('[CARTA]', risultato)
     risultato = _PHONE_RE.sub('[TEL]', risultato)
-    return risultato
+    risultato = _oscura_trigger(risultato)
+    risultato = _NUM_RE.sub('[NUM]', risultato)
+    m = _TRASFERIMENTO_RE.match(risultato) if rigido else None
+    if m:
+        causale = re.search(r'CAUSALE[:\s]+(.{0,40})', risultato, re.IGNORECASE)
+        risultato = f"{m.group(1).strip().upper()} [dettagli omessi]"
+        if causale:
+            risultato += f" CAUSALE {causale.group(1).strip()}"
+    return re.sub(r'\s+', ' ', risultato).strip()
 
 
-def scrub_batch(descrizioni: list, nomi: list) -> list:
+def scrub_batch(descrizioni: list, nomi: list, rigido: bool = True) -> list:
     """Applica scrub() a una lista di descrizioni."""
-    return [scrub(d, nomi) for d in descrizioni]
+    return [scrub(d, nomi, rigido) for d in descrizioni]
+
+
+def sospetta_pii(testo_inviato: str) -> bool:
+    """
+    Euristica per l'anteprima: True se nel testo già ripulito restano parole che sembrano
+    nomi propri (Maiuscola + minuscole). Segnala solo righe da controllare a mano.
+    """
+    t = re.sub(r'\[[A-Za-z ]+\]', '', testo_inviato or '')
+    return bool(_PROPRIO_RE.search(t))
 
 
 def find_giroconti(transazioni: list, finestra_giorni: int = 3) -> list:
