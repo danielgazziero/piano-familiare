@@ -413,6 +413,31 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | S-NEW-07 | Rivalidazione `is_active` ogni 5 min in sessione — revoca accesso utenti disattivati | `src/database.py`, `app.py` |
 | S-NEW-08 | Allowlist `_ALLOWED_TOKEN_FIELDS` + `.limit(1)` in `verifica_token` — blocca column injection | `src/database.py` |
 
+### ✅ Fix review giornaliera — AI spese: sicurezza, efficienza, refactoring (18/10/2026)
+
+Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (scrubbing a più livelli + UI revisione).
+
+| # | Fix | File |
+|---|---|---|
+| AI-S1 | `scrub()` riscritto: IBAN con spazi, email, carte, telefoni, CF, numeri ≥6 cifre; nomi a parola intera (no "Ana"→"B[NOME]NA"); niente `upper()` globale | `src/scrubbing.py` |
+| AI-S2 | Difesa a più livelli anche se il nome non è configurato: nomi famiglia da `params` (`nome_persona1/2`, `nome_figlio`), ogni parola del nome, persone dopo «a favore di»/«ordinante»/«beneficiario», modalità rigida per bonifici (solo tipo + causale), `sospetta_pii()` | `src/scrubbing.py` |
+| AI-S3 | `categorizza_batch(tx, tax, nomi)` solleva errore se `nomi` è vuoto; output del modello validato contro tassonomia e `hash_tx` del batch (anti prompt injection) | `src/ai_categorize.py` |
+| AI-S4 | Suggerimenti AI **non** preconfermati; sottocategoria validata sulla categoria al salvataggio | `app.py` |
+| AI-S5 | Output analisi AI ripulito da immagini/link/URL/HTML (`_sanitize_markdown`) prima di `st.markdown` | `src/ai_categorize.py` |
+| AI-E1 | `aggiorna_categoria_tx_bulk()`: una `UPDATE … IN (…)` per gruppo di valori uguali (chunk da 100) invece di una richiesta per tx | `src/database.py` |
+| AI-E2 | Riepilogo mensile via RPC `get_uncategorized_monthly` (SQL in `UNCATEGORIZED_MONTHLY_RPC_SQL`, da eseguire una volta nel SQL Editor), fallback con `select('data')` | `src/database.py` |
+| AI-R1 | I due flussi AI duplicati unificati in `_ui_categorizzazione_ai()`; costante `MODEL_NAME` | `app.py`, `src/ai_categorize.py` |
+| AI-U1 | Anteprima "cosa viene inviato" con colonna ⚠️; righe sospette escluse dall'invio salvo spunta esplicita; tabella con colonne larghe, etichette leggibili ("Casa › Utenze"), `hash_tx` nascosto | `app.py` |
+
+| AI-S6 | Dizionario di ~270 nomi/cognomi italiani comuni (`src/nomi_italiani.py`, esclude parole ambigue come CONTI/COSTA/ROSA) oscurato anche in maiuscolo, se il nome non è configurato | `src/scrubbing.py`, `src/nomi_italiani.py` |
+| AI-B1 | `salva_transazioni()`: `insert(..., ignore_duplicates=True)` non è più accettato da supabase-py 2.31 (eccezione catturata → ritorno 0, import estratti conto silenziosamente vuoto). Ora `upsert(records, on_conflict='hash_tx', ignore_duplicates=True)`; verificato: 1ª chiamata inserisce, 2ª ritorna 0 | `src/database.py` |
+
+**Limite noto:** un nome raro, non configurato, non nel dizionario e non preceduto da «a favore di»/«ordinante» non viene né oscurato né segnalato → controllare sempre l'anteprima e aggiungere i nomi in "🔒 Privacy".
+
+| AI-B2 | Disallineamento import ↔ Feature #16: `salva_transazioni()` ora salva `categoria = NULL` (prima la categoria legacy di `_categorize`, che impediva a Feature #16 di vedere le tx importate). L'etichetta legacy si ricalcola in lettura: `carica_transazioni()` imposta `category` = nome taxonomy se `categoria` è valorizzata, altrimenti `adapters.categorizza_legacy(raw_categoria, descrizione)` (funzione pura, estratta da `BankAdapter._categorize`). Nessuna migrazione schema; nel DB non c'erano righe con categoria legacy | `src/database.py`, `src/adapters.py` |
+
+**Dati di prova:** non c'è più uno script nel repo; chiedere a Claude di generare dati fittizi (usare un `conto` riconoscibile tipo `TEST-FITTIZIO` e ripulirli subito dopo).
+
 ### ✅ Fix code review settimanale e onboarding (18/10/2026)
 
 | # | Fix | File |
@@ -569,6 +594,39 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | 14 ✅ | **Month-end checklist** — pannello guidato 4 passi per validare il mese | `app.py` | Completato 27/09/2026. Nuova sezione "📋 Fine mese" nel nav con progress bar e 4 passi guidati. |
 | 15 ✅ | **Gestione Asset — elimina per nome** — selectbox mostra `nome (ISIN)` invece del solo ISIN | `app.py` | Completato 27/09/2026. `format_func` su 3 selectbox (fondi, ETF, azioni). |
 | 17 | **Distribuzione desktop (Windows / macOS)** — eseguibile standalone installabile, DB locale, solo chiamate online per dati aggiornati | `database.py`, `config.yaml`, `app.py`, packaging scripts | Vedi dettaglio sotto. |
+| 18 | **Export Excel mensile strutturato** — pulsante scarica XLSX con la stessa struttura di "Revenues 2026.xlsx" | `app.py`, `database.py`, `portfolio.py`, `prices.py`, nuovo `src/excel_export.py` | Vedi dettaglio sotto. |
+
+---
+
+## Feature #18 — Export Excel mensile strutturato
+
+Obiettivo: generare da Streamlit un file `.xlsx` scaricabile (`st.download_button`) che replica fedelmente la struttura manuale di "Revenues 2026.xlsx", popolato con i dati reali da Supabase e yfinance.
+
+### Struttura dell'XLSX di riferimento
+
+| Foglio | Contenuto |
+|---|---|
+| **Summary** | Panoramica annuale — KPI di ogni mese in righe: entrate, uscite, utile/perdita, valore portafoglio inizio/fine, incremento capitale % |
+| **Gen … Dic** (12 fogli) | Tabella giornaliera: `Data \| Causale \| In \| In Portafogli \| In Totale \| Out \| Out Portafogli \| Out Totale`. Riepilogo laterale: capitale iniziale, entrate, uscite, utile/perdita, uscite senza invest. Sezione investimento: valore iniziale, mensile acquistato, incremento capitale €. Sezione portafogli (movimenti con causale). Riga finale: valore di chiusura mese. |
+| **Investimenti** | Serie storica giornaliera del portafoglio totale (data, valore, variazione, causale). Per ogni fondo: Q. iniziale, prezzo, valore inizio/fine mese, YTD, Q. acquistata, valore acquistato, valore acquistato YTD. |
+| **ESPP Purchase** | Storico acquisti piano azionario Accenture: data, # azioni, % tasse, controvalore rimborso, prezzo mercato/scontato $, cambio EUR/USD, P/L, controvalore attualizzato. |
+
+### Sorgenti dati
+
+- **Fogli mensili In/Out cash**: `transazioni` (Supabase) — aggregazione giornaliera per mese, colonna `importo > 0` = In, `< 0` = Out
+- **Fogli mensili portafoglio**: `quote_fondi` + `prezzi_storici` (valori giornalieri ETF) + `posizioni` (quantità)
+- **Foglio Investimenti**: `prezzi_storici` + `posizioni` — ricostruisce `valore_totale` giornaliero come già fa `get_storico_portafoglio()`
+- **Foglio ESPP**: `config_params.espp_history` (JSON array) o tabella dedicata `espp_purchases`
+- **Causale**: la colonna `descrizione` di `transazioni`; per il portafoglio la causale è già in `posizioni.note`
+
+### Note implementative
+
+- Usare `openpyxl` per formattazione (header colorati, bordi, formule SOMMA/totali)
+- Dati numerici in formato `#.##0,00 €`; date in `DD/MM/YYYY`
+- Fogli mensili generati solo per i mesi che hanno dati (non proiettare il futuro)
+- `src/excel_export.py` — modulo puro (no Streamlit, no side-effect): funzione `genera_report_annuale(anno, tx, portafoglio_storico, espp) -> bytes`
+- `app.py` — sezione "📋 Fine mese" o nuova sezione "📊 Report": selectbox anno + `st.download_button`
+- Prerequisito: se vogliamo ESPP, aggiungere tabella `espp_purchases` su Supabase o usare `config_params`
 
 ---
 

@@ -52,6 +52,49 @@ def is_internal_transfer(description: str, keywords: list = None) -> bool:
     return any(kw.upper() in desc_upper for kw in kw_list)
 
 
+def categorizza_legacy(raw_cat: str, description: str) -> str:
+    """Mappa categorie banca → categorie interne standard (etichette legacy, pure function)."""
+    desc = description.upper()
+    raw = raw_cat.upper()
+
+    if any(k in desc for k in ['AMAZON', 'AMZN', 'EBAY', 'ZALANDO', 'SHEIN', 'VINTED']):
+        return 'Shopping online'
+    if any(k in desc for k in ['CONAD', 'ESSELUNGA', 'IPER', 'CARREFOUR', 'COOP',
+                                'EUROSPIN', 'LIDL', 'PENNY', 'MAURY', 'RIALTO']):
+        return 'Spesa alimentare'
+    if any(k in desc for k in ['FARMACIA', 'COLOMBO', 'MANDIA', 'GRANDVISION',
+                                'DOTTORE', 'MEDIC', 'CLINICA', 'OSPEDALE']):
+        return 'Spese mediche'
+    if any(k in desc for k in ['TELECOMITALIA', 'TIM', 'ILIAD', 'SKY', 'WINDTRE']):
+        return 'Abbonamenti'
+    if any(k in desc for k in ['UNIPOLMOVE', 'AUTOSTRAD', 'PEDAGGIO']):
+        return 'Auto/Trasporti'
+    if any(k in desc for k in ['CARBURANTE', 'ENI', 'IP ', 'AGIP', 'TOTAL']):
+        return 'Carburante'
+    if any(k in desc for k in ['RISTORANTE', 'PIZZERIA', 'BAR ', 'BIRRA', 'TRATTORIA']):
+        return 'Ristorazione'
+    if any(k in desc for k in ['BOOKING', 'AIRBNB', 'HOTEL', 'TRENITALIA', 'ITALO',
+                                'RYANAIR', 'EASYJET', 'PAYPAL *VOL']):
+        return 'Viaggi/Vacanze'
+    if 'F24' in raw or 'DELEGA UNIFICATA' in desc:
+        return 'Tasse/F24'
+    if 'PRELIEVO' in raw or 'ATM' in raw:
+        return 'Prelievo contante'
+    if 'GENERALI' in desc or 'ALLIANZ' in desc:
+        return 'Assicurazioni'
+    if 'STIPEND' in desc or 'CEDOLINO' in desc:
+        return 'Stipendio'
+    if 'GSE' in desc or 'FOTOVOLTAICO' in desc:
+        return 'Rimborso GSE'
+    if 'BLUE ASSISTANCE' in desc:
+        return 'Rimborso assicurazione'
+    if 'CANONE' in raw or 'SPESE' in raw:
+        return 'Spese bancarie'
+    if 'SDD' in raw or 'RID' in raw:
+        return 'Addebiti fissi'
+    return 'Altro'
+
+
 class BankAdapter:
     """Classe base — ogni banca eredita da questa."""
     bank_id = "base"
@@ -61,46 +104,7 @@ class BankAdapter:
         raise NotImplementedError
 
     def _categorize(self, raw_cat: str, description: str) -> str:
-        """Mappa categorie banca → categorie interne standard."""
-        desc = description.upper()
-        raw = raw_cat.upper()
-
-        if any(k in desc for k in ['AMAZON', 'AMZN', 'EBAY', 'ZALANDO', 'SHEIN', 'VINTED']):
-            return 'Shopping online'
-        if any(k in desc for k in ['CONAD', 'ESSELUNGA', 'IPER', 'CARREFOUR', 'COOP',
-                                    'EUROSPIN', 'LIDL', 'PENNY', 'MAURY', 'RIALTO']):
-            return 'Spesa alimentare'
-        if any(k in desc for k in ['FARMACIA', 'COLOMBO', 'MANDIA', 'GRANDVISION',
-                                    'DOTTORE', 'MEDIC', 'CLINICA', 'OSPEDALE']):
-            return 'Spese mediche'
-        if any(k in desc for k in ['TELECOMITALIA', 'TIM', 'ILIAD', 'SKY', 'WINDTRE']):
-            return 'Abbonamenti'
-        if any(k in desc for k in ['UNIPOLMOVE', 'AUTOSTRAD', 'PEDAGGIO']):
-            return 'Auto/Trasporti'
-        if any(k in desc for k in ['CARBURANTE', 'ENI', 'IP ', 'AGIP', 'TOTAL']):
-            return 'Carburante'
-        if any(k in desc for k in ['RISTORANTE', 'PIZZERIA', 'BAR ', 'BIRRA', 'TRATTORIA']):
-            return 'Ristorazione'
-        if any(k in desc for k in ['BOOKING', 'AIRBNB', 'HOTEL', 'TRENITALIA', 'ITALO',
-                                    'RYANAIR', 'EASYJET', 'PAYPAL *VOL']):
-            return 'Viaggi/Vacanze'
-        if 'F24' in raw or 'DELEGA UNIFICATA' in desc:
-            return 'Tasse/F24'
-        if 'PRELIEVO' in raw or 'ATM' in raw:
-            return 'Prelievo contante'
-        if 'GENERALI' in desc or 'ALLIANZ' in desc:
-            return 'Assicurazioni'
-        if 'STIPEND' in desc or 'CEDOLINO' in desc:
-            return 'Stipendio'
-        if 'GSE' in desc or 'FOTOVOLTAICO' in desc:
-            return 'Rimborso GSE'
-        if 'BLUE ASSISTANCE' in desc:
-            return 'Rimborso assicurazione'
-        if 'CANONE' in raw or 'SPESE' in raw:
-            return 'Spese bancarie'
-        if 'SDD' in raw or 'RID' in raw:
-            return 'Addebiti fissi'
-        return 'Altro'
+        return categorizza_legacy(raw_cat, description)
 
 
 class BperPersona1Adapter(BankAdapter):
