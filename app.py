@@ -1105,7 +1105,9 @@ with st.sidebar:
                   '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
                   'taxonomy_cache','profilo_famiglia_cache',
                   'nomi_anonimiz_cache','tx_senza_cat_cache',
-                  'spese_analisi_cache','spese_report_cache']:
+                  'spese_analisi_cache','spese_report_cache',
+                  'batch_retro_riepilogo_cache','batch_retro_tx_cache',
+                  'batch_retro_ai_cache','_retro_last_sel']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -3041,7 +3043,188 @@ elif sezione == "💳 Analisi spese":
                     if _report:
                         st.markdown(_report)
 
-    st.info("💡 Prossimo step: Batch retroattivo — categorizza mesi precedenti (step 6).")
+    # ── Batch retroattivo ─────────────────────────────────────
+    from database import (carica_riepilogo_mensile_senza_categoria as _crm,
+                          carica_tx_senza_categoria_per_mese       as _ctx_mese)
+
+    with st.expander("📅 Batch retroattivo — mesi precedenti"):
+        st.caption(
+            "Categorizza le uscite non ancora elaborate per ogni mese. "
+            "Seleziona un mese, analizza con AI, rivedi e salva."
+        )
+
+        if not _nomi_anon:
+            st.warning("⚠️ Prima configura almeno un nome nella sezione 🔒 Privacy.")
+        elif not bool(st.secrets.get('ANTHROPIC_API_KEY', '')):
+            st.warning(
+                "⚠️ `ANTHROPIC_API_KEY` non configurata — "
+                "necessaria per la categorizzazione AI."
+            )
+        else:
+            if st.button("🔄 Aggiorna riepilogo mesi", key="retro_ricarica_btn"):
+                for _rk in ('batch_retro_riepilogo_cache', 'batch_retro_tx_cache',
+                             'batch_retro_ai_cache', '_retro_last_sel'):
+                    st.session_state.pop(_rk, None)
+                st.rerun()
+
+            if 'batch_retro_riepilogo_cache' not in st.session_state:
+                with st.spinner("Caricamento riepilogo mesi..."):
+                    st.session_state['batch_retro_riepilogo_cache'] = _crm()
+
+            _riepilogo = st.session_state.get('batch_retro_riepilogo_cache', [])
+
+            if not _riepilogo:
+                st.success("✅ Nessuna uscita non categorizzata nei mesi precedenti.")
+            else:
+                import pandas as _pd_retro
+                _df_riepilogo = _pd_retro.DataFrame(_riepilogo)[['label', 'conteggio']].rename(
+                    columns={'label': 'Mese', 'conteggio': 'Uscite da categorizzare'}
+                )
+                st.dataframe(_df_riepilogo, use_container_width=True, hide_index=True)
+
+                _labels = [r['label'] for r in _riepilogo]
+                _sel_label = st.selectbox("Seleziona mese da elaborare", _labels,
+                                          key="retro_mese_sel")
+                _sel_mese_row = next((r for r in _riepilogo if r['label'] == _sel_label), None)
+
+                if _sel_mese_row:
+                    _r_anno = _sel_mese_row['anno']
+                    _r_mese = _sel_mese_row['mese']
+                    _r_key  = f"{_r_anno}_{_r_mese}"
+
+                    # Invalida cache se mese cambiato
+                    if st.session_state.get('_retro_last_sel') != _r_key:
+                        st.session_state.pop('batch_retro_tx_cache', None)
+                        st.session_state.pop('batch_retro_ai_cache', None)
+                        st.session_state['_retro_last_sel'] = _r_key
+
+                    if 'batch_retro_tx_cache' not in st.session_state:
+                        with st.spinner(f"Caricamento transazioni {_sel_label}..."):
+                            st.session_state['batch_retro_tx_cache'] = _ctx_mese(
+                                _r_anno, _r_mese)
+
+                    _tx_retro = st.session_state.get('batch_retro_tx_cache', [])
+                    st.metric(f"Uscite — {_sel_label}", len(_tx_retro))
+
+                    if not _tx_retro:
+                        st.info("Nessuna uscita non categorizzata per questo mese.")
+                    else:
+                        _col_r1, _col_r2 = st.columns([2, 5])
+                        with _col_r1:
+                            _run_retro = st.button("✨ Analizza con AI", type="primary",
+                                                   key="retro_ai_btn")
+                        with _col_r2:
+                            st.caption(f"{len(_tx_retro)} tx · claude-haiku-5-5")
+
+                        if _run_retro:
+                            from scrubbing import scrub_batch as _scrub_b2
+                            from ai_categorize import categorizza_batch as _cat_b2
+
+                            _desc_orig2 = [t.get('descrizione') or '' for t in _tx_retro]
+                            _desc_anon2 = _scrub_b2(_desc_orig2, _nomi_anon)
+                            _tx_input2 = [
+                                {'hash_tx': t['hash_tx'],
+                                 'descrizione_anonimizzata': _desc_anon2[i],
+                                 'importo': float(t.get('importo', 0))}
+                                for i, t in enumerate(_tx_retro)
+                            ]
+                            with st.spinner(f"Analisi AI ({len(_tx_retro)} tx)..."):
+                                try:
+                                    _ai_res2 = _cat_b2(_tx_input2, _tax)
+                                    st.session_state['batch_retro_ai_cache'] = {
+                                        r['hash_tx']: r for r in _ai_res2}
+                                    st.success(
+                                        f"✅ Ricevuti suggerimenti per {len(_ai_res2)} transazioni.")
+                                except RuntimeError as _err2:
+                                    st.error(str(_err2))
+
+                        # Tabella revisione
+                        _ai_map2    = st.session_state.get('batch_retro_ai_cache', {})
+                        _r_cat_ids  = [c['id']   for c in _tax.get('categorie', [])
+                                       if c.get('attiva', True)]
+                        _r_cat_nomi = [c['nome'] for c in _tax.get('categorie', [])
+                                       if c.get('attiva', True)]
+                        _r_id2nome  = dict(zip(_r_cat_ids, _r_cat_nomi))
+                        _r_nome2id  = dict(zip(_r_cat_nomi, _r_cat_ids))
+                        _r_all_subs = sorted({
+                            sid
+                            for c in _tax.get('categorie', []) if c.get('attiva', True)
+                            for sid in [s['id'] for s in c.get('sottocategorie', [])
+                                        if s.get('attiva', True)]
+                        })
+
+                        import pandas as _pd_retro2
+                        _retro_rows = [
+                            {
+                                'hash_tx':        t['hash_tx'],
+                                'Data':           str(t.get('data', '')),
+                                'Descrizione':    (t.get('descrizione') or '')[:80],
+                                'Importo €':      float(t.get('importo', 0)),
+                                'Categoria':      _r_id2nome.get(
+                                    _ai_map2.get(t['hash_tx'], {}).get('categoria') or '', ''),
+                                'Sottocategoria': _ai_map2.get(
+                                    t['hash_tx'], {}).get('sottocategoria') or '',
+                                'Conferma':       bool(_ai_map2.get(t['hash_tx'])),
+                            }
+                            for t in _tx_retro
+                        ]
+                        _df_retro = _pd_retro2.DataFrame(_retro_rows)
+
+                        if not _df_retro.empty:
+                            st.markdown(f"**Revisiona i suggerimenti — {_sel_label}:**")
+                            _edited2 = st.data_editor(
+                                _df_retro,
+                                column_config={
+                                    'hash_tx':     st.column_config.Column(
+                                        disabled=True, width='small'),
+                                    'Data':        st.column_config.Column(
+                                        disabled=True, width='small'),
+                                    'Descrizione': st.column_config.Column(disabled=True),
+                                    'Importo €':   st.column_config.NumberColumn(
+                                        disabled=True, format="€ %.2f", width='small'),
+                                    'Categoria':   st.column_config.SelectboxColumn(
+                                        options=_r_cat_nomi, width='medium'),
+                                    'Sottocategoria': st.column_config.SelectboxColumn(
+                                        options=[None] + _r_all_subs, width='medium'),
+                                    'Conferma':    st.column_config.CheckboxColumn(width='small'),
+                                },
+                                hide_index=True,
+                                use_container_width=True,
+                                key=f'retro_editor_{_r_key}',
+                                num_rows='fixed',
+                            )
+
+                            _n_retro_sel = int(_edited2['Conferma'].sum())
+                            st.caption(f"{_n_retro_sel} righe selezionate per il salvataggio.")
+
+                            if st.button("💾 Salva categorizzazioni", type="primary",
+                                         key="retro_salva_btn",
+                                         disabled=_n_retro_sel == 0):
+                                from database import aggiorna_categoria_tx as _agg_cat2
+                                _salvate2 = 0
+                                _errori2  = 0
+                                for _row2 in _edited2[_edited2['Conferma']].to_dict('records'):
+                                    _cat_id_sel2 = _r_nome2id.get(
+                                        _row2.get('Categoria') or '', 'altro')
+                                    _sub_sel2 = _row2.get('Sottocategoria') or None
+                                    if _agg_cat2(
+                                        _row2['hash_tx'], _cat_id_sel2,
+                                        sottocategoria=_sub_sel2 if _sub_sel2 else None,
+                                        tag=[], confermata=True,
+                                    ):
+                                        _salvate2 += 1
+                                    else:
+                                        _errori2 += 1
+
+                                for _rk in ('batch_retro_riepilogo_cache',
+                                             'batch_retro_tx_cache', 'batch_retro_ai_cache',
+                                             'tx_senza_cat_cache', 'spese_analisi_cache'):
+                                    st.session_state.pop(_rk, None)
+                                if _errori2 == 0:
+                                    st.success(f"✅ {_salvate2} transazioni categorizzate.")
+                                else:
+                                    st.warning(f"Salvate {_salvate2}, errori: {_errori2}.")
+                                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────
