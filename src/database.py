@@ -913,6 +913,66 @@ def carica_tx_senza_categoria(limit: int = 500) -> list:
         return []
 
 
+def carica_riepilogo_mensile_senza_categoria(limit: int = 5000) -> list:
+    """
+    Restituisce [{anno, mese, label, conteggio}] per mesi con uscite non categorizzate.
+    Ordinate dalla più recente alla più vecchia.
+    """
+    try:
+        client = get_client()
+        res = (client.table('transazioni')
+               .select('data, importo')
+               .is_('categoria', 'null')
+               .lt('importo', 0)
+               .order('data', desc=True)
+               .limit(limit)
+               .execute())
+        rows = res.data or []
+    except Exception as e:
+        print(f"  [!] Errore carica_riepilogo_mensile_senza_categoria: {type(e).__name__}")
+        return []
+
+    from collections import defaultdict
+    conteggi: dict = defaultdict(int)
+    for r in rows:
+        try:
+            d = date.fromisoformat(str(r['data']))
+            conteggi[(d.year, d.month)] += 1
+        except Exception:
+            continue
+
+    mesi_it = ['', 'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
+               'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']
+    return [
+        {'anno': anno, 'mese': mese,
+         'label': f"{mesi_it[mese]} {anno}",
+         'conteggio': cnt}
+        for (anno, mese), cnt in sorted(conteggi.items(), reverse=True)
+    ]
+
+
+def carica_tx_senza_categoria_per_mese(anno: int, mese: int, limit: int = 500) -> list:
+    """Uscite senza categoria per un dato anno/mese, ordinate per data DESC."""
+    import calendar
+    data_da = f"{anno}-{mese:02d}-01"
+    data_a  = f"{anno}-{mese:02d}-{calendar.monthrange(anno, mese)[1]:02d}"
+    try:
+        client = get_client()
+        res = (client.table('transazioni')
+               .select('hash_tx, data, importo, descrizione, conto')
+               .is_('categoria', 'null')
+               .lt('importo', 0)
+               .gte('data', data_da)
+               .lte('data', data_a)
+               .order('data', desc=True)
+               .limit(limit)
+               .execute())
+        return res.data or []
+    except Exception as e:
+        print(f"  [!] Errore carica_tx_senza_categoria_per_mese: {type(e).__name__}")
+        return []
+
+
 def carica_spese_categorizzate(limit: int = 2000) -> list:
     """Transazioni con categoria valorizzata, ordinate per data DESC."""
     try:
