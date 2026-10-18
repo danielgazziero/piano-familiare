@@ -968,6 +968,7 @@ with st.sidebar:
         "🎯 Simulatore strategie",
         _SEZIONE_FIGLIO,
         "📋 Fine mese",
+        "💳 Analisi spese",
         "⚙️ Gestione Asset",
     ]
     if st.session_state.get("_auth_is_admin"):
@@ -1101,7 +1102,8 @@ with st.sidebar:
                   'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
-                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache']:
+                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
+                  'taxonomy_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -2359,6 +2361,167 @@ elif sezione == "📋 Fine mese":
         _mancanti = 4 - _completati
         st.caption(f"Il passo 3 (aggiorna liquidità) richiede sempre un'azione manuale. "
                    f"{'Manca ancora il passo 3 manuale.' if _completati >= 3 else ''}")
+
+
+# ─────────────────────────────────────────────────────────────
+# SEZIONE: ANALISI SPESE
+# ─────────────────────────────────────────────────────────────
+elif sezione == "💳 Analisi spese":
+    st.title("💳 Analisi spese")
+    st.caption("Categorizza le transazioni e analizza le spese con AI.")
+
+    if not db_ok:
+        st.warning("Funzionalità disponibile solo con connessione al DB.")
+        st.stop()
+
+    from database import (carica_taxonomy as _carica_tax,
+                          salva_taxonomy   as _salva_tax)
+
+    # Carica taxonomy in cache di sessione (si invalida su Aggiorna tutto)
+    if 'taxonomy_cache' not in st.session_state:
+        st.session_state['taxonomy_cache'] = _carica_tax()
+
+    _tax = st.session_state['taxonomy_cache']
+
+    # ── Taxonomy manager ─────────────────────────────────────
+    with st.expander("⚙️ Categorie & Tag", expanded=True):
+        _tab_cat, _tab_tag = st.tabs(["🗂️ Categorie", "🏷️ Tag globali"])
+
+        # ── Tab Categorie ─────────────────────────────────────
+        with _tab_cat:
+            _tax_cats = _tax.get('categorie', [])
+            _n_attive = sum(bool(c.get('attiva', True)) for c in _tax_cats)
+            st.caption(f"{_n_attive} categorie attive su {len(_tax_cats)} totali.")
+
+            # Panoramica
+            if _tax_cats:
+                import pandas as _pd_tax
+                _overview = _pd_tax.DataFrame([{
+                    "": c.get('icona', '📌'),
+                    "Categoria": c.get('nome', c.get('id', '')),
+                    "Sottocategorie": len(c.get('sottocategorie', [])),
+                    "Attiva": "✅" if c.get('attiva', True) else "⬜",
+                } for c in _tax_cats])
+                st.dataframe(_overview, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # Seleziona categoria da modificare
+            if _tax_cats:
+                _cat_labels = [f"{c.get('icona','📌')} {c.get('nome', c.get('id',''))}"
+                               for c in _tax_cats]
+                _sel_ci = st.selectbox(
+                    "Modifica categoria",
+                    range(len(_tax_cats)),
+                    format_func=lambda i: _cat_labels[i],
+                    key="tax_sel_cat",
+                )
+                _sel_cat = _tax_cats[_sel_ci]
+
+                _tcc1, _tcc2 = st.columns(2)
+                with _tcc1:
+                    _cur_att = _sel_cat.get('attiva', True)
+                    if st.button("⬜ Disattiva" if _cur_att else "✅ Attiva",
+                                 key="tax_toggle_att"):
+                        _tax['categorie'][_sel_ci]['attiva'] = not _cur_att
+                        st.rerun()
+                with _tcc2:
+                    if st.button("🗑️ Elimina categoria", key="tax_del_cat",
+                                 help="Rimuove la categoria e tutte le sue sottocategorie"):
+                        _tax['categorie'].pop(_sel_ci)
+                        st.session_state.pop('tax_sel_cat', None)
+                        st.rerun()
+
+                # Sottocategorie della categoria selezionata
+                st.markdown(f"**Sottocategorie di {_sel_cat.get('nome', '')}:**")
+                _sel_subs = _sel_cat.get('sottocategorie', [])
+                if _sel_subs:
+                    for _si, _sub in enumerate(_sel_subs):
+                        _sc1, _sc2 = st.columns([8, 1])
+                        with _sc1:
+                            st.write(f"• {_sub.get('nome', '')}")
+                        with _sc2:
+                            if st.button("🗑️", key=f"del_sub_{_sel_ci}_{_si}"):
+                                _tax['categorie'][_sel_ci]['sottocategorie'].pop(_si)
+                                st.rerun()
+                else:
+                    st.caption("Nessuna sottocategoria.")
+
+                with st.form(key=f"add_sub_form_{_sel_ci}"):
+                    _new_sub_nome = st.text_input("Nuova sottocategoria", max_chars=60)
+                    if st.form_submit_button("+ Aggiungi"):
+                        if _new_sub_nome.strip():
+                            _new_sub_id = _new_sub_nome.strip().lower().replace(' ', '_')[:40]
+                            _tax['categorie'][_sel_ci]['sottocategorie'].append(
+                                {'id': _new_sub_id, 'nome': _new_sub_nome.strip(), 'attiva': True})
+                            st.rerun()
+
+            st.divider()
+            with st.form("add_cat_form"):
+                st.markdown("**+ Nuova categoria**")
+                _fc1, _fc2 = st.columns([1, 4])
+                with _fc1:
+                    _new_ico = st.text_input("Icona", value="📌", max_chars=4,
+                                             key="new_cat_ico")
+                with _fc2:
+                    _new_cat_nome = st.text_input("Nome categoria", max_chars=50,
+                                                  key="new_cat_nome")
+                if st.form_submit_button("Aggiungi categoria"):
+                    if _new_cat_nome.strip():
+                        _new_cid = _new_cat_nome.strip().lower().replace(' ', '_')[:40]
+                        _tax['categorie'].append({
+                            'id': _new_cid,
+                            'nome': _new_cat_nome.strip(),
+                            'icona': _new_ico or '📌',
+                            'attiva': True,
+                            'sottocategorie': [],
+                        })
+                        st.rerun()
+
+        # ── Tab Tag globali ──────────────────────────────────
+        with _tab_tag:
+            _tax_tags = _tax.get('tag', [])
+            st.caption("Tag trasversali applicabili a qualunque categoria "
+                       "(es. spese una-tantum, rimborsabili...).")
+            if _tax_tags:
+                for _ti, _tag_item in enumerate(_tax_tags):
+                    _tg1, _tg2 = st.columns([8, 1])
+                    with _tg1:
+                        st.write(f"• `{_tag_item}`")
+                    with _tg2:
+                        if st.button("🗑️", key=f"del_tag_{_ti}"):
+                            _tax['tag'].pop(_ti)
+                            st.rerun()
+            else:
+                st.caption("Nessun tag definito.")
+
+            with st.form("add_tag_form"):
+                _new_tag_val = st.text_input("Nuovo tag", max_chars=40)
+                if st.form_submit_button("+ Aggiungi tag"):
+                    _new_tag_norm = _new_tag_val.strip().lower().replace(' ', '_')
+                    if _new_tag_norm and _new_tag_norm not in _tax_tags:
+                        _tax['tag'].append(_new_tag_norm)
+                        st.rerun()
+
+        st.divider()
+        _ts1, _ts2 = st.columns(2)
+        with _ts1:
+            if st.button("💾 Salva categorie & tag", type="primary", key="tax_save_btn"):
+                if _salva_tax(_tax):
+                    st.session_state.pop('taxonomy_cache', None)
+                    st.success("✅ Taxonomy salvata.")
+                    st.rerun()
+                else:
+                    st.error("Errore durante il salvataggio.")
+        with _ts2:
+            if st.button("↩️ Ripristina default", key="tax_reset_btn"):
+                from database import _DEFAULT_TAXONOMY as _deftax
+                import copy as _copy_tax
+                st.session_state['taxonomy_cache'] = _copy_tax.deepcopy(_deftax)
+                st.rerun()
+
+    st.info("💡 Prossimi step: Profilo famiglia (step 2), Categorizzazione AI transazioni (step 4), "
+            "Analisi spese (step 5).")
 
 
 # ─────────────────────────────────────────────────────────────

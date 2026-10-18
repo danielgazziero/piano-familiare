@@ -722,6 +722,127 @@ def inizializza_asset_catalog_da_config() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────
+# AI SPENDING ANALYSIS — Taxonomy (config_params.taxonomy)
+# ─────────────────────────────────────────────────────────────
+
+_DEFAULT_TAXONOMY: dict = {
+    "categorie": [
+        {"id": "casa", "nome": "Casa", "icona": "🏠", "attiva": True, "sottocategorie": [
+            {"id": "mutuo", "nome": "Mutuo", "attiva": True},
+            {"id": "utenze", "nome": "Utenze", "attiva": True},
+            {"id": "condominio", "nome": "Condominio", "attiva": True},
+            {"id": "manutenzione", "nome": "Manutenzione", "attiva": True},
+            {"id": "pulizie", "nome": "Pulizie", "attiva": True},
+        ]},
+        {"id": "alimentari", "nome": "Alimentari", "icona": "🛒", "attiva": True, "sottocategorie": [
+            {"id": "supermercato", "nome": "Supermercato", "attiva": True},
+            {"id": "mercato", "nome": "Mercato", "attiva": True},
+            {"id": "delivery_spesa", "nome": "Delivery spesa", "attiva": True},
+        ]},
+        {"id": "ristorazione", "nome": "Ristorazione", "icona": "🍽️", "attiva": True, "sottocategorie": [
+            {"id": "ristorante", "nome": "Ristorante/Pizzeria", "attiva": True},
+            {"id": "bar", "nome": "Bar/Caffè", "attiva": True},
+            {"id": "delivery_cibo", "nome": "Delivery cibo", "attiva": True},
+        ]},
+        {"id": "trasporti", "nome": "Trasporti", "icona": "🚗", "attiva": True, "sottocategorie": [
+            {"id": "carburante", "nome": "Carburante", "attiva": True},
+            {"id": "assicurazione_auto", "nome": "Assicurazione/Bollo", "attiva": True},
+            {"id": "manutenzione_auto", "nome": "Manutenzione auto", "attiva": True},
+            {"id": "mezzi_pubblici", "nome": "Mezzi pubblici", "attiva": True},
+            {"id": "taxi", "nome": "Taxi/Ride", "attiva": True},
+            {"id": "parcheggio", "nome": "Parcheggio", "attiva": True},
+        ]},
+        {"id": "salute", "nome": "Salute", "icona": "🏥", "attiva": True, "sottocategorie": [
+            {"id": "farmacia", "nome": "Farmacia", "attiva": True},
+            {"id": "medico", "nome": "Medico/Specialista", "attiva": True},
+            {"id": "dentista", "nome": "Dentista", "attiva": True},
+            {"id": "palestra", "nome": "Palestra", "attiva": True},
+        ]},
+        {"id": "figlio", "nome": "Figlio", "icona": "👶", "attiva": True, "sottocategorie": [
+            {"id": "asilo", "nome": "Asilo/Nido", "attiva": True},
+            {"id": "pediatra", "nome": "Pediatra", "attiva": True},
+            {"id": "abbigliamento_bimbo", "nome": "Abbigliamento bimbo", "attiva": True},
+            {"id": "giocattoli", "nome": "Giocattoli", "attiva": True},
+            {"id": "babysitter", "nome": "Baby sitter", "attiva": True},
+        ]},
+        {"id": "abbonamenti", "nome": "Abbonamenti", "icona": "📱", "attiva": True, "sottocategorie": [
+            {"id": "streaming", "nome": "Streaming", "attiva": True},
+            {"id": "telefono", "nome": "Telefono", "attiva": True},
+            {"id": "internet", "nome": "Internet", "attiva": True},
+            {"id": "assicurazioni", "nome": "Assicurazioni", "attiva": True},
+        ]},
+        {"id": "shopping", "nome": "Shopping", "icona": "🛍️", "attiva": True, "sottocategorie": [
+            {"id": "abbigliamento", "nome": "Abbigliamento", "attiva": True},
+            {"id": "elettronica", "nome": "Elettronica", "attiva": True},
+            {"id": "casa_arredo", "nome": "Casa/Arredo", "attiva": True},
+        ]},
+        {"id": "vacanze", "nome": "Vacanze & Viaggi", "icona": "✈️", "attiva": True, "sottocategorie": [
+            {"id": "voli_treni", "nome": "Voli/Treni", "attiva": True},
+            {"id": "hotel", "nome": "Hotel/Alloggio", "attiva": True},
+            {"id": "attivita_viaggio", "nome": "Attività", "attiva": True},
+            {"id": "documenti_viaggio", "nome": "Documenti viaggio", "attiva": True},
+        ]},
+        {"id": "regali", "nome": "Regali & Donazioni", "icona": "🎁", "attiva": True, "sottocategorie": [
+            {"id": "regali_persone", "nome": "Regali", "attiva": True},
+            {"id": "donazioni", "nome": "Donazioni", "attiva": True},
+        ]},
+        {"id": "intrattenimento", "nome": "Intrattenimento", "icona": "🎬", "attiva": True, "sottocategorie": [
+            {"id": "cinema_teatro", "nome": "Cinema/Teatro", "attiva": True},
+            {"id": "sport_hobby", "nome": "Sport/Hobby", "attiva": True},
+            {"id": "libri_corsi", "nome": "Libri/Corsi", "attiva": True},
+        ]},
+        {"id": "istruzione", "nome": "Istruzione", "icona": "📚", "attiva": True, "sottocategorie": [
+            {"id": "corsi", "nome": "Corsi", "attiva": True},
+            {"id": "materiale", "nome": "Materiale didattico", "attiva": True},
+        ]},
+        {"id": "risparmio_invest", "nome": "Risparmio/Investimenti", "icona": "💰", "attiva": True, "sottocategorie": [
+            {"id": "pac_etf", "nome": "PAC/ETF", "attiva": True},
+            {"id": "fondi", "nome": "Fondi", "attiva": True},
+            {"id": "pensione", "nome": "Pensione integrativa", "attiva": True},
+            {"id": "liquidita", "nome": "Liquidità", "attiva": True},
+        ]},
+        {"id": "trasferimento_interno", "nome": "Trasferimento interno", "icona": "🔄",
+         "attiva": True, "sottocategorie": []},
+        {"id": "altro", "nome": "Altro", "icona": "❓", "attiva": True, "sottocategorie": []},
+    ],
+    "tag": ["una_tantum", "rimborsabile", "lavoro", "straordinario"],
+}
+
+
+def carica_taxonomy() -> dict:
+    """Carica taxonomy da config_params.taxonomy; usa default se non ancora salvata."""
+    import copy
+    val = carica_param('taxonomy')
+    if val and isinstance(val, dict) and 'categorie' in val:
+        return val
+    return copy.deepcopy(_DEFAULT_TAXONOMY)
+
+
+def salva_taxonomy(taxonomy: dict) -> bool:
+    """Salva taxonomy in config_params.taxonomy."""
+    return salva_param('taxonomy', taxonomy)
+
+
+def aggiorna_categoria_tx(hash_tx: str, categoria: str,
+                           sottocategoria: str = None,
+                           tag: list = None,
+                           confermata: bool = False) -> bool:
+    """Aggiorna categoria, sottocategoria, tag e stato di conferma di una transazione."""
+    try:
+        client = get_client()
+        client.table('transazioni').update({
+            'categoria': categoria,
+            'sottocategoria': sottocategoria,
+            'tag': tag or [],
+            'categoria_confermata': confermata,
+        }).eq('hash_tx', hash_tx).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore aggiornamento categoria tx: {type(e).__name__}")
+        return False
+
+
+# ─────────────────────────────────────────────────────────────
 # GESTIONE UTENTI — tabella app_users
 # ─────────────────────────────────────────────────────────────
 

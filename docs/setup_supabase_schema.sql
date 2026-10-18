@@ -66,16 +66,24 @@ CREATE TABLE IF NOT EXISTS quote_fondi (
 
 -- 3. Transazioni bancarie (da XLS importati)
 CREATE TABLE IF NOT EXISTS transazioni (
-    id            BIGSERIAL PRIMARY KEY,
-    data          DATE NOT NULL,
-    importo       NUMERIC NOT NULL,
-    descrizione   TEXT,
-    categoria     TEXT,
-    conto         TEXT,
-    raw_categoria TEXT,
-    hash_tx       TEXT UNIQUE,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
+    id                   BIGSERIAL PRIMARY KEY,
+    data                 DATE NOT NULL,
+    importo              NUMERIC NOT NULL,
+    descrizione          TEXT,
+    categoria            TEXT,
+    sottocategoria       TEXT,
+    tag                  TEXT[] DEFAULT '{}',
+    categoria_confermata BOOLEAN DEFAULT FALSE,
+    conto                TEXT,
+    raw_categoria        TEXT,
+    hash_tx              TEXT UNIQUE,
+    created_at           TIMESTAMPTZ DEFAULT NOW()
 );
+-- Migration Feature #16 (se transazioni esiste già):
+ALTER TABLE transazioni ADD COLUMN IF NOT EXISTS sottocategoria TEXT;
+ALTER TABLE transazioni ADD COLUMN IF NOT EXISTS tag TEXT[] DEFAULT '{}';
+ALTER TABLE transazioni ADD COLUMN IF NOT EXISTS categoria_confermata BOOLEAN DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_transazioni_categoria ON transazioni(categoria);
 
 -- 4. Parametri di configurazione (key-value)
 CREATE TABLE IF NOT EXISTS config_params (
