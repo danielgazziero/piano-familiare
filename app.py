@@ -2782,7 +2782,7 @@ elif sezione == "💳 Analisi spese":
                                     st.rerun()
 
     # ── Categorizzazione AI ───────────────────────────────────
-    with st.expander("🤖 Categorizzazione AI transazioni"):
+    with st.expander("✨ Categorizzazione AI transazioni"):
         st.caption(
             "Claude analizza le causali anonimizzate e suggerisce categoria e sottocategoria. "
             "Rivedi i suggerimenti nel tabellone, correggi dove necessario e salva."
@@ -2820,7 +2820,7 @@ elif sezione == "💳 Analisi spese":
             # Pulsante analisi AI
             _col_ai1, _col_ai2 = st.columns([2, 5])
             with _col_ai1:
-                _run_ai = st.button("🤖 Analizza con AI", type="primary",
+                _run_ai = st.button("✨ Analizza con AI", type="primary",
                                     key="run_ai_cat_btn",
                                     help="Invia le causali anonimizzate a Claude Haiku")
             with _col_ai2:
@@ -2969,7 +2969,7 @@ elif sezione == "💳 Analisi spese":
             _tx_cat = st.session_state.get('spese_analisi_cache', [])
 
             if not _tx_cat:
-                st.info("Nessuna transazione categorizzata. Prima usa 🤖 Categorizzazione AI.")
+                st.info("Nessuna transazione categorizzata. Prima usa ✨ Categorizzazione AI.")
             else:
                 _bench_cfg = config.get('benchmark_istat', {})
                 _analisi   = _calc_analisi(_tx_cat, _bench_cfg)
@@ -3019,7 +3019,7 @@ elif sezione == "💳 Analisi spese":
                 st.divider()
 
                 # ── Analisi AI ───────────────────────────────
-                st.markdown("**🤖 Analisi AI**")
+                st.markdown("**✨ Analisi AI**")
                 _ai_key_ok2 = bool(st.secrets.get('ANTHROPIC_API_KEY', ''))
                 if not _ai_key_ok2:
                     st.warning(
@@ -3027,7 +3027,7 @@ elif sezione == "💳 Analisi spese":
                         "aggiungi la chiave in `.streamlit/secrets.toml` per attivare l'analisi AI."
                     )
                 else:
-                    if st.button("🤖 Genera analisi AI", key="genera_analisi_ai_btn"):
+                    if st.button("✨ Genera analisi AI", key="genera_analisi_ai_btn"):
                         st.session_state.pop('spese_report_cache', None)
                         with st.spinner("Claude sta analizzando le spese..."):
                             try:

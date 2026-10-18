@@ -132,41 +132,56 @@ def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Scrub difensivo sui nomi delle categorie (non dovrebbero contenerne)
-    sem_puliti = []
-    for r in semafori:
-        cat_scrubbed = scrub(str(r.get('categoria', '')), nomi)
-        sem_puliti.append({
-            'categoria':     cat_scrubbed,
+    # Separa categorie critiche (🔴/🟡) dalle virtuose (🟢)
+    critiche = [r for r in semafori if r.get('semaforo') in ('🔴', '🟡')]
+    virtuose  = [r for r in semafori if r.get('semaforo') == '🟢']
+
+    # Scrub difensivo + limite alle top 4 critiche per importo
+    def _pulisci(r: dict) -> dict:
+        return {
+            'categoria':     scrub(str(r.get('categoria', '')), nomi),
             'mese_eur':      r.get('mese_eur'),
             'media_12m_eur': r.get('media_12m_eur'),
             'benchmark_eur': r.get('benchmark_eur'),
             'trend':         r.get('trend'),
             'semaforo':      r.get('semaforo'),
-        })
+        }
 
-    dati_json = json.dumps({'kpi': kpi, 'semafori': sem_puliti}, ensure_ascii=False)
+    critiche_top = sorted(critiche, key=lambda r: r.get('mese_eur', 0), reverse=True)[:4]
+    migliore     = sorted(virtuose,  key=lambda r: r.get('mese_eur', 0), reverse=True)[:1]
+
+    dati_json = json.dumps({
+        'kpi':     kpi,
+        'critiche': [_pulisci(r) for r in critiche_top],
+        'virtuose': [_pulisci(r) for r in migliore],
+    }, ensure_ascii=False)
 
     prompt = (
-        "Sei un consulente finanziario personale che aiuta una famiglia italiana "
-        "a gestire le proprie spese. I dati sono aggregati per categoria (nessun "
-        "dato personale). Importi in EUR/mese.\n\n"
-        f"Dati spese (mese corrente vs media 12m vs benchmark ISTAT):\n{dati_json}\n\n"
-        "Rispondi in italiano con questo formato markdown:\n\n"
-        "## Sintesi\n"
-        "(2-3 frasi sulla situazione complessiva con i numeri principali)\n\n"
-        "## Suggerimenti\n"
-        "(3-5 suggerimenti concreti e pratici, priorità alle categorie 🔴 e 🟡, "
-        "con importi specifici e azioni fattibili)\n\n"
-        "## Punto di forza\n"
-        "(1 categoria 🟢 dove la famiglia sta gestendo bene le spese)\n\n"
-        "Sii specifico con i numeri. Tono professionale ma amichevole."
+        "Sei un consulente finanziario personale che aiuta famiglie italiane a ottimizzare "
+        "le spese. I dati sono aggregati per categoria (nessun dato personale). Importi in €/mese.\n\n"
+        f"Dati famiglia:\n{dati_json}\n\n"
+        "REGOLE (rispettale alla lettera):\n"
+        "1. NON parafrasare i numeri — l'utente li vede già in tabella\n"
+        "2. Per ogni categoria critica: ipotizza cosa genera la spesa, proponi "
+        "   UN'azione concreta e specifica (non generica), stima il risparmio in €/mese\n"
+        "3. Ogni bullet: max 2 righe. Sii diretto e pratico.\n"
+        "4. Proponi alternative reali: servizi specifici, abitudini, offerte tariffarie italiane\n\n"
+        "Rispondi SOLO con questo markdown (niente altro testo prima o dopo).\n"
+        "USA SOLO grassetto (**testo**) per i titoli — NO heading (#, ##, ###).\n\n"
+        "**Situazione in breve**\n"
+        "_(1 frase con il dato più critico e il risparmio potenziale totale)_\n\n"
+        "**Dove agire subito**\n"
+        "_(bullet per ogni categoria critica: **Nome (€mese → obiettivo €)**: azione concreta)_\n\n"
+        "**Un'azione strutturale**\n"
+        "_(1 sola cosa da fare nei prossimi 30 giorni per ridurre le spese in modo duraturo)_\n\n"
+        "**Punto di forza**\n"
+        "_(1 frase sulla categoria virtuosa: perché è un buon risultato)_"
     )
 
     try:
         msg = client.messages.create(
             model=_MODEL,
-            max_tokens=1024,
+            max_tokens=4096,
             messages=[{'role': 'user', 'content': prompt}],
         )
         testo = next((b.text for b in msg.content if hasattr(b, 'text')), '').strip()
