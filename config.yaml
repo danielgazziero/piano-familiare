@@ -231,3 +231,48 @@ spese_straordinarie:
     importo: 0
     data: "2026-12-01"
     tipo: "entrata_straordinaria"
+
+# ─── BENCHMARK ISTAT — spese medie mensili ───────────────────
+# Fonte: ISTAT 2023 "Indagine sulle spese delle famiglie"
+# Stima per famiglia di 2 adulti + figlio piccolo, Nord Italia.
+# Match case-insensitive sul nome categoria della taxonomy utente.
+# Importi in EUR/mese. Aggiornare ogni anno.
+benchmark_istat:
+  alimentari: 520
+  supermercato: 520
+  spesa: 520
+  cibo: 520
+  trasporti: 380
+  auto: 200
+  benzina: 150
+  carburante: 150
+  casa: 800
+  affitto: 800
+  mutuo: 800
+  utenze: 200
+  bollette: 200
+  salute: 130
+  medico: 80
+  farmacia: 60
+  abbigliamento: 100
+  moda: 100
+  vestiti: 100
+  ristoranti: 200
+  bar: 50
+  ristorazione: 200
+  fuori_casa: 200
+  svago: 130
+  sport: 60
+  cultura: 50
+  hobby: 60
+  intrattenimento: 80
+  comunicazioni: 60
+  telefono: 40
+  internet: 30
+  istruzione: 50
+  corsi: 40
+  scuola: 50
+  assicurazioni: 80
+  viaggi: 150
+  vacanze: 150
+  altro: 200

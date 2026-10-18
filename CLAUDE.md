@@ -221,12 +221,12 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 18/10/2026
 
-### Branch corrente: `dev` — ahead di `main` (Feature #16 step 4)
+### Branch corrente: `dev` — ahead di `main` (Feature #16 step 5)
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
 | `main` | `366a7ff` | merge: Feature #11 — Blocked Assets storico su main |
-| `dev` | (pending) | feat: Feature #16 step 2 — profilo famiglia con storico decorrenze |
+| `dev` | `57f1395` | chore: CLAUDE.md — Feature #16 step 1-4 completati |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -542,7 +542,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | 9 ✅ | **Bollo threshold alert** — avviso se cash > soglia configurabile | `app.py`, `config.yaml` | Completato 07/10/2026. Calcola `snap['liquidita'] - affitto_accantonato`; soglia da `config_params.bollo_soglia_liquidita` (fallback `config.yaml`, default €5.000) — editabile da Supabase senza redeploy. |
 | 10 | **YoY cash flow** — delta vs anno precedente per inflows/expenses/net CF | `app.py`, `app_state.py` | Estensione sezione transazioni. |
 | 11 ✅ | **Blocked Assets storico** — valorizzazioni periodiche asset illiquidi (immobili, TFR, previdenza) | `database.py`, `portfolio.py`, `app.py` | Completato 18/10/2026. Tabella `blocked_assets_log (data, asset_id, asset_nome, asset_tipo, valore, nota)`. Incluso in `totale_eur` di `patrimonio_snapshot()`. UI in "🏦 Asset illiquidi" con storico grafico. |
-| 16 🟡 | **AI Spending Analysis** — categorizzazione transazioni + analisi AI con benchmark ISTAT e confronto storico | `app.py`, `simulator.py`, `database.py`, `src/scrubbing.py`, `src/ai_categorize.py`, `config_params` | **Step 1 completato 18/10/2026**: schema DB (`sottocategoria`, `tag`, `categoria_confermata`), taxonomy manager UI. **Step 2 completato 18/10/2026**: profilo famiglia con storico decorrenze. **Step 3 completato 18/10/2026**: `src/scrubbing.py` (scrub nomi/CF/IBAN, find_giroconti amount-based matching); expander Privacy & Anonimizzazione + Giroconti sospetti. **Step 4 completato 18/10/2026**: `src/ai_categorize.py` (Claude Haiku batch); expander Categorizzazione AI con st.data_editor e salvataggio batch. Fix: ThinkingBlock handling in risposta API. **Ordine implementazione rimanente:** (5) analisi AI con output strutturato + benchmark ISTAT, (6) batch retroattivo. Richiede `ANTHROPIC_API_KEY` in secrets.toml. |
+| 16 🟡 | **AI Spending Analysis** — categorizzazione transazioni + analisi AI con benchmark ISTAT e confronto storico | `app.py`, `simulator.py`, `database.py`, `src/scrubbing.py`, `src/ai_categorize.py`, `config_params` | **Step 1-4 completati 18/10/2026** (taxonomy, profilo famiglia, scrubbing, categorizzazione AI). **Step 5 completato 18/10/2026**: `calcola_analisi_spese()` in `simulator.py` (KPI + semafori 🟢🟡🔴 vs media 12m e ISTAT); `analizza_spese_ai()` in `ai_categorize.py`; expander "📊 Analisi AI spese" con 4 KPI card, tabella semafori, analisi testuale Claude on-demand. Benchmark ISTAT in `config.yaml → benchmark_istat`; `carica_spese_categorizzate()` in `database.py`. **Rimanente:** (6) batch retroattivo. Richiede `ANTHROPIC_API_KEY` in secrets.toml. |
 
 ### 🟢 Bassa priorità
 

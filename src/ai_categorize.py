@@ -102,3 +102,75 @@ def _chiama_api(client, batch: list, cat_attive: dict) -> list:
         r for r in parsed
         if isinstance(r, dict) and 'hash_tx' in r and 'categoria' in r
     ]
+
+
+def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
+    """
+    Genera un'analisi testuale (markdown) delle spese familiari via Claude.
+
+    I dati sono già aggregati per categoria — nessun dato individuale né nome
+    personale viene inviato all'API. I nomi nella lista `nomi` vengono scrubbed
+    dai testi prima dell'invio (misura difensiva aggiuntiva).
+
+    Args:
+        semafori: lista dict da calcola_analisi_spese()
+        kpi:      dict {totale_mese, totale_media_12m, top_categoria, delta_pct}
+        nomi:     lista nomi da anonimizzare (guardrail)
+
+    Returns:
+        Testo markdown con executive summary e suggerimenti
+    """
+    from scrubbing import scrub
+
+    api_key = _get_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY non trovata. "
+            "Aggiungila in .streamlit/secrets.toml."
+        )
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+
+    # Scrub difensivo sui nomi delle categorie (non dovrebbero contenerne)
+    sem_puliti = []
+    for r in semafori:
+        cat_scrubbed = scrub(str(r.get('categoria', '')), nomi)
+        sem_puliti.append({
+            'categoria':     cat_scrubbed,
+            'mese_eur':      r.get('mese_eur'),
+            'media_12m_eur': r.get('media_12m_eur'),
+            'benchmark_eur': r.get('benchmark_eur'),
+            'trend':         r.get('trend'),
+            'semaforo':      r.get('semaforo'),
+        })
+
+    dati_json = json.dumps({'kpi': kpi, 'semafori': sem_puliti}, ensure_ascii=False)
+
+    prompt = (
+        "Sei un consulente finanziario personale che aiuta una famiglia italiana "
+        "a gestire le proprie spese. I dati sono aggregati per categoria (nessun "
+        "dato personale). Importi in EUR/mese.\n\n"
+        f"Dati spese (mese corrente vs media 12m vs benchmark ISTAT):\n{dati_json}\n\n"
+        "Rispondi in italiano con questo formato markdown:\n\n"
+        "## Sintesi\n"
+        "(2-3 frasi sulla situazione complessiva con i numeri principali)\n\n"
+        "## Suggerimenti\n"
+        "(3-5 suggerimenti concreti e pratici, priorità alle categorie 🔴 e 🟡, "
+        "con importi specifici e azioni fattibili)\n\n"
+        "## Punto di forza\n"
+        "(1 categoria 🟢 dove la famiglia sta gestendo bene le spese)\n\n"
+        "Sii specifico con i numeri. Tono professionale ma amichevole."
+    )
+
+    try:
+        msg = client.messages.create(
+            model=_MODEL,
+            max_tokens=1024,
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        testo = next((b.text for b in msg.content if hasattr(b, 'text')), '').strip()
+    except Exception as e:
+        raise RuntimeError(f"Errore chiamata Claude API: {type(e).__name__}: {e}") from e
+
+    return testo

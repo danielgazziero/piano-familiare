@@ -1104,7 +1104,8 @@ with st.sidebar:
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
                   '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
                   'taxonomy_cache','profilo_famiglia_cache',
-                  'nomi_anonimiz_cache','tx_senza_cat_cache']:
+                  'nomi_anonimiz_cache','tx_senza_cat_cache',
+                  'spese_analisi_cache','spese_report_cache']:
             st.session_state.pop(k, None)
         st.rerun()
     st.toggle("🌙 Dark mode", key="_dark_mode_toggle", value=True)
@@ -2942,7 +2943,105 @@ elif sezione == "💳 Analisi spese":
                         st.warning(f"Salvate {_salvate}, errori: {_errori}.")
                     st.rerun()
 
-    st.info("💡 Prossimo step: Analisi AI spese con benchmark ISTAT (step 5).")
+    # ── Analisi AI spese ─────────────────────────────────────
+    from database import carica_spese_categorizzate as _csc2
+    from simulator import calcola_analisi_spese      as _calc_analisi
+    from ai_categorize import analizza_spese_ai      as _analisi_ai
+
+    with st.expander("📊 Analisi AI spese"):
+        st.caption(
+            "KPI mensili, semafori per categoria vs media 12 mesi e benchmark ISTAT, "
+            "e suggerimenti AI concreti per ottimizzare le spese."
+        )
+
+        if not _nomi_anon:
+            st.warning("⚠️ Prima configura almeno un nome nella sezione 🔒 Privacy.")
+        else:
+            if st.button("🔄 Ricarica dati spese", key="ricarica_spese_btn"):
+                st.session_state.pop('spese_analisi_cache', None)
+                st.session_state.pop('spese_report_cache', None)
+                st.rerun()
+
+            if 'spese_analisi_cache' not in st.session_state:
+                with st.spinner("Caricamento transazioni categorizzate..."):
+                    st.session_state['spese_analisi_cache'] = _csc2(limit=2000)
+
+            _tx_cat = st.session_state.get('spese_analisi_cache', [])
+
+            if not _tx_cat:
+                st.info("Nessuna transazione categorizzata. Prima usa 🤖 Categorizzazione AI.")
+            else:
+                _bench_cfg = config.get('benchmark_istat', {})
+                _analisi   = _calc_analisi(_tx_cat, _bench_cfg)
+                _kpi       = _analisi['kpi']
+                _sem       = _analisi['semafori']
+                _n_mesi    = _analisi['n_mesi_storico']
+
+                # ── KPI cards ────────────────────────────────
+                _col1, _col2, _col3, _col4 = st.columns(4)
+                with _col1:
+                    st.metric("💸 Spese mese", f"€{_kpi['totale_mese']:,.0f}")
+                with _col2:
+                    _dp = _kpi['delta_pct']
+                    st.metric(
+                        "📊 vs media 12m",
+                        f"{_dp:+.1f}%",
+                        delta=f"{_dp:+.1f}%",
+                        delta_color="inverse",
+                    )
+                with _col3:
+                    st.metric("🏆 Top categoria", _kpi['top_categoria'])
+                with _col4:
+                    st.metric("📅 Mesi storico", str(_n_mesi))
+
+                st.divider()
+
+                # ── Tabella semafori ──────────────────────────
+                st.markdown("**🚦 Spese per categoria**")
+                if _sem:
+                    _df_sem = pd.DataFrame(_sem)
+                    _df_sem['Mese (€)']     = _df_sem['mese_eur'].apply(lambda x: f"€{x:,.0f}")
+                    _df_sem['Media 12m (€)'] = _df_sem['media_12m_eur'].apply(lambda x: f"€{x:,.0f}")
+                    _df_sem['ISTAT (€)']    = _df_sem['benchmark_eur'].apply(
+                        lambda x: f"€{x:,.0f}" if x is not None else 'N/D'
+                    )
+                    st.dataframe(
+                        _df_sem[['semaforo', 'categoria', 'Mese (€)', 'trend',
+                                 'Media 12m (€)', 'ISTAT (€)']].rename(columns={
+                            'semaforo':  '',
+                            'categoria': 'Categoria',
+                            'trend':     'Trend',
+                        }),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                st.divider()
+
+                # ── Analisi AI ───────────────────────────────
+                st.markdown("**🤖 Analisi AI**")
+                _ai_key_ok2 = bool(st.secrets.get('ANTHROPIC_API_KEY', ''))
+                if not _ai_key_ok2:
+                    st.warning(
+                        "⚠️ `ANTHROPIC_API_KEY` non configurata — "
+                        "aggiungi la chiave in `.streamlit/secrets.toml` per attivare l'analisi AI."
+                    )
+                else:
+                    if st.button("🤖 Genera analisi AI", key="genera_analisi_ai_btn"):
+                        st.session_state.pop('spese_report_cache', None)
+                        with st.spinner("Claude sta analizzando le spese..."):
+                            try:
+                                _report = _analisi_ai(_sem, _kpi, _nomi_anon)
+                                st.session_state['spese_report_cache'] = _report
+                            except RuntimeError as _ae:
+                                st.error(f"Errore analisi AI: {_ae}")
+                        st.rerun()
+
+                    _report = st.session_state.get('spese_report_cache')
+                    if _report:
+                        st.markdown(_report)
+
+    st.info("💡 Prossimo step: Batch retroattivo — categorizza mesi precedenti (step 6).")
 
 
 # ─────────────────────────────────────────────────────────────

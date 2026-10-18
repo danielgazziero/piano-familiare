@@ -913,6 +913,22 @@ def carica_tx_senza_categoria(limit: int = 500) -> list:
         return []
 
 
+def carica_spese_categorizzate(limit: int = 2000) -> list:
+    """Transazioni con categoria valorizzata, ordinate per data DESC."""
+    try:
+        client = get_client()
+        res = (client.table('transazioni')
+               .select('hash_tx, data, importo, categoria, sottocategoria, conto')
+               .not_.is_('categoria', 'null')
+               .order('data', desc=True)
+               .limit(limit)
+               .execute())
+        return res.data or []
+    except Exception as e:
+        print(f"  [!] Errore carica_spese_categorizzate: {type(e).__name__}")
+        return []
+
+
 # ─────────────────────────────────────────────────────────────
 # GESTIONE UTENTI — tabella app_users
 # ─────────────────────────────────────────────────────────────
