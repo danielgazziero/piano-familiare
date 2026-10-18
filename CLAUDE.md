@@ -230,8 +230,8 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `8627580` | merge: Feature #16 step 6 — batch retroattivo |
-| `dev` | `8627580` | allineato a main dopo rebase |
+| `main` | `3a4e098` (+ docs) | merge: fix review AI spese (sicurezza, efficienza, refactoring), `salva_transazioni` upsert, import con `categoria` NULL |
+| `dev` | `3a4e098` (+ docs) | allineato a main dopo rebase; `origin/main` e `origin/dev` pubblicati |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -415,7 +415,9 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 
 ### ✅ Fix review giornaliera — AI spese: sicurezza, efficienza, refactoring (18/10/2026)
 
-Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (scrubbing a più livelli + UI revisione).
+Commit: `950e31a` (sicurezza), `71464d3` (efficienza + refactoring), `ed3aed7` (scrubbing a più livelli + UI revisione), `db4b739` (upsert `salva_transazioni` + dizionario nomi), `1555d84` (import con categoria NULL), merge su main `3a4e098`.
+
+**Operativo:** per attivare il riepilogo mensile veloce eseguire una volta nel SQL Editor di Supabase `UNCATEGORIZED_MONTHLY_RPC_SQL` (in `src/database.py`); senza, funziona col fallback. Dopo modifiche a moduli in `src/` riavviare Streamlit (i moduli importati restano in memoria). Branch locale `claude/practical-hellman-9f6774` (worktree) obsoleto: eliminabile.
 
 | # | Fix | File |
 |---|---|---|
