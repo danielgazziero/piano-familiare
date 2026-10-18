@@ -65,6 +65,56 @@ def load_config(config_path: Path = None) -> dict:
         return yaml.safe_load(f)
 
 
+def _transactions_to_df(all_transactions: List[Transaction]) -> pd.DataFrame:
+    df = pd.DataFrame([{
+        'date': t.date,
+        'amount': t.amount,
+        'description': t.description,
+        'category': t.category,
+        'account': t.account,
+        'raw_category': t.raw_category
+    } for t in all_transactions])
+
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date', ascending=False).reset_index(drop=True)
+    df['month'] = df['date'].dt.to_period('M')
+    df['year'] = df['date'].dt.year
+    df['income'] = df['amount'].clip(lower=0)
+    df['expense'] = df['amount'].clip(upper=0).abs()
+
+    return df
+
+
+def parse_uploaded_file(data: bytes, filename: str, formato: str, account: str,
+                         keywords: list = None) -> pd.DataFrame:
+    """
+    Parsa un estratto conto caricato dall'utente (bytes) con l'adapter indicato.
+    Usa un file temporaneo che viene sempre eliminato. Solleva eccezione se il formato
+    non e' valido; restituisce un DataFrame vuoto se non ci sono transazioni.
+    """
+    import os, tempfile
+    ext = Path(filename).suffix.lower()
+    if ext not in ('.xls', '.xlsx'):
+        raise ValueError("estensione non supportata")
+    if account not in ('persona1', 'persona2', 'comune'):
+        raise ValueError("conto non valido")
+    adapter = get_adapter(formato)
+    fd, tmp = tempfile.mkstemp(suffix=ext)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        txns = adapter.parse(Path(tmp), account, keywords=keywords or [])
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    if not txns:
+        return pd.DataFrame(columns=['date', 'amount', 'description', 'category',
+                                     'account', 'raw_category'])
+    return _transactions_to_df(txns)
+
+
 def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFrame:
     """
     Scansiona input_dir, identifica ogni file tramite config,
@@ -117,23 +167,7 @@ def parse_all_inputs(input_dir: Path = None, config: dict = None) -> pd.DataFram
             'date', 'amount', 'description', 'category', 'account', 'raw_category'
         ])
 
-    df = pd.DataFrame([{
-        'date': t.date,
-        'amount': t.amount,
-        'description': t.description,
-        'category': t.category,
-        'account': t.account,
-        'raw_category': t.raw_category
-    } for t in all_transactions])
-
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.sort_values('date', ascending=False).reset_index(drop=True)
-    df['month'] = df['date'].dt.to_period('M')
-    df['year'] = df['date'].dt.year
-    df['income'] = df['amount'].clip(lower=0)
-    df['expense'] = df['amount'].clip(upper=0).abs()
-
-    return df
+    return _transactions_to_df(all_transactions)
 
 
 def monthly_summary(df: pd.DataFrame) -> pd.DataFrame:

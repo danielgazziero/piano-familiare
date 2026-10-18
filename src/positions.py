@@ -209,6 +209,30 @@ def aggiorna_quantita(isin: str, nuova_quantita: float,
         return False
 
 
+def imposta_posizione(isin: str, nome: str, tipo: str, quantita: float,
+                       data_inizio: date = None, note: str = None) -> bool:
+    """
+    Imposta la quantita' corrente di un asset: se esiste una posizione attiva la
+    sostituisce (storicizzando la precedente), altrimenti ne crea una nuova.
+    """
+    data_inizio = data_inizio or date.today()
+    try:
+        client = get_client()
+        res = (client.table('posizioni').select('id').eq('isin', isin)
+               .is_('data_fine', 'null').limit(1).execute())
+        if res.data:
+            return aggiorna_quantita(isin, quantita, data_inizio, note)
+        client.table('posizioni').insert({
+            'isin': isin, 'nome': nome, 'tipo': tipo, 'quantita': float(quantita),
+            'data_inizio': data_inizio.isoformat(), 'data_fine': None,
+            'note': note or 'Inserimento iniziale',
+        }).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore imposta_posizione: {type(e).__name__}")
+        return False
+
+
 def storico_posizioni(isin: str) -> pd.DataFrame:
     """Storico completo delle variazioni di quantità per un asset."""
     try:

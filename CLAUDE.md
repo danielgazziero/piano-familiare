@@ -236,6 +236,7 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 1. Definire `_step_<id>(config, params_db) -> dict | None` in `wizard.py`
 2. Appendere entry a `WIZARD_STEPS` (prima di `riepilogo`)
 3. Aggiungere al `_RENDER_MAP`
+**Asset e upload:** gli step ETF/Fondi/Azioni usano `src/wizard_assets.py` (form manuale + import CSV/XLSX → `asset_catalog`, `posizioni`, `quote_fondi`); lo step Parser banca carica estratti conto XLS/XLSX (`parser.parse_uploaded_file` → `transazioni`). `config.yaml` non contiene più asset né patrimonio reali (`etf`, `fondi_bancari.titoli`, `azioni` vuoti).
 **Persistenza:** `config_params.wizard_step_last` (ripresa), `_wiz_done_<id>` per step, `wizard_completed = 'true'` a fine.
 
 ### FIRE tracker — configurazione
