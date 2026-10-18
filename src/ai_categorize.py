@@ -84,7 +84,7 @@ def _chiama_api(client, batch: list, cat_attive: dict) -> list:
             max_tokens=4096,
             messages=[{'role': 'user', 'content': prompt}],
         )
-        testo = msg.content[0].text.strip()
+        testo = next((b.text for b in msg.content if hasattr(b, 'text')), '').strip()
     except Exception as e:
         raise RuntimeError(f"Errore chiamata Claude API: {type(e).__name__}: {e}") from e
 
