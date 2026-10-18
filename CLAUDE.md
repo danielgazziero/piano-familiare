@@ -71,7 +71,12 @@ Tutte le chiamate Supabase/yfinance costose sono messe in cache la prima volta e
  'backfill_nuovi', 'nuove_tx', 'asset_catalog', 'pos_df_cache',
  'fondi_df_cache', '_app_pwd_cache', 'etf_perf_cache', 'azioni_df_cache',
  'tx_db_cache', 'patrimonio_log_cache', 'port_storico_cache',
- 'eventi_storico_cache', '_plotly_tpl_dark']
+ 'eventi_storico_cache', '_plotly_tpl_dark', '_totp_info_cache',
+ 'blocked_assets_cache', 'taxonomy_cache', 'profilo_famiglia_cache',
+ 'nomi_anonimiz_cache', 'tx_senza_cat_cache',
+ 'spese_analisi_cache', 'spese_report_cache',
+ 'batch_retro_riepilogo_cache', 'batch_retro_tx_cache',
+ 'batch_retro_ai_cache', '_retro_last_sel']
 ```
 
 Per `port_storico_cache` e `eventi_storico_cache` la cache è un dict keyed per `data_da`.
@@ -221,12 +226,12 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 ## Stato tecnico al 18/10/2026
 
-### Branch corrente: `dev` — ahead di `main` (Feature #16 step 6)
+### Branch corrente: `dev` — allineato a `main` (Feature #16 completa)
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `1cc98f0` | merge: Feature #16 step 5 — analisi AI spese |
-| `dev` | (pending step 6) | feat: Feature #16 step 6 — batch retroattivo |
+| `main` | `8627580` | merge: Feature #16 step 6 — batch retroattivo |
+| `dev` | `8627580` | allineato a main dopo rebase |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -268,11 +273,22 @@ La stima automatica delle spese è calcolata da `tx_db_cache → expense` media 
 
 La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (default 5%).
 
+**Commit principali della sessione del 18/10/2026 (Feature #16 — AI Spending Analysis, step 5-6):**
+
+| Commit | Contenuto |
+|---|---|
+| `54f56bd` | feat: Feature #16 step 5 — analisi AI spese con benchmark ISTAT |
+| `1d95a12` | fix: analisi AI spese — prompt compatto, icone ✨, font ridotto |
+| `1cc98f0` | merge: Feature #16 step 5 su main |
+| `e3f3dad` | feat: Feature #16 step 6 — batch retroattivo categorizzazione mesi precedenti |
+| `8627580` | merge: Feature #16 step 6 su main — Feature #16 completata |
+
 **Commit principali della sessione del 18/10/2026 (Feature #11 — Blocked Assets):**
 
 | Commit | Contenuto |
 |---|---|
-| (pending) | feat: Feature #11 — blocked_assets_log, UI valorizzazioni illiquidi, incluso in patrimonio_snapshot |
+| `57f1395` | chore: aggiorna CLAUDE.md — Feature #16 step 1-4 completati |
+| `726b5ac` | fix: gestione ThinkingBlock in risposta Claude API |
 
 **Commit principali della sessione del 18/10/2026 (code review settimanale + onboarding senza dati di esempio):**
 
