@@ -6,28 +6,41 @@ Nessun dato identificativo esce in chiaro verso API esterne.
 import re
 from datetime import date as _date, timedelta
 
-_CF_RE   = re.compile(r'\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b')
-_IBAN_RE = re.compile(r'\bIT[0-9]{2}[A-Z0-9]{23}\b')
+_CF_RE    = re.compile(r'\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b', re.IGNORECASE)
+# IBAN con eventuali spazi/trattini tra i gruppi (es. "IT60 X054 2811 ...")
+_IBAN_RE  = re.compile(r'\b[A-Z]{2}\d{2}(?:[ \-]?[A-Z0-9]){11,30}\b', re.IGNORECASE)
+_EMAIL_RE = re.compile(r'[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}', re.IGNORECASE)
+# Numeri carta: 13-19 cifre, anche separate da spazi o trattini
+_CARD_RE  = re.compile(r'\b(?:\d[ \-]?){12,18}\d\b')
+# Telefoni IT (fissi/mobili), con prefisso +39/0039 opzionale
+_PHONE_RE = re.compile(r'(?<!\d)(?:(?:\+|00)39[ .\-]?)?(?:3\d{2}|0\d{1,3})[ .\-]?\d{6,7}(?!\d)')
+
+
+def _nome_pattern(nome: str):
+    """Match case-insensitive del nome come parola intera (non dentro altre parole)."""
+    return re.compile(r'(?<!\w)' + re.escape(nome) + r'(?!\w)', re.IGNORECASE)
 
 
 def scrub(testo: str, nomi: list) -> str:
     """
     Anonimizza una stringa:
-    1. Sostituisce ogni nome in `nomi` (case-insensitive) con [NOME]
-    2. Sostituisce codici fiscali italiani con [CF]
-    3. Sostituisce IBAN italiani con [IBAN]
+    1. Sostituisce ogni nome in `nomi` (parola intera, case-insensitive) con [NOME]
+    2. Sostituisce email, IBAN (anche con spazi), codici fiscali, numeri carta
+       e telefoni con segnaposto
+    Il testo originale non viene alterato oltre alle sostituzioni.
     """
     if not testo:
         return testo
     risultato = str(testo)
-    for nome in nomi:
-        nome = nome.strip() if nome else ''
-        if not nome:
-            continue
-        pattern = re.compile(re.escape(nome), re.IGNORECASE)
-        risultato = pattern.sub('[NOME]', risultato)
-    risultato = _CF_RE.sub('[CF]', risultato.upper())
+    # nomi più lunghi per primi, così "Mario Rossi" prevale su "Mario"
+    for nome in sorted({(n or '').strip() for n in nomi}, key=len, reverse=True):
+        if nome:
+            risultato = _nome_pattern(nome).sub('[NOME]', risultato)
+    risultato = _EMAIL_RE.sub('[EMAIL]', risultato)
     risultato = _IBAN_RE.sub('[IBAN]', risultato)
+    risultato = _CF_RE.sub('[CF]', risultato)
+    risultato = _CARD_RE.sub('[CARTA]', risultato)
+    risultato = _PHONE_RE.sub('[TEL]', risultato)
     return risultato
 
 

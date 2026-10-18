@@ -2845,7 +2845,7 @@ elif sezione == "💳 Analisi spese":
 
                 with st.spinner(f"Analisi AI in corso ({len(_tx_da_cat)} transazioni)..."):
                     try:
-                        _ai_res = _cat_batch(_tx_input, _tax)
+                        _ai_res = _cat_batch(_tx_input, _tax, _nomi_anon)
                         # Mappa hash_tx → suggerimento
                         _ai_map = {r['hash_tx']: r for r in _ai_res}
                         st.session_state['ai_suggest_cache'] = _ai_map
@@ -2882,7 +2882,7 @@ elif sezione == "💳 Analisi spese":
                     'Categoria':     _id2nome.get(_cat_id, ''),
                     'Sottocategoria': _sub_id,
                     'Tag':           '',
-                    'Conferma':      bool(_sug),
+                    'Conferma':      False,
                 })
             _df_editor = _pd_ai.DataFrame(_editor_rows)
 
@@ -2919,10 +2919,12 @@ elif sezione == "💳 Analisi spese":
                     from database import aggiorna_categoria_tx as _agg_cat
                     _salvate = 0
                     _errori  = 0
-                    for _, _row in _edited[_edited['Conferma']].iterrows():
+                    for _row in _edited[_edited['Conferma']].to_dict('records'):
                         _cat_nome_sel = _row.get('Categoria') or ''
                         _cat_id_sel   = _nome2id.get(_cat_nome_sel) or 'altro'
                         _sub_sel      = _row.get('Sottocategoria') or None
+                        if _sub_sel not in _cat2subs.get(_cat_id_sel, []):
+                            _sub_sel = None  # sottocategoria non appartenente alla categoria
                         _tag_val      = _row.get('Tag') or None
                         _tag_list     = [_tag_val] if _tag_val else []
                         _ok = _agg_cat(
@@ -3130,7 +3132,7 @@ elif sezione == "💳 Analisi spese":
                             ]
                             with st.spinner(f"Analisi AI ({len(_tx_retro)} tx)..."):
                                 try:
-                                    _ai_res2 = _cat_b2(_tx_input2, _tax)
+                                    _ai_res2 = _cat_b2(_tx_input2, _tax, _nomi_anon)
                                     st.session_state['batch_retro_ai_cache'] = {
                                         r['hash_tx']: r for r in _ai_res2}
                                     st.success(
@@ -3146,6 +3148,11 @@ elif sezione == "💳 Analisi spese":
                                        if c.get('attiva', True)]
                         _r_id2nome  = dict(zip(_r_cat_ids, _r_cat_nomi))
                         _r_nome2id  = dict(zip(_r_cat_nomi, _r_cat_ids))
+                        _r_cat2subs = {
+                            c['id']: [s['id'] for s in c.get('sottocategorie', [])
+                                      if s.get('attiva', True)]
+                            for c in _tax.get('categorie', []) if c.get('attiva', True)
+                        }
                         _r_all_subs = sorted({
                             sid
                             for c in _tax.get('categorie', []) if c.get('attiva', True)
@@ -3164,7 +3171,7 @@ elif sezione == "💳 Analisi spese":
                                     _ai_map2.get(t['hash_tx'], {}).get('categoria') or '', ''),
                                 'Sottocategoria': _ai_map2.get(
                                     t['hash_tx'], {}).get('sottocategoria') or '',
-                                'Conferma':       bool(_ai_map2.get(t['hash_tx'])),
+                                'Conferma':       False,
                             }
                             for t in _tx_retro
                         ]
@@ -3207,6 +3214,8 @@ elif sezione == "💳 Analisi spese":
                                     _cat_id_sel2 = _r_nome2id.get(
                                         _row2.get('Categoria') or '', 'altro')
                                     _sub_sel2 = _row2.get('Sottocategoria') or None
+                                    if _sub_sel2 not in _r_cat2subs.get(_cat_id_sel2, []):
+                                        _sub_sel2 = None  # non appartiene alla categoria
                                     if _agg_cat2(
                                         _row2['hash_tx'], _cat_id_sel2,
                                         sottocategoria=_sub_sel2 if _sub_sel2 else None,

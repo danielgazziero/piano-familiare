@@ -5,6 +5,7 @@ GUARDRAIL: le descrizioni passate qui devono essere già anonimizzate da scrubbi
 
 import json
 import os
+import re
 
 _MODEL      = 'claude-haiku-5-5'
 _BATCH_SIZE = 50
@@ -18,7 +19,21 @@ def _get_api_key() -> str:
         return os.environ.get('ANTHROPIC_API_KEY', '') or ''
 
 
-def categorizza_batch(tx_scrubbed: list, taxonomy: dict) -> list:
+_MD_IMG_RE  = re.compile(r'!\[[^\]]*\]\([^)]*\)')
+_MD_LINK_RE = re.compile(r'\[([^\]]*)\]\([^)]*\)')
+_URL_RE     = re.compile(r'(?:https?://|www\.)\S+', re.IGNORECASE)
+_HTML_RE    = re.compile(r'<[^>]+>')
+
+
+def _sanitize_markdown(testo: str) -> str:
+    """Rimuove immagini, link, URL e tag HTML dall'output del modello (anti-exfiltration)."""
+    testo = _MD_IMG_RE.sub('', testo)
+    testo = _MD_LINK_RE.sub(r'\1', testo)
+    testo = _URL_RE.sub('', testo)
+    return _HTML_RE.sub('', testo)
+
+
+def categorizza_batch(tx_scrubbed: list, taxonomy: dict, nomi: list = None) -> list:
     """
     Chiama Claude API per suggerire categoria e sottocategoria per ogni transazione.
 
@@ -30,6 +45,11 @@ def categorizza_batch(tx_scrubbed: list, taxonomy: dict) -> list:
         lista di dict {hash_tx, categoria, sottocategoria}
         (solo transazioni per cui il modello ha dato una risposta valida)
     """
+    if not nomi:
+        raise RuntimeError(
+            "Nessun nome configurato per l'anonimizzazione: "
+            "configura 🔒 Privacy prima di usare l'AI."
+        )
     api_key = _get_api_key()
     if not api_key:
         raise RuntimeError(
@@ -98,10 +118,18 @@ def _chiama_api(client, batch: list, cat_attive: dict) -> list:
     except json.JSONDecodeError:
         return []
 
-    return [
-        r for r in parsed
-        if isinstance(r, dict) and 'hash_tx' in r and 'categoria' in r
-    ]
+    # Valida l'output contro tassonomia e batch inviato (difesa da prompt injection)
+    hash_validi = {t['hash_tx'] for t in batch}
+    out = []
+    for r in parsed if isinstance(parsed, list) else []:
+        if not (isinstance(r, dict) and r.get('hash_tx') in hash_validi and 'categoria' in r):
+            continue
+        cat = r['categoria'] if r['categoria'] in cat_attive else 'altro'
+        sub = r.get('sottocategoria')
+        if cat not in cat_attive or sub not in cat_attive[cat]['subs']:
+            sub = None
+        out.append({'hash_tx': r['hash_tx'], 'categoria': cat, 'sottocategoria': sub})
+    return out
 
 
 def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
@@ -188,4 +216,4 @@ def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
     except Exception as e:
         raise RuntimeError(f"Errore chiamata Claude API: {type(e).__name__}: {e}") from e
 
-    return testo
+    return _sanitize_markdown(testo)
