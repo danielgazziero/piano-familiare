@@ -1212,7 +1212,10 @@ if sezione == "🏠 Stato di famiglia":
     # ── Bollo threshold alert ──────────────────────────────────
     # Soglia da Supabase config_params (fallback config.yaml); editabile senza redeploy
     _bs_raw = p_saved.get('bollo_soglia_liquidita')
-    _bollo_soglia = float(_bs_raw if _bs_raw is not None else _cfg_p.get('bollo_soglia_liquidita', 5000))
+    try:
+        _bollo_soglia = float(_bs_raw)
+    except (TypeError, ValueError):
+        _bollo_soglia = float(_cfg_p.get('bollo_soglia_liquidita', 5000))
     # snap['liquidita'] include affitto_accantonato — escludiamo: il bollo riguarda solo i conti correnti
     _liq_conti = float(snap['liquidita']) - float(params_correnti.get('affitto_accantonato') or 0)
     if _liq_conti > _bollo_soglia:

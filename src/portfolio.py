@@ -54,7 +54,6 @@ def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
         return pd.DataFrame()
 
 
-
 def get_portfolio_performance(config: dict,
                                catalog_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
     results = []
@@ -259,7 +258,7 @@ def get_azioni_snapshot(config: dict,
     rows = []
     for az in azioni:
         ticker = az.get('ticker_yf') or az.get('ticker')
-        quantita = az.get('quantita', 0)
+        quantita = az.get('quantita') or 0
         serie = _extract_series(raw, ticker, len(unique_tickers))
         prezzo_attuale = valore_attuale = perf_ytd = perf_1y = None
         if not serie.empty:

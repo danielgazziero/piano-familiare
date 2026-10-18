@@ -78,7 +78,7 @@ Per `port_storico_cache` e `eventi_storico_cache` la cache è un dict keyed per 
 
 ### Valorizzazione asset
 
-- **ETF / azioni ACN:** batch download `_batch_download(tickers, period)` con cache `@st.cache_data(ttl=1800)`. `get_etf_history_chart()` usa lo stesso `_batch_download` (non più `yf.Ticker` separato).
+- **ETF / azioni ACN:** batch download `_batch_download(tickers, period)` con cache `@st.cache_data(ttl=1800)`. (`get_etf_history_chart()` è stata rimossa come codice morto.)
 - **Fondi bancari italiani:** prezzi da `quote_map` (Supabase `quote_fondi`). Fallback a `valore_quota_ref` in `asset_catalog` o `config.yaml`.
 - **Portafoglio storico:** prezzi giornalieri in `prezzi_storici`, quantità in `posizioni` — `positions.py` ricostruisce `valore = quantità(giorno) × prezzo(giorno)` con forward-fill per weekend/festivi. Gli ISIN sono passati da `session_state['asset_catalog']` per evitare query ridondante.
 
@@ -426,7 +426,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | P09 | Gestione Asset usa `session_state['asset_catalog']` (no query fresca) | `app.py` |
 | P10 | Rimosso reload ridondante `asset_catalog` dopo backfill | `app.py` |
 | P11 | `piano_uscita_ottimale()`: `iterrows()+.at[]` → `to_dict('records')`; costanti fuori dai loop | `src/portfolio.py` |
-| P12 | `get_etf_history_chart()` unificata su `_batch_download` | `src/portfolio.py` |
+| P12 | `get_etf_history_chart()` unificata su `_batch_download` (poi rimossa come dead code il 13/10) | `src/portfolio.py` |
 | P13-P15 | `iterrows()` → vettoriale in `carica_quote_fondi_persistenti`, `aggiorna_quote_fondi`, `carica_asset_tickers` | `src/app_state.py`, `src/database.py` |
 | P-NEW-01 | Grafico confronto ETF: N download separati → 1 batch + `_extract_series` per ticker | `app.py` |
 | P-NEW-02 | `simula_uscita_fondo_data_x()` e `piano_uscita_ottimale()`: parametro `fondi_df=` da cache | `src/portfolio.py`, `app.py` |
@@ -572,13 +572,11 @@ Obiettivo: pacchettizzare l'app come eseguibile installabile che gira interament
 
 ---
 
-## Supabase keep-alive (⏳ da implementare)
+## Supabase keep-alive (✅ implementato 15/10/2026)
 
-Il free tier di Supabase mette il progetto in **standby dopo 7 giorni senza attività**, costringendo a riabilitarlo manualmente dalla dashboard.
+Il free tier di Supabase mette il progetto in **standby dopo 7 giorni senza attività**. Risolto con GitHub Actions cron — ping alla REST API ogni 4 giorni.
 
-**Soluzione: GitHub Actions cron** — ping alla REST API ogni 4 giorni.
-
-File da creare: **`.github/workflows/keep-supabase-alive.yml`**
+File: **`.github/workflows/keep-supabase-alive.yml`**
 
 ```yaml
 name: Keep Supabase alive
