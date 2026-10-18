@@ -225,8 +225,8 @@ I valori numerici reali (patrimonio, entrate, debiti) vivono in Supabase `config
 
 | Branch | Ultimo commit | Contenuto |
 |---|---|---|
-| `main` | `3dc6d9d` | merge: config.yaml senza asset, wizard con inserimento e upload |
-| `dev` | `3dc6d9d` | (rebase su main, stesso commit) |
+| `main` | `67da0ef` + commit doc successivo | merge: aggiorna CLAUDE.md stato 18/10/2026 (ultimo commit di codice: `3dc6d9d`) |
+| `dev` | come `main` | allineato con fast-forward — nessun commit di divergenza |
 
 ### Onboarding wizard (`src/wizard.py`)
 
@@ -278,6 +278,7 @@ La soglia drift è in `config.yaml → parametri.rebalancing_soglia_drift` (defa
 | `8fcae18` | fix: palette confronto ETF ciclica (IndexError con >4 ETF) |
 | `4b80995` | feat: `config.yaml` senza asset; wizard con inserimento manuale e upload (CSV/XLSX asset, estratti conto XLS) |
 | `3dc6d9d` | merge su main — main e dev allineati |
+| `3ea41d2` / `67da0ef` | chore: aggiorna CLAUDE.md stato 18/10/2026 + merge su main |
 
 **Commit principali della sessione del 14/10/2026 (code review settimanale automatico):**
 
