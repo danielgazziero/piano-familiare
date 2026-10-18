@@ -223,6 +223,85 @@ def carica_patrimonio_log(giorni: int = 365) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────
+# ASSET ILLIQUIDI (blocked_assets_log)
+# ─────────────────────────────────────────────────────────────
+
+def carica_blocked_assets_correnti() -> list:
+    """Restituisce l'ultima valorizzazione per ciascun asset illiquido."""
+    try:
+        client = get_client()
+        res = (client.table('blocked_assets_log')
+               .select('asset_id, asset_nome, asset_tipo, valore, data, nota')
+               .order('data', desc=True)
+               .limit(1000)
+               .execute())
+        if not res.data:
+            return []
+        seen: dict = {}
+        for row in res.data:
+            aid = row['asset_id']
+            if aid not in seen:
+                seen[aid] = row
+        return list(seen.values())
+    except Exception as e:
+        print(f"  [!] Errore caricamento blocked assets: {type(e).__name__}")
+        return []
+
+
+def salva_blocked_asset(asset_id: str, asset_nome: str, asset_tipo: str,
+                         valore: float, data: str = None, nota: str = None) -> bool:
+    """Upsert valorizzazione asset illiquido (conflict su data + asset_id)."""
+    try:
+        client = get_client()
+        record = {
+            'data': data or date.today().isoformat(),
+            'asset_id': asset_id,
+            'asset_nome': asset_nome,
+            'asset_tipo': asset_tipo,
+            'valore': float(valore),
+            'nota': nota,
+        }
+        client.table('blocked_assets_log').upsert(record, on_conflict='data,asset_id').execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore salvataggio blocked asset: {type(e).__name__}")
+        return False
+
+
+def carica_blocked_assets_log(giorni: int = 730) -> pd.DataFrame:
+    """Carica storico valorizzazioni asset illiquidi degli ultimi N giorni."""
+    try:
+        client = get_client()
+        data_inizio = (date.today() - pd.Timedelta(days=giorni)).isoformat()
+        res = (client.table('blocked_assets_log')
+               .select('data, asset_id, asset_nome, asset_tipo, valore, nota')
+               .gte('data', data_inizio)
+               .order('data')
+               .limit(giorni * 10)
+               .execute())
+        if not res.data:
+            return pd.DataFrame()
+        df = pd.DataFrame(res.data)
+        df['data'] = pd.to_datetime(df['data'])
+        df['valore'] = pd.to_numeric(df['valore'], errors='coerce')
+        return df
+    except Exception as e:
+        print(f"  [!] Errore caricamento log blocked assets: {type(e).__name__}")
+        return pd.DataFrame()
+
+
+def elimina_blocked_asset(asset_id: str) -> bool:
+    """Elimina tutte le valorizzazioni di un asset illiquido (rimozione dal catalogo)."""
+    try:
+        client = get_client()
+        client.table('blocked_assets_log').delete().eq('asset_id', asset_id).execute()
+        return True
+    except Exception as e:
+        print(f"  [!] Errore eliminazione blocked asset: {type(e).__name__}")
+        return False
+
+
+# ─────────────────────────────────────────────────────────────
 # QUOTE FONDI
 # ─────────────────────────────────────────────────────────────
 

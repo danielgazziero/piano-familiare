@@ -291,7 +291,8 @@ def get_azioni_snapshot(config: dict,
 
 
 def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
-                         azioni_df=None, aggiornamenti_manuali=None) -> dict:
+                         azioni_df=None, aggiornamenti_manuali=None,
+                         blocked_assets_totale: float = 0) -> dict:
     p = config.get('patrimonio', {}).copy()
     if aggiornamenti_manuali:
         p.update(aggiornamenti_manuali)
@@ -319,9 +320,11 @@ def patrimonio_snapshot(config: dict, etf_df=None, fondi_df=None,
         'azioni_acn_usd': round(azioni_usd, 0),
         'liquidita': (p.get('liquidita_persona1', 0) + p.get('liquidita_persona2', 0) +
                       p.get('conto_comune', 0) + p.get('affitto_accantonato', 0)),
+        'asset_illiquidi': round(float(blocked_assets_totale or 0), 0),
     }
     snap['totale_eur'] = (snap['fondi_bancari'] + snap['generali'] +
-                          snap['etf_persona1'] + snap['etf_figlio'] + snap['liquidita'])
+                          snap['etf_persona1'] + snap['etf_figlio'] +
+                          snap['liquidita'] + snap['asset_illiquidi'])
     aliquota = config.get('parametri', {}).get(
         'aliquota_capital_gain',
         config.get('migrazione_fondi', {}).get('aliquota_capital_gain', 0.26))

@@ -115,8 +115,22 @@ CREATE TABLE IF NOT EXISTS backfill_stato (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 8. Asset illiquidi (immobili, TFR, previdenza complementare)
+CREATE TABLE IF NOT EXISTS blocked_assets_log (
+    id          BIGSERIAL PRIMARY KEY,
+    data        DATE NOT NULL DEFAULT CURRENT_DATE,
+    asset_id    TEXT NOT NULL,
+    asset_nome  TEXT NOT NULL,
+    asset_tipo  TEXT NOT NULL DEFAULT 'altro',
+    valore      NUMERIC NOT NULL DEFAULT 0,
+    nota        TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(data, asset_id)
+);
+
 -- ── Row Level Security ────────────────────────────────────────
 ALTER TABLE patrimonio_log  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE blocked_assets_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quote_fondi     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transazioni     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config_params   ENABLE ROW LEVEL SECURITY;
@@ -161,6 +175,11 @@ DO $$ BEGIN
   CREATE POLICY "service_only" ON backfill_stato FOR ALL
     USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DROP POLICY IF EXISTS "full_access" ON blocked_assets_log;
+DO $$ BEGIN
+  CREATE POLICY "service_only" ON blocked_assets_log FOR ALL
+    USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── Indici per performance ────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_prezzi_isin_data
@@ -171,6 +190,10 @@ CREATE INDEX IF NOT EXISTS idx_transazioni_data
     ON transazioni(data DESC);
 CREATE INDEX IF NOT EXISTS idx_patrimonio_data
     ON patrimonio_log(data DESC);
+CREATE INDEX IF NOT EXISTS idx_blocked_assets_data
+    ON blocked_assets_log(data DESC);
+CREATE INDEX IF NOT EXISTS idx_blocked_assets_id
+    ON blocked_assets_log(asset_id, data DESC);
 
 -- ── Verifica ──────────────────────────────────────────────────
 SELECT
