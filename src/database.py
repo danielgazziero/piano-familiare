@@ -842,6 +842,43 @@ def aggiorna_categoria_tx(hash_tx: str, categoria: str,
         return False
 
 
+def aggiorna_categoria_tx_bulk(righe: list) -> tuple:
+    """
+    Aggiorna in blocco categoria/sottocategoria/tag di più transazioni.
+    `righe`: [{hash_tx, categoria, sottocategoria, tag}] — vengono raggruppate per
+    valori identici e aggiornate con una sola UPDATE ... IN (...) per gruppo
+    (invece di una richiesta per transazione). Imposta categoria_confermata=True.
+    Restituisce (salvate, errori).
+    """
+    gruppi: dict = {}
+    for r in righe:
+        chiave = (r['categoria'], r.get('sottocategoria') or None,
+                  tuple(r.get('tag') or ()))
+        gruppi.setdefault(chiave, []).append(r['hash_tx'])
+
+    salvate = errori = 0
+    try:
+        client = get_client()
+    except Exception as e:
+        print(f"  [!] Errore client bulk categoria: {type(e).__name__}")
+        return 0, len(righe)
+    for (cat, sub, tag), hashes in gruppi.items():
+        for i in range(0, len(hashes), 100):  # chunk: limite lunghezza URL
+            chunk = hashes[i:i + 100]
+            try:
+                client.table('transazioni').update({
+                    'categoria': cat,
+                    'sottocategoria': sub,
+                    'tag': list(tag),
+                    'categoria_confermata': True,
+                }).in_('hash_tx', chunk).execute()
+                salvate += len(chunk)
+            except Exception as e:
+                print(f"  [!] Errore aggiornamento categoria bulk: {type(e).__name__}")
+                errori += len(chunk)
+    return salvate, errori
+
+
 # ─────────────────────────────────────────────────────────────
 # AI SPENDING ANALYSIS — Profilo famiglia
 # ─────────────────────────────────────────────────────────────
@@ -913,33 +950,57 @@ def carica_tx_senza_categoria(limit: int = 500) -> list:
         return []
 
 
+UNCATEGORIZED_MONTHLY_RPC_SQL = """
+-- Eseguire una volta nel SQL Editor di Supabase (opzionale, ottimizzazione)
+CREATE OR REPLACE FUNCTION public.get_uncategorized_monthly()
+RETURNS TABLE(anno int, mese int, conteggio bigint)
+LANGUAGE sql STABLE SECURITY INVOKER AS $$
+  SELECT EXTRACT(YEAR FROM data)::int, EXTRACT(MONTH FROM data)::int, COUNT(*)
+  FROM transazioni WHERE categoria IS NULL AND importo < 0
+  GROUP BY 1, 2;
+$$;
+"""
+
+
 def carica_riepilogo_mensile_senza_categoria(limit: int = 5000) -> list:
     """
     Restituisce [{anno, mese, label, conteggio}] per mesi con uscite non categorizzate.
     Ordinate dalla più recente alla più vecchia.
     """
+    rows = None
     try:
-        client = get_client()
-        res = (client.table('transazioni')
-               .select('data, importo')
-               .is_('categoria', 'null')
-               .lt('importo', 0)
-               .order('data', desc=True)
-               .limit(limit)
-               .execute())
-        rows = res.data or []
-    except Exception as e:
-        print(f"  [!] Errore carica_riepilogo_mensile_senza_categoria: {type(e).__name__}")
-        return []
+        # RPC lato DB (GROUP BY): vedi UNCATEGORIZED_MONTHLY_RPC_SQL
+        res = get_client().rpc('get_uncategorized_monthly', {}).execute()
+        if res.data is not None:
+            rows = res.data
+    except Exception:
+        rows = None  # RPC non ancora creata → fallback
 
-    from collections import defaultdict
-    conteggi: dict = defaultdict(int)
-    for r in rows:
+    conteggi: dict = {}
+    if rows is not None:
+        for r in rows:
+            try:
+                conteggi[(int(r['anno']), int(r['mese']))] = int(r['conteggio'])
+            except Exception:
+                continue
+    else:
         try:
-            d = date.fromisoformat(str(r['data']))
-            conteggi[(d.year, d.month)] += 1
-        except Exception:
-            continue
+            res = (get_client().table('transazioni')
+                   .select('data')
+                   .is_('categoria', 'null')
+                   .lt('importo', 0)
+                   .order('data', desc=True)
+                   .limit(limit)
+                   .execute())
+        except Exception as e:
+            print(f"  [!] Errore carica_riepilogo_mensile_senza_categoria: {type(e).__name__}")
+            return []
+        for r in res.data or []:
+            try:
+                d = date.fromisoformat(str(r['data']))
+                conteggi[(d.year, d.month)] = conteggi.get((d.year, d.month), 0) + 1
+            except Exception:
+                continue
 
     mesi_it = ['', 'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
                'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']

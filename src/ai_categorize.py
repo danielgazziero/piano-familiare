@@ -7,7 +7,8 @@ import json
 import os
 import re
 
-_MODEL      = 'claude-haiku-5-5'
+MODEL_NAME  = 'claude-haiku-5-5'
+_MODEL      = MODEL_NAME
 _BATCH_SIZE = 50
 
 

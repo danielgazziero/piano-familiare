@@ -2784,6 +2784,104 @@ elif sezione == "💳 Analisi spese":
                                     st.rerun()
 
     # ── Categorizzazione AI ───────────────────────────────────
+    def _ui_categorizzazione_ai(tx_list, *, ai_cache_key, key_prefix, editor_key,
+                                clear_keys, con_tag, nomi, tax, titolo_review):
+        """Flusso condiviso: scrub → Claude → tabella di revisione → salvataggio bulk."""
+        from scrubbing import scrub_batch
+        from ai_categorize import categorizza_batch, MODEL_NAME
+        from database import aggiorna_categoria_tx_bulk
+        import pandas as pd
+
+        col_b, col_c = st.columns([2, 5])
+        with col_b:
+            run_ai = st.button("✨ Analizza con AI", type="primary",
+                               key=f"{key_prefix}_ai_btn",
+                               help="Invia le causali anonimizzate a Claude Haiku")
+        with col_c:
+            st.caption(f"{len(tx_list)} tx · modello: {MODEL_NAME}")
+
+        if run_ai:
+            desc_anon = scrub_batch([t.get('descrizione') or '' for t in tx_list], nomi)
+            tx_input = [{'hash_tx': t['hash_tx'],
+                         'descrizione_anonimizzata': desc_anon[i],
+                         'importo': float(t.get('importo', 0))}
+                        for i, t in enumerate(tx_list)]
+            with st.spinner(f"Analisi AI in corso ({len(tx_list)} transazioni)..."):
+                try:
+                    ris = categorizza_batch(tx_input, tax, nomi)
+                    st.session_state[ai_cache_key] = {r['hash_tx']: r for r in ris}
+                    st.success(f"✅ Ricevuti suggerimenti per {len(ris)} transazioni.")
+                except RuntimeError as err:
+                    st.error(str(err))
+
+        ai_map = st.session_state.get(ai_cache_key, {})
+        attive = [c for c in tax.get('categorie', []) if c.get('attiva', True)]
+        id2nome = {c['id']: c['nome'] for c in attive}
+        nome2id = {c['nome']: c['id'] for c in attive}
+        cat2subs = {c['id']: [s['id'] for s in c.get('sottocategorie', [])
+                              if s.get('attiva', True)] for c in attive}
+        all_subs = sorted({sid for sids in cat2subs.values() for sid in sids})
+
+        righe = []
+        for t in tx_list:
+            sug = ai_map.get(t['hash_tx'], {})
+            riga = {'hash_tx': t['hash_tx'],
+                    'Data': str(t.get('data', '')),
+                    'Descrizione': (t.get('descrizione') or '')[:80],
+                    'Importo €': float(t.get('importo', 0)),
+                    'Categoria': id2nome.get(sug.get('categoria') or '', ''),
+                    'Sottocategoria': sug.get('sottocategoria') or ''}
+            if con_tag:
+                riga['Tag'] = ''
+            riga['Conferma'] = False
+            righe.append(riga)
+        df = pd.DataFrame(righe)
+        if df.empty:
+            return
+
+        cfg = {
+            'hash_tx': st.column_config.Column(disabled=True, width='small'),
+            'Data': st.column_config.Column(disabled=True, width='small'),
+            'Descrizione': st.column_config.Column(disabled=True),
+            'Importo €': st.column_config.NumberColumn(
+                disabled=True, format="€ %.2f", width='small'),
+            'Categoria': st.column_config.SelectboxColumn(
+                options=list(id2nome.values()), width='medium'),
+            'Sottocategoria': st.column_config.SelectboxColumn(
+                options=[None] + all_subs, width='medium'),
+            'Conferma': st.column_config.CheckboxColumn(width='small'),
+        }
+        if con_tag:
+            cfg['Tag'] = st.column_config.SelectboxColumn(
+                options=[None] + list(tax.get('tag', [])), width='small')
+        st.markdown(titolo_review)
+        edited = st.data_editor(df, column_config=cfg, hide_index=True,
+                                use_container_width=True, key=editor_key,
+                                num_rows='fixed')
+        n_sel = int(edited['Conferma'].sum())
+        st.caption(f"{n_sel} righe selezionate per il salvataggio.")
+
+        if st.button("💾 Salva categorizzazioni", type="primary",
+                     key=f"{key_prefix}_salva_btn", disabled=n_sel == 0):
+            da_salvare = []
+            for row in edited[edited['Conferma']].to_dict('records'):
+                cat_id = nome2id.get(row.get('Categoria') or '') or 'altro'
+                sub = row.get('Sottocategoria') or None
+                if sub not in cat2subs.get(cat_id, []):
+                    sub = None  # sottocategoria non appartenente alla categoria
+                tag_val = row.get('Tag') if con_tag else None
+                da_salvare.append({'hash_tx': row['hash_tx'], 'categoria': cat_id,
+                                   'sottocategoria': sub,
+                                   'tag': [tag_val] if tag_val else []})
+            salvate, errori = aggiorna_categoria_tx_bulk(da_salvare)
+            for k in clear_keys:
+                st.session_state.pop(k, None)
+            if errori == 0:
+                st.success(f"✅ {salvate} transazioni categorizzate e salvate.")
+            else:
+                st.warning(f"Salvate {salvate}, errori: {errori}.")
+            st.rerun()
+
     with st.expander("✨ Categorizzazione AI transazioni"):
         st.caption(
             "Claude analizza le causali anonimizzate e suggerisce categoria e sottocategoria. "
@@ -2819,133 +2917,12 @@ elif sezione == "💳 Analisi spese":
             st.info("Nessuna uscita senza categoria. "
                     "Importa estratti conto dalla sezione '📋 Fine mese'.")
         elif _ai_key_ok and _nomi_anon:
-            # Pulsante analisi AI
-            _col_ai1, _col_ai2 = st.columns([2, 5])
-            with _col_ai1:
-                _run_ai = st.button("✨ Analizza con AI", type="primary",
-                                    key="run_ai_cat_btn",
-                                    help="Invia le causali anonimizzate a Claude Haiku")
-            with _col_ai2:
-                _batch_info = f"{min(50, len(_tx_da_cat))} tx per batch · modello: claude-haiku-5-5"
-                st.caption(_batch_info)
-
-            if _run_ai:
-                from scrubbing import scrub_batch as _scrub_batch
-                from ai_categorize import categorizza_batch as _cat_batch
-
-                _desc_orig = [t.get('descrizione') or '' for t in _tx_da_cat]
-                _desc_anon = _scrub_batch(_desc_orig, _nomi_anon)
-
-                _tx_input = [
-                    {'hash_tx': t['hash_tx'],
-                     'descrizione_anonimizzata': _desc_anon[i],
-                     'importo': float(t.get('importo', 0))}
-                    for i, t in enumerate(_tx_da_cat)
-                ]
-
-                with st.spinner(f"Analisi AI in corso ({len(_tx_da_cat)} transazioni)..."):
-                    try:
-                        _ai_res = _cat_batch(_tx_input, _tax, _nomi_anon)
-                        # Mappa hash_tx → suggerimento
-                        _ai_map = {r['hash_tx']: r for r in _ai_res}
-                        st.session_state['ai_suggest_cache'] = _ai_map
-                        st.success(f"✅ Ricevuti suggerimenti per {len(_ai_res)} transazioni.")
-                    except RuntimeError as _err:
-                        st.error(str(_err))
-
-            # Costruisce DataFrame per data_editor
-            _ai_map = st.session_state.get('ai_suggest_cache', {})
-            _cat_ids   = [c['id']   for c in _tax.get('categorie', []) if c.get('attiva', True)]
-            _cat_nomi  = [c['nome'] for c in _tax.get('categorie', []) if c.get('attiva', True)]
-            _id2nome   = dict(zip(_cat_ids, _cat_nomi))
-            _nome2id   = dict(zip(_cat_nomi, _cat_ids))
-
-            # Mappa sottocategorie: cat_id -> list di sub-id
-            _cat2subs = {
-                c['id']: [s['id'] for s in c.get('sottocategorie', []) if s.get('attiva', True)]
-                for c in _tax.get('categorie', []) if c.get('attiva', True)
-            }
-            _all_subs = sorted({sid for sids in _cat2subs.values() for sid in sids})
-
-            import pandas as _pd_ai
-            _editor_rows = []
-            for _t in _tx_da_cat:
-                _htx  = _t['hash_tx']
-                _sug  = _ai_map.get(_htx, {})
-                _cat_id = _sug.get('categoria') or ''
-                _sub_id = _sug.get('sottocategoria') or ''
-                _editor_rows.append({
-                    'hash_tx':       _htx,
-                    'Data':          str(_t.get('data', '')),
-                    'Descrizione':   (_t.get('descrizione') or '')[:80],
-                    'Importo €':     float(_t.get('importo', 0)),
-                    'Categoria':     _id2nome.get(_cat_id, ''),
-                    'Sottocategoria': _sub_id,
-                    'Tag':           '',
-                    'Conferma':      False,
-                })
-            _df_editor = _pd_ai.DataFrame(_editor_rows)
-
-            if not _df_editor.empty:
-                st.markdown("**Revisiona e correggi i suggerimenti AI:**")
-                _edited = st.data_editor(
-                    _df_editor,
-                    column_config={
-                        'hash_tx':    st.column_config.Column(disabled=True, width='small'),
-                        'Data':       st.column_config.Column(disabled=True, width='small'),
-                        'Descrizione': st.column_config.Column(disabled=True),
-                        'Importo €':  st.column_config.NumberColumn(
-                            disabled=True, format="€ %.2f", width='small'),
-                        'Categoria':  st.column_config.SelectboxColumn(
-                            options=_cat_nomi, width='medium'),
-                        'Sottocategoria': st.column_config.SelectboxColumn(
-                            options=[None] + _all_subs, width='medium'),
-                        'Tag':        st.column_config.SelectboxColumn(
-                            options=[None] + list(_tax.get('tag', [])), width='small'),
-                        'Conferma':   st.column_config.CheckboxColumn(width='small'),
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key='cat_editor',
-                    num_rows='fixed',
-                )
-
-                _n_da_salvare = int(_edited['Conferma'].sum())
-                st.caption(f"{_n_da_salvare} righe selezionate per il salvataggio.")
-
-                if st.button("💾 Salva categorizzazioni", type="primary",
-                             key="salva_cat_btn",
-                             disabled=_n_da_salvare == 0):
-                    from database import aggiorna_categoria_tx as _agg_cat
-                    _salvate = 0
-                    _errori  = 0
-                    for _row in _edited[_edited['Conferma']].to_dict('records'):
-                        _cat_nome_sel = _row.get('Categoria') or ''
-                        _cat_id_sel   = _nome2id.get(_cat_nome_sel) or 'altro'
-                        _sub_sel      = _row.get('Sottocategoria') or None
-                        if _sub_sel not in _cat2subs.get(_cat_id_sel, []):
-                            _sub_sel = None  # sottocategoria non appartenente alla categoria
-                        _tag_val      = _row.get('Tag') or None
-                        _tag_list     = [_tag_val] if _tag_val else []
-                        _ok = _agg_cat(
-                            _row['hash_tx'],
-                            _cat_id_sel,
-                            sottocategoria=_sub_sel if _sub_sel else None,
-                            tag=_tag_list,
-                            confermata=True,
-                        )
-                        if _ok:
-                            _salvate += 1
-                        else:
-                            _errori += 1
-
-                    st.session_state.pop('tx_senza_cat_cache', None)
-                    st.session_state.pop('ai_suggest_cache', None)
-                    if _errori == 0:
-                        st.success(f"✅ {_salvate} transazioni categorizzate e salvate.")
-                    else:
-                        st.warning(f"Salvate {_salvate}, errori: {_errori}.")
-                    st.rerun()
+            _ui_categorizzazione_ai(
+                _tx_da_cat, ai_cache_key='ai_suggest_cache', key_prefix='cat',
+                editor_key='cat_editor',
+                clear_keys=('tx_senza_cat_cache', 'ai_suggest_cache'),
+                con_tag=True, nomi=_nomi_anon, tax=_tax,
+                titolo_review="**Revisiona e correggi i suggerimenti AI:**")
 
     # ── Analisi AI spese ─────────────────────────────────────
     from database import carica_spese_categorizzate as _csc2
@@ -3111,129 +3088,14 @@ elif sezione == "💳 Analisi spese":
                     if not _tx_retro:
                         st.info("Nessuna uscita non categorizzata per questo mese.")
                     else:
-                        _col_r1, _col_r2 = st.columns([2, 5])
-                        with _col_r1:
-                            _run_retro = st.button("✨ Analizza con AI", type="primary",
-                                                   key="retro_ai_btn")
-                        with _col_r2:
-                            st.caption(f"{len(_tx_retro)} tx · claude-haiku-5-5")
-
-                        if _run_retro:
-                            from scrubbing import scrub_batch as _scrub_b2
-                            from ai_categorize import categorizza_batch as _cat_b2
-
-                            _desc_orig2 = [t.get('descrizione') or '' for t in _tx_retro]
-                            _desc_anon2 = _scrub_b2(_desc_orig2, _nomi_anon)
-                            _tx_input2 = [
-                                {'hash_tx': t['hash_tx'],
-                                 'descrizione_anonimizzata': _desc_anon2[i],
-                                 'importo': float(t.get('importo', 0))}
-                                for i, t in enumerate(_tx_retro)
-                            ]
-                            with st.spinner(f"Analisi AI ({len(_tx_retro)} tx)..."):
-                                try:
-                                    _ai_res2 = _cat_b2(_tx_input2, _tax, _nomi_anon)
-                                    st.session_state['batch_retro_ai_cache'] = {
-                                        r['hash_tx']: r for r in _ai_res2}
-                                    st.success(
-                                        f"✅ Ricevuti suggerimenti per {len(_ai_res2)} transazioni.")
-                                except RuntimeError as _err2:
-                                    st.error(str(_err2))
-
-                        # Tabella revisione
-                        _ai_map2    = st.session_state.get('batch_retro_ai_cache', {})
-                        _r_cat_ids  = [c['id']   for c in _tax.get('categorie', [])
-                                       if c.get('attiva', True)]
-                        _r_cat_nomi = [c['nome'] for c in _tax.get('categorie', [])
-                                       if c.get('attiva', True)]
-                        _r_id2nome  = dict(zip(_r_cat_ids, _r_cat_nomi))
-                        _r_nome2id  = dict(zip(_r_cat_nomi, _r_cat_ids))
-                        _r_cat2subs = {
-                            c['id']: [s['id'] for s in c.get('sottocategorie', [])
-                                      if s.get('attiva', True)]
-                            for c in _tax.get('categorie', []) if c.get('attiva', True)
-                        }
-                        _r_all_subs = sorted({
-                            sid
-                            for c in _tax.get('categorie', []) if c.get('attiva', True)
-                            for sid in [s['id'] for s in c.get('sottocategorie', [])
-                                        if s.get('attiva', True)]
-                        })
-
-                        import pandas as _pd_retro2
-                        _retro_rows = [
-                            {
-                                'hash_tx':        t['hash_tx'],
-                                'Data':           str(t.get('data', '')),
-                                'Descrizione':    (t.get('descrizione') or '')[:80],
-                                'Importo €':      float(t.get('importo', 0)),
-                                'Categoria':      _r_id2nome.get(
-                                    _ai_map2.get(t['hash_tx'], {}).get('categoria') or '', ''),
-                                'Sottocategoria': _ai_map2.get(
-                                    t['hash_tx'], {}).get('sottocategoria') or '',
-                                'Conferma':       False,
-                            }
-                            for t in _tx_retro
-                        ]
-                        _df_retro = _pd_retro2.DataFrame(_retro_rows)
-
-                        if not _df_retro.empty:
-                            st.markdown(f"**Revisiona i suggerimenti — {_sel_label}:**")
-                            _edited2 = st.data_editor(
-                                _df_retro,
-                                column_config={
-                                    'hash_tx':     st.column_config.Column(
-                                        disabled=True, width='small'),
-                                    'Data':        st.column_config.Column(
-                                        disabled=True, width='small'),
-                                    'Descrizione': st.column_config.Column(disabled=True),
-                                    'Importo €':   st.column_config.NumberColumn(
-                                        disabled=True, format="€ %.2f", width='small'),
-                                    'Categoria':   st.column_config.SelectboxColumn(
-                                        options=_r_cat_nomi, width='medium'),
-                                    'Sottocategoria': st.column_config.SelectboxColumn(
-                                        options=[None] + _r_all_subs, width='medium'),
-                                    'Conferma':    st.column_config.CheckboxColumn(width='small'),
-                                },
-                                hide_index=True,
-                                use_container_width=True,
-                                key=f'retro_editor_{_r_key}',
-                                num_rows='fixed',
-                            )
-
-                            _n_retro_sel = int(_edited2['Conferma'].sum())
-                            st.caption(f"{_n_retro_sel} righe selezionate per il salvataggio.")
-
-                            if st.button("💾 Salva categorizzazioni", type="primary",
-                                         key="retro_salva_btn",
-                                         disabled=_n_retro_sel == 0):
-                                from database import aggiorna_categoria_tx as _agg_cat2
-                                _salvate2 = 0
-                                _errori2  = 0
-                                for _row2 in _edited2[_edited2['Conferma']].to_dict('records'):
-                                    _cat_id_sel2 = _r_nome2id.get(
-                                        _row2.get('Categoria') or '', 'altro')
-                                    _sub_sel2 = _row2.get('Sottocategoria') or None
-                                    if _sub_sel2 not in _r_cat2subs.get(_cat_id_sel2, []):
-                                        _sub_sel2 = None  # non appartiene alla categoria
-                                    if _agg_cat2(
-                                        _row2['hash_tx'], _cat_id_sel2,
-                                        sottocategoria=_sub_sel2 if _sub_sel2 else None,
-                                        tag=[], confermata=True,
-                                    ):
-                                        _salvate2 += 1
-                                    else:
-                                        _errori2 += 1
-
-                                for _rk in ('batch_retro_riepilogo_cache',
-                                             'batch_retro_tx_cache', 'batch_retro_ai_cache',
-                                             'tx_senza_cat_cache', 'spese_analisi_cache'):
-                                    st.session_state.pop(_rk, None)
-                                if _errori2 == 0:
-                                    st.success(f"✅ {_salvate2} transazioni categorizzate.")
-                                else:
-                                    st.warning(f"Salvate {_salvate2}, errori: {_errori2}.")
-                                st.rerun()
+                        _ui_categorizzazione_ai(
+                            _tx_retro, ai_cache_key='batch_retro_ai_cache',
+                            key_prefix='retro', editor_key=f'retro_editor_{_r_key}',
+                            clear_keys=('batch_retro_riepilogo_cache', 'batch_retro_tx_cache',
+                                        'batch_retro_ai_cache', 'tx_senza_cat_cache',
+                                        'spese_analisi_cache'),
+                            con_tag=False, nomi=_nomi_anon, tax=_tax,
+                            titolo_review=f"**Revisiona i suggerimenti — {_sel_label}:**")
 
 
 # ─────────────────────────────────────────────────────────────
