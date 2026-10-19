@@ -531,12 +531,17 @@ def carica_tutti_params() -> dict:
         return {}
 
 
+_PBKDF2_ITER        = 600_000   # OWASP 2023 per PBKDF2-HMAC-SHA256
+_PBKDF2_ITER_LEGACY = 260_000   # hash a 4 campi senza iterazioni esplicite
+
+
 def hash_password(pwd: str) -> str:
-    """PBKDF2-HMAC-SHA256 con salt casuale. Formato: 'pbkdf2$sha256$<salt>$<hash>'."""
+    """PBKDF2-HMAC-SHA256 con salt casuale. Formato: 'pbkdf2$sha256$<iter>$<salt>$<hash>'.
+    Il formato legacy a 4 campi ('pbkdf2$sha256$<salt>$<hash>', 260k iter) resta verificabile."""
     import hashlib, os as _os
     salt = _os.urandom(16).hex()
-    h = hashlib.pbkdf2_hmac('sha256', pwd.encode('utf-8'), salt.encode(), 260_000)
-    return f"pbkdf2$sha256${salt}${h.hex()}"
+    h = hashlib.pbkdf2_hmac('sha256', pwd.encode('utf-8'), salt.encode(), _PBKDF2_ITER)
+    return f"pbkdf2$sha256${_PBKDF2_ITER}${salt}${h.hex()}"
 
 
 def verify_password(pwd: str, stored: str) -> bool:
@@ -549,18 +554,25 @@ def verify_password(pwd: str, stored: str) -> bool:
     pwd = pwd[:1024]  # guard DoS: PBKDF2 scala con la lunghezza dell'input
     if stored and stored.startswith('pbkdf2$'):
         parts = stored.split('$')
-        if len(parts) != 4:
+        if len(parts) == 4:
+            _, algo, salt, expected = parts
+            iters = _PBKDF2_ITER_LEGACY
+        elif len(parts) == 5 and parts[2].isdigit():
+            _, algo, _it, salt, expected = parts
+            iters = int(_it)
+            if not 100_000 <= iters <= 2_000_000:   # guard DoS da hash manomesso
+                return False
+        else:
             return False
-        _, algo, salt, expected = parts
         if algo not in ('sha256', 'sha512'):
             return False
-        h = hashlib.pbkdf2_hmac(algo, pwd.encode('utf-8'), salt.encode(), 260_000)
+        h = hashlib.pbkdf2_hmac(algo, pwd.encode('utf-8'), salt.encode(), iters)
         return _hmac.compare_digest(h.hex(), expected)
     # Fallback plaintext per migrazione (prima modifica password)
     return _hmac.compare_digest(pwd.encode('utf-8'), (stored or '').encode('utf-8'))
 
 
-_FAKE_HASH = "pbkdf2$sha256$fakesalt$" + "a" * 64
+_FAKE_HASH = f"pbkdf2$sha256${_PBKDF2_ITER}$fakesalt$" + "a" * 64
 
 
 def salva_params_batch(params: dict) -> bool:
@@ -1242,6 +1254,15 @@ def set_server_totp_state(user_id: int, n: int, locked_until: float) -> None:
 def reset_server_totp_state(user_id: int) -> None:
     """Azzera il contatore TOTP server-side dopo verifica riuscita."""
     set_server_totp_state(user_id, 0, 0.0)
+
+
+def get_server_pwdchg_state(user_id: int) -> dict:
+    """Contatore fallimenti 'password attuale' nel cambio password (fail-closed)."""
+    return _read_fail_state(f"_pwdchg_fail_{user_id}", "get_server_pwdchg_state")
+
+
+def set_server_pwdchg_state(user_id: int, n: int, locked_until: float) -> None:
+    _write_fail_state(f"_pwdchg_fail_{user_id}", n, locked_until, "set_server_pwdchg_state")
 
 
 def get_utente_by_email(email: str) -> Optional[dict]:

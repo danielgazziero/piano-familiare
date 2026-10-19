@@ -52,15 +52,15 @@ def _plotly_chart(fig, _title=None, **kwargs):
     se non passato, lo legge dal figure via to_dict() come fallback.
     """
     dark = st.session_state.get('_dark_mode_toggle', True)
+    # Template per-figura: pio.templates.default è globale di processo (condiviso tra sessioni)
+    fig.update_layout(template='_app_dark' if dark else 'plotly_white')
     if dark:
         fig.update_layout(paper_bgcolor=_BG3, plot_bgcolor=_BG2, font_color=_TEXT)
     else:
         fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', font_color='#31333F')
 
     if _title is None:
-        _layout = fig.to_dict().get('layout', {})
-        _t = _layout.get('title', {})
-        _title = (_t.get('text') if isinstance(_t, dict) else str(_t or '')) or None
+        _title = fig.layout.title.text or None
 
     if _title:
         fig.update_layout(title_text='', margin=dict(t=20))
@@ -131,7 +131,6 @@ def _init_plotly_template():
         hoverlabel=dict(bgcolor=_BG3, bordercolor=_BORDER, font=dict(color=_TEXT)),
         colorway=['#1F5C8B','#1baf7a','#E9C46A','#E63946','#A8DADC','#7B2D8B','#2EC4B6','#FF9F1C'],
     ))
-    pio.templates.default = '_app_dark' if dark else 'plotly_white'
     st.session_state['_plotly_tpl_dark'] = dark
 
 
@@ -347,7 +346,10 @@ def _auth_forgot_password():
         if st.button("Invia link di reset", type="primary"):
             if not email_input or '@' not in email_input:
                 st.error("Inserisci un'email valida.")
+            elif time.time() < st.session_state.get("_reset_req_until", 0):
+                st.warning("Attendi un minuto prima di richiedere un altro link.")
             else:
+                st.session_state["_reset_req_until"] = time.time() + 60
                 user = _gube(email_input)
                 if user:
                     raw, tok_hash = _auth_genera_token()
@@ -377,6 +379,9 @@ def _auth_login():
                           set_server_login_state as _ssls,
                           reset_server_login_state as _rsls)
     st.title("🔒 Accesso protetto")
+    _notice = st.session_state.pop("_auth_notice", None)
+    if _notice:
+        st.warning(_notice)
     _failures       = st.session_state.get("_auth_failures", 0)
     _locked_until   = st.session_state.get("_auth_locked_until", 0)
     if time.time() < _locked_until:
@@ -527,12 +532,17 @@ if _reset_token:
 elif _invite_token:
     _auth_handle_invite(_invite_token)
 else:
-    try:
-        from database import conta_utenti as _conta_utenti
-        _n_users = _conta_utenti()
-    except Exception:
-        st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
-        st.stop()
+    if st.session_state.get("_users_exist"):
+        _n_users = 1   # evita una query Supabase ad ogni rerun
+    else:
+        try:
+            from database import conta_utenti as _conta_utenti
+            _n_users = _conta_utenti()
+        except Exception:
+            st.error("⚠️ DB non raggiungibile — impossibile verificare le credenziali. Riprova tra qualche istante.")
+            st.stop()
+        if _n_users > 0:
+            st.session_state["_users_exist"] = True
 
     if _n_users == 0:
         _auth_wizard()
@@ -548,7 +558,7 @@ else:
         for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin",
                    "_auth_active_ts"):
             st.session_state.pop(_k, None)
-        st.warning("Sessione scaduta. Effettua nuovamente l'accesso.")
+        st.session_state["_auth_notice"] = "Sessione scaduta. Effettua nuovamente l'accesso."
         st.rerun()
     else:
         # S-NEW-07: rivalidazione is_active ogni 5 minuti — senza query ad ogni rerun
@@ -558,7 +568,7 @@ else:
                 for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin",
                            "_auth_active_ts"):
                     st.session_state.pop(_k, None)
-                st.warning("Accesso revocato dall'amministratore.")
+                st.session_state["_auth_notice"] = "Accesso revocato dall'amministratore."
                 st.rerun()
             st.session_state["_auth_active_ts"] = time.time()
 
@@ -1046,13 +1056,22 @@ with st.sidebar:
                                       hash_password as _hpc,
                                       verify_password as _vpwd,
                                       get_password_hash_by_id as _gphbi)
+                from database import (get_server_pwdchg_state as _gpcs,
+                                      set_server_pwdchg_state as _spcs)
                 _uid = st.session_state.get("_auth_user_id")
+                _pc = _gpcs(_uid) if _uid else {}
                 _cur_hash = _gphbi(_uid) if _uid else None
-                if _cur_hash is None:
+                if time.time() < _pc.get("locked_until", 0.0):
+                    st.error(f"Troppi tentativi. Riprova tra {int(_pc['locked_until'] - time.time()) + 1} secondi.")
+                elif _cur_hash is None:
                     st.error("Errore durante la verifica.")
                 elif not _vpwd(cur_pwd, _cur_hash):
+                    _n_pc = min(_pc.get("n", 0) + 1, _AUTH_MAX_FAILURES)
+                    _d_pc = _AUTH_LOCKOUT_DELAYS[_n_pc]
+                    _spcs(_uid, _n_pc, time.time() + _d_pc if _d_pc > 0 else 0.0)
                     st.error("Password attuale non corretta.")
                 elif _uid and _apwu(_uid, _hpc(new_pwd1)):
+                    _spcs(_uid, 0, 0.0)
                     st.success("Password aggiornata!")
                 else:
                     st.error("Errore durante l'aggiornamento.")
@@ -1115,8 +1134,15 @@ with st.sidebar:
                     st.error("Inserisci il codice 2FA.")
                 else:
                     import pyotp as _pyotp_dis
+                    from database import (get_server_totp_state as _gsts_d,
+                                          set_server_totp_state as _ssts_d,
+                                          reset_server_totp_state as _rsts_d)
+                    _td = _gsts_d(_uid_2fa)
                     _t_sec = _t_info.get('totp_secret')
-                    if _t_sec and _pyotp_dis.TOTP(_t_sec).verify(_dis_code.strip()):
+                    if time.time() < _td.get("locked_until", 0.0):
+                        st.error(f"Troppi tentativi. Riprova tra {int(_td['locked_until'] - time.time()) + 1} secondi.")
+                    elif _t_sec and _pyotp_dis.TOTP(_t_sec).verify(_dis_code.strip()):
+                        _rsts_d(_uid_2fa)
                         if _dt_sb(_uid_2fa):
                             st.session_state.pop("_totp_info_cache", None)
                             st.success("2FA disabilitato.")
@@ -1124,6 +1150,9 @@ with st.sidebar:
                         else:
                             st.error("Errore disabilitazione.")
                     else:
+                        _n_td = min(_td.get("n", 0) + 1, _AUTH_MAX_FAILURES)
+                        _d_td = _AUTH_LOCKOUT_DELAYS[_n_td]
+                        _ssts_d(_uid_2fa, _n_td, time.time() + _d_td if _d_td > 0 else 0.0)
                         st.error("Codice non valido.")
     if st.session_state.get("_auth_is_admin") and not _DEMO:
         with st.expander("🧭 Wizard configurazione"):
@@ -1136,13 +1165,14 @@ with st.sidebar:
     st.caption(f"Config: {config['famiglia']['aggiornato']}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")
     if st.button("🔄 Aggiorna tutto"):
-        st.cache_data.clear()
+        if st.session_state.get("_auth_is_admin"):
+            st.cache_data.clear()   # cache globale condivisa: la svuota solo l'admin
         for k in ['params','quote_map','xls_importati','saved_today',
                   'backfill_done','backfill_nuovi','nuove_tx','asset_catalog',
                   'pos_df_cache','fondi_df_cache',
                   'etf_perf_cache','azioni_df_cache','tx_db_cache',
                   'patrimonio_log_cache','port_storico_cache','eventi_storico_cache',
-                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache',
+                  '_plotly_tpl_dark','_totp_info_cache','blocked_assets_cache','blocked_log_cache',
                   'taxonomy_cache','profilo_famiglia_cache',
                   'nomi_anonimiz_cache','tx_senza_cat_cache',
                   'spese_analisi_cache','spese_report_cache',
@@ -1245,8 +1275,8 @@ if sezione == "🏠 Stato di famiglia":
             st.divider()
             st.markdown("##### Registra valorizzazione")
             _nomi_esistenti = [a['asset_nome'] for a in _bl] if _bl else []
-            _modo = st.radio("", ["Aggiorna asset esistente", "Aggiungi nuovo asset"],
-                             horizontal=True, key="ba_modo",
+            _modo = st.radio("Modalità", ["Aggiorna asset esistente", "Aggiungi nuovo asset"],
+                             horizontal=True, key="ba_modo", label_visibility="collapsed",
                              disabled=not _bl)
             if not _bl or _modo == "Aggiungi nuovo asset":
                 with st.form("ba_nuovo"):
@@ -1262,9 +1292,13 @@ if sezione == "🏠 Stato di famiglia":
                             st.error("Il nome asset è obbligatorio.")
                         else:
                             _aid = _bn_nome.lower().replace(' ', '_')[:40]
-                            if _sba(_aid, _bn_nome, _bn_tipo, _bn_val,
+                            if any(a.get('asset_id') == _aid for a in _bl):
+                                st.error("Esiste già un asset con questo nome (o troppo simile): "
+                                         "usa 'Aggiorna asset esistente' o cambia nome.")
+                            elif _sba(_aid, _bn_nome, _bn_tipo, _bn_val,
                                     _bn_data.isoformat(), _bn_nota or None):
                                 st.session_state.pop('blocked_assets_cache', None)
+                                st.session_state.pop('blocked_log_cache', None)
                                 st.session_state.pop('saved_today', None)
                                 st.success(f"✓ {_bn_nome} salvato")
                                 st.rerun()
@@ -1289,6 +1323,7 @@ if sezione == "🏠 Stato di famiglia":
                         if _sba(_aid, _sel_nome, _sel_asset.get('asset_tipo', 'altro'),
                                 _bu_val, _bu_data.isoformat(), _bu_nota or None):
                             st.session_state.pop('blocked_assets_cache', None)
+                            st.session_state.pop('blocked_log_cache', None)
                             st.session_state.pop('saved_today', None)
                             st.success(f"✓ {_sel_nome} aggiornato")
                             st.rerun()
@@ -1299,6 +1334,7 @@ if sezione == "🏠 Stato di famiglia":
                                _sel_nome.lower().replace(' ', '_')[:40])
                         if _eba(_aid):
                             st.session_state.pop('blocked_assets_cache', None)
+                            st.session_state.pop('blocked_log_cache', None)
                             st.session_state.pop('saved_today', None)
                             st.success(f"✓ {_sel_nome} eliminato")
                             st.rerun()
@@ -1307,7 +1343,9 @@ if sezione == "🏠 Stato di famiglia":
 
             # Grafico storico valorizzazioni
             if _bl:
-                _log_ba = _cabl(giorni=730)
+                if 'blocked_log_cache' not in st.session_state:
+                    st.session_state['blocked_log_cache'] = _cabl(giorni=730)
+                _log_ba = st.session_state['blocked_log_cache']
                 if not _log_ba.empty:
                     st.markdown("##### Storico valorizzazioni")
                     _asset_nomi = sorted(_log_ba['asset_nome'].unique())
@@ -2759,10 +2797,12 @@ elif sezione == "💳 Analisi spese":
                     st.write(f"• `{_nn}`")
                 with _nc2:
                     if st.button("🗑️", key=f"del_nome_{_ni}"):
-                        _nomi_anon.pop(_ni)
-                        if _sna(_nomi_anon):
-                            st.session_state['nomi_anonimiz_cache'] = _nomi_anon
-                        st.rerun()
+                        _nuovi_n = [n for j, n in enumerate(_nomi_anon) if j != _ni]
+                        if _sna(_nuovi_n):
+                            st.session_state['nomi_anonimiz_cache'] = _nuovi_n
+                            st.rerun()
+                        else:
+                            st.error("Errore salvataggio: nome non rimosso.")
         else:
             st.info("Nessun nome configurato. Aggiungi almeno i nomi dei membri della famiglia.")
 
@@ -2772,11 +2812,12 @@ elif sezione == "💳 Analisi spese":
             if st.form_submit_button("+ Aggiungi"):
                 _new_nome = _new_nome.strip()
                 if _new_nome and _new_nome not in _nomi_anon:
-                    _nomi_anon.append(_new_nome)
-                    if _sna(_nomi_anon):
-                        st.session_state['nomi_anonimiz_cache'] = list(_nomi_anon)
-                        st.success(f"✅ '{_new_nome}' aggiunto.")
-                    st.rerun()
+                    _nuovi_n = list(_nomi_anon) + [_new_nome]
+                    if _sna(_nuovi_n):
+                        st.session_state['nomi_anonimiz_cache'] = _nuovi_n
+                        st.rerun()
+                    else:
+                        st.error("Errore salvataggio: nome non aggiunto.")
                 elif _new_nome in _nomi_anon:
                     st.warning("Nome già presente.")
 
