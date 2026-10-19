@@ -58,6 +58,15 @@ def get_etf_data(ticker: str, period: str = "1y") -> pd.DataFrame:
         return pd.DataFrame()
 
 
+# Colonne fisse: con catalogo vuoto i DataFrame restano indicizzabili (no KeyError in UI)
+_ETF_PERF_COLS = ['ticker', 'ticker_yf', 'nome', 'isin', 'proprietario', 'stato', 'ter',
+                  'valore_iniziale', 'valore_attuale', 'rendimento_eur', 'rendimento_pct',
+                  'perf_1y', 'prezzo_attuale', 'note']
+_FONDI_SNAP_COLS = ['nome', 'isin', 'quantita', 'quota_ref', 'quota_attuale', 'data_ref',
+                    'valore_attuale', 'costo_fiscale_stimato', 'plusvalenza_stimata',
+                    'tassa_latente', 'netto_uscita', 'pct_plusvalenza']
+
+
 def get_portfolio_performance(config: dict,
                                catalog_df: 'pd.DataFrame | None' = None) -> pd.DataFrame:
     results = []
@@ -67,7 +76,7 @@ def get_portfolio_performance(config: dict,
         etf_list = config.get('etf', [])
     tickers = tuple(etf['ticker_yf'] for etf in etf_list if etf.get('ticker_yf'))
     if not tickers:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=_ETF_PERF_COLS)
 
     # Una sola chiamata batch per tutti i ticker (reduce 2×N → 1 HTTP call)
     raw = _batch_download(tickers, '1y')
@@ -121,7 +130,7 @@ def get_portfolio_performance(config: dict,
             'rendimento_pct': perf_ytd, 'perf_1y': perf_1y,
             'prezzo_attuale': prezzo_attuale, 'note': etf.get('note', '')
         })
-    return pd.DataFrame(results)
+    return pd.DataFrame(results, columns=_ETF_PERF_COLS)
 
 
 def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
@@ -167,7 +176,7 @@ def get_fondi_snapshot(config: dict, quote_aggiornate: Dict[str, float] = None,
             'pct_plusvalenza': round(plusvalenza_stimata / costo_fiscale_stimato * 100
                                      if costo_fiscale_stimato > 0 else 0, 1)
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=_FONDI_SNAP_COLS)
 
 
 def simula_uscita_fondo_data_x(config: dict, data_uscita: date,

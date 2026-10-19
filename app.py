@@ -902,7 +902,7 @@ def _frag_fondi_scenari():
 
     st.subheader("Simulatore: se esco il giorno X")
     c1,c2 = st.columns(2)
-    with c1: data_uscita = st.date_input("Data di uscita", value=date(2027,6,1), min_value=date.today())
+    with c1: data_uscita = st.date_input("Data di uscita", value=max(date(2027,6,1), date.today()), min_value=date.today())
     with c2: rend_uscita = st.slider("Rendimento fondi (%)", 1.0, 8.0, 4.0, step=0.5, key="ru")
     _quote_map_f = {r['ISIN']: r['Quota €']
                     for r in df_fondi_edit.to_dict('records') if r.get('Includi', False)}
@@ -1179,10 +1179,11 @@ if sezione == "🏠 Stato di famiglia":
     # ── Asset illiquidi: carica cache prima della UI ──────────
     if 'blocked_assets_cache' not in st.session_state:
         from database import carica_blocked_assets_correnti as _cabc_init
-        st.session_state['blocked_assets_cache'] = _cabc_init() if db_ok else []
+        st.session_state['blocked_assets_cache'] = _cabc_init() if (db_ok and not _DEMO) else []
 
     # ── Asset illiquidi UI ────────────────────────────────────
-    if db_ok:
+    # In DEMO la sezione leggerebbe/scriverebbe dati reali (usa database.py direttamente)
+    if db_ok and not _DEMO:
         from database import (salva_blocked_asset as _sba,
                                carica_blocked_assets_log as _cabl,
                                elimina_blocked_asset as _eba)
@@ -2009,7 +2010,9 @@ elif sezione == "🏦 Fondi bancari":
         'TER stimato %': costi_map.get(r['nome'], 2.0),
         '% mantenere': 100,
         'Includi': True,
-    } for r in fondi_df.to_dict('records')])
+    } for r in fondi_df.to_dict('records')],
+        columns=['Fondo', 'ISIN', 'Quote', 'Quota €', 'Valore €', 'Costo fisc. €',
+                 'TER stimato %', '% mantenere', 'Includi'])
 
     df_fondi_edit = st.data_editor(
         df_edit_default,
@@ -2123,7 +2126,8 @@ elif sezione == "🎯 Simulatore strategie":
     with tab1:
         st.subheader("Simulatore PAC con scenari")
         c1,c2,c3 = st.columns(3)
-        with c1: imp   = st.slider("Importo mensile (€)", 100, 3000, config['allocazione']['pac_persona1_ora'], step=50)
+        with c1: imp   = st.slider("Importo mensile (€)", 100, 3000,
+                                   min(max(int(config['allocazione']['pac_persona1_ora']), 100), 3000), step=50)
         with c2: anni  = st.slider("Anni", 5, 30, 20)
         with c3: rend  = st.slider("Rendimento base (%)", 3.0, 12.0, 7.0, step=0.5)
 
@@ -2192,8 +2196,10 @@ elif sezione == "🎯 Simulatore strategie":
     with tab3:
         st.subheader("Scenario patrimoniale completo")
         c1,c2,c3 = st.columns(3)
-        with c1: pd_s = st.slider(f"PAC {_N1} (€)",500,2000,config['allocazione']['pac_persona1_ora'],step=100)
-        with c2: pf_s = st.slider(f"PAC {_NF} (€)",100,500,config['allocazione'].get('pac_figlio',0),step=50)
+        with c1: pd_s = st.slider(f"PAC {_N1} (€)",500,2000,
+                                  min(max(int(config['allocazione']['pac_persona1_ora']), 500), 2000),step=100)
+        with c2: pf_s = st.slider(f"PAC {_NF} (€)",100,500,
+                                  min(max(int(config['allocazione'].get('pac_figlio',0) or 0), 100), 500),step=50)
         with c3: rs   = st.slider("Rendimento (%)",4.0,10.0,7.0,step=0.5)
         anni_s  = st.slider("Orizzonte (anni)",5,25,18)
         tutti_sc= st.checkbox("Mostra 3 scenari (3%/7%/10%)")
@@ -2232,7 +2238,8 @@ elif sezione == "🎯 Simulatore strategie":
 elif sezione == _SEZIONE_FIGLIO:
     st.title(f"{_NF} timeline")
     c1,c2 = st.columns(2)
-    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",0,500,config['allocazione'].get('pac_figlio',0),step=50)
+    with c1: pac_f = st.slider(f"PAC mensile {_NF} (€)",0,500,
+                               min(max(int(config['allocazione'].get('pac_figlio',0) or 0), 0), 500),step=50)
     with c2: rf    = st.slider("Rendimento base (%)",4.0,10.0,7.0,step=0.5)
 
     _p6 = config.get('parametri', {})
@@ -2373,6 +2380,10 @@ elif sezione == "📋 Fine mese":
 elif sezione == "💳 Analisi spese":
     st.title("💳 Analisi spese")
     st.caption("Categorizza le transazioni e analizza le spese con AI.")
+
+    if _DEMO:
+        st.warning("⚠️ In DEMO mode l'analisi spese è disabilitata — userebbe transazioni reali e l'API AI.")
+        st.stop()
 
     if not db_ok:
         st.warning("Funzionalità disponibile solo con connessione al DB.")
