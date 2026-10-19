@@ -151,6 +151,11 @@ def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
     """
     from scrubbing import scrub
 
+    if not nomi:
+        raise RuntimeError(
+            "Nessun nome configurato per l'anonimizzazione: "
+            "configura 🔒 Privacy prima di usare l'AI."
+        )
     api_key = _get_api_key()
     if not api_key:
         raise RuntimeError(
@@ -176,11 +181,12 @@ def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
             'semaforo':      r.get('semaforo'),
         }
 
-    critiche_top = sorted(critiche, key=lambda r: r.get('mese_eur', 0), reverse=True)[:4]
-    migliore     = sorted(virtuose,  key=lambda r: r.get('mese_eur', 0), reverse=True)[:1]
+    critiche_top = sorted(critiche, key=lambda r: r.get('mese_eur') or 0, reverse=True)[:4]
+    migliore     = sorted(virtuose,  key=lambda r: r.get('mese_eur') or 0, reverse=True)[:1]
 
+    kpi_pulito = {k: (scrub(v, nomi) if isinstance(v, str) else v) for k, v in kpi.items()}
     dati_json = json.dumps({
-        'kpi':     kpi,
+        'kpi':     kpi_pulito,
         'critiche': [_pulisci(r) for r in critiche_top],
         'virtuose': [_pulisci(r) for r in migliore],
     }, ensure_ascii=False)

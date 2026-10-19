@@ -74,6 +74,46 @@ def _plotly_chart(fig, _title=None, **kwargs):
     st.plotly_chart(fig, **kwargs)
 
 
+def _has(v) -> bool:
+    """True se v è un numero valido (né None né NaN; NaN è truthy in Python)."""
+    return v is not None and not pd.isna(v)
+
+
+def _nn(v):
+    """NaN/NA -> None (NaN non è JSON valido per Supabase); numpy -> tipi Python."""
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        return v
+    return v.item() if hasattr(v, 'item') else v
+
+
+_ASSET_COLS = ('isin', 'nome', 'tipo', 'ticker_yf', 'ticker_bi', 'ter', 'proprietario',
+               'stato', 'valore_quota_ref', 'data_ref', 'valore_iniziale', 'note')
+
+
+def _asset_record(row: dict, **override) -> dict:
+    """Record asset_catalog pulito da una riga del catalogo (solo colonne note, no NaN)."""
+    rec = {k: _nn(row.get(k)) for k in _ASSET_COLS}
+    fb = row.get('fallback_tickers')
+    rec['fallback_tickers'] = fb if isinstance(fb, list) else []
+    rec.update(override)
+    return rec
+
+
+def _nomi_effettivi(nomi) -> list:
+    """Nomi da oscurare: quelli configurati in Privacy + i nomi di famiglia dai parametri."""
+    _p = st.session_state.get('params', {})
+    _gen = {'persona 1', 'persona 2', 'figlio', 'figlio/a', ''}
+    return list(dict.fromkeys(
+        list(nomi) + [str(_p.get(k) or '').strip()
+                      for k in ('nome_persona1', 'nome_persona2', 'nome_figlio')
+                      if str(_p.get(k) or '').strip().lower() not in _gen]))
+
+
 def _init_plotly_template():
     """Imposta il template Plotly globale in base al tema corrente. Skip se tema invariato."""
     dark = st.session_state.get('_dark_mode_toggle', True)
@@ -771,7 +811,7 @@ def _frag_confronto_candidati():
             _ser = _extract_series(_raw_c, tick, len(_tickers_c))
             if not _ser.empty:
                 _first = _ser.iloc[0]
-                _idx = (_ser / _first * 100).round(2) if _first else _ser
+                _idx = (_ser / _first * 100).round(2) if _has(_first) and _first else _ser
                 fig_c.add_trace(go.Scatter(x=_ser.index, y=_idx,
                                            name=nome, line=dict(color=pal_c[i % len(pal_c)], width=2)))
     fig_c.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
@@ -1500,19 +1540,21 @@ if sezione == "🏠 Stato di famiglia":
 
         # Savings Rate
         _per_mese = df.groupby('month')[['income','expense']].sum()
+        # Mesi senza entrate (import parziale): savings rate non definito → NaN, escluso dalle medie
         _per_mese['sr'] = (
             (_per_mese['income'] - _per_mese['expense'])
-            .div(_per_mese['income'].clip(lower=1)) * 100
+            .div(_per_mese['income'].where(_per_mese['income'] > 0)) * 100
         )
         _curr_year = str(date.today().year)
         _ytd_idx   = [m for m in _per_mese.index if str(m).startswith(_curr_year)]
-        _sr_ytd    = _per_mese.loc[_ytd_idx, 'sr'].mean() if _ytd_idx else 0.0
-        _sr_12m    = _per_mese.tail(12)['sr'].mean() if not _per_mese.empty else 0.0
-        _sr_mese   = float(_per_mese.loc[mese_sel, 'sr']) if mese_sel in _per_mese.index else 0.0
+        _sr_ytd    = _per_mese.loc[_ytd_idx, 'sr'].mean() if _ytd_idx else float('nan')
+        _sr_12m    = _per_mese.tail(12)['sr'].mean() if not _per_mese.empty else float('nan')
+        _sr_mese   = float(_per_mese.loc[mese_sel, 'sr']) if mese_sel in _per_mese.index else float('nan')
+        _fmt_sr    = lambda v: f"{v:.1f}%" if _has(v) else "N/D"
         _sc1,_sc2,_sc3 = st.columns(3)
-        _sc1.metric("Savings rate (mese)", f"{_sr_mese:.1f}%")
-        _sc2.metric("Savings rate YTD",    f"{_sr_ytd:.1f}%")
-        _sc3.metric("Media 12 mesi",       f"{_sr_12m:.1f}%")
+        _sc1.metric("Savings rate (mese)", _fmt_sr(_sr_mese))
+        _sc2.metric("Savings rate YTD",    _fmt_sr(_sr_ytd))
+        _sc3.metric("Media 12 mesi",       _fmt_sr(_sr_12m))
 
         cat_df = mese_df[mese_df['amount']<0].groupby('category')['expense'].sum().sort_values()
         fig_cat = go.Figure(go.Bar(x=cat_df.values, y=cat_df.index,
@@ -1748,9 +1790,9 @@ elif sezione == "📈 ETF & mercato":
         for r in attivi.to_dict('records'):
             c1,c2,c3,c4 = st.columns(4)
             c1.metric(r['nome'], f"€ {r['valore_attuale']:,.0f}")
-            c2.metric("Prezzo", f"$ {r['prezzo_attuale']:.2f}" if r['prezzo_attuale'] else "N/D")
-            c3.metric("YTD", f"{r['rendimento_pct']:+.1f}%" if r['rendimento_pct'] else "N/D")
-            c4.metric("1 anno", f"{r['perf_1y']:+.1f}%" if r['perf_1y'] else "N/D")
+            c2.metric("Prezzo", f"$ {r['prezzo_attuale']:.2f}" if _has(r['prezzo_attuale']) else "N/D")
+            c3.metric("YTD", f"{r['rendimento_pct']:+.1f}%" if _has(r['rendimento_pct']) else "N/D")
+            c4.metric("1 anno", f"{r['perf_1y']:+.1f}%" if _has(r['perf_1y']) else "N/D")
 
         # ── Rebalancing alert ─────────────────────────────────
         _tot_etf_val = attivi['valore_attuale'].sum()
@@ -1806,8 +1848,8 @@ elif sezione == "📈 ETF & mercato":
                         if not _cat_reb_upd.empty and 'ticker_bi' in _cat_reb_upd.columns:
                             _arows = _cat_reb_upd[_cat_reb_upd['ticker_bi'] == _rtkr2]
                             if not _arows.empty:
-                                _aupd = _arows.iloc[0].to_dict()
-                                _aupd['target_pct'] = _rtgt_val
+                                _aupd = _asset_record(_arows.iloc[0].to_dict(),
+                                                      target_pct=float(_rtgt_val))
                                 if not salva_asset(_aupd):
                                     _reb_ok = False
                     if _reb_ok:
@@ -2064,10 +2106,10 @@ elif sezione == "📊 Azioni Accenture":
     if not azioni_df.empty:
         r = azioni_df.iloc[0]
         c1,c2,c3,c4 = st.columns(4)
-        c1.metric("Quantità",         f"{int(r['quantita'])} azioni")
-        c2.metric("Prezzo attuale",    f"$ {r['prezzo_attuale_usd']:,.2f}" if r['prezzo_attuale_usd'] else "N/D")
-        c3.metric("Valore totale USD", f"$ {r['valore_attuale_usd']:,.0f}" if r['valore_attuale_usd'] else "N/D")
-        c4.metric("YTD",               f"{r['perf_ytd']:+.1f}%" if r['perf_ytd'] else "N/D")
+        c1.metric("Quantità",         f"{int(r['quantita']) if _has(r['quantita']) else 0} azioni")
+        c2.metric("Prezzo attuale",    f"$ {r['prezzo_attuale_usd']:,.2f}" if _has(r['prezzo_attuale_usd']) else "N/D")
+        c3.metric("Valore totale USD", f"$ {r['valore_attuale_usd']:,.0f}" if _has(r['valore_attuale_usd']) else "N/D")
+        c4.metric("YTD",               f"{r['perf_ytd']:+.1f}%" if _has(r['perf_ytd']) else "N/D")
         st.caption(f"ℹ️ {r['note']}")
 
     # Grafico storico ACN con scenari
@@ -2083,11 +2125,13 @@ elif sezione == "📊 Azioni Accenture":
         _plotly_chart(fig_acn, _title=f"Accenture (ACN) — {periodo_acn}", use_container_width=True, theme=None)
 
     st.subheader("Simulatore vendita — scenari worst/base/best")
-    if not azioni_df.empty and azioni_df.iloc[0]['prezzo_attuale_usd']:
+    _q_acn = azioni_df.iloc[0]['quantita'] if not azioni_df.empty else None
+    if (not azioni_df.empty and _has(azioni_df.iloc[0]['prezzo_attuale_usd'])
+            and azioni_df.iloc[0]['prezzo_attuale_usd'] and _has(_q_acn) and int(_q_acn) >= 2):
         prezzo_ora = azioni_df.iloc[0]['prezzo_attuale_usd']
-        quantita_tot = int(azioni_df.iloc[0]['quantita'])
+        quantita_tot = int(_q_acn)
         c1,c2 = st.columns(2)
-        with c1: n_vend  = st.slider("Azioni da vendere", 1, quantita_tot, 20, key="nacn")
+        with c1: n_vend  = st.slider("Azioni da vendere", 1, quantita_tot, min(20, quantita_tot), key="nacn")
         with c2: mesi_acn= st.slider("Tra quanti mesi?", 1, 48, 12, key="macn")
         c1,c2,c3 = st.columns(3)
         with c1: rw_acn = st.slider("Worst %/anno", -30, 0, -10, key="rw_acn")
@@ -2441,10 +2485,21 @@ elif sezione == "💳 Analisi spese":
                         _tax['categorie'][_sel_ci]['attiva'] = not _cur_att
                         st.rerun()
                 with _tcc2:
-                    if st.button("🗑️ Elimina categoria", key="tax_del_cat",
-                                 help="Rimuove la categoria e tutte le sue sottocategorie"):
-                        _tax['categorie'].pop(_sel_ci)
-                        st.session_state.pop('tax_sel_cat', None)
+                    if st.session_state.get('_tax_del_pending') == _sel_cat.get('id'):
+                        st.warning("Le transazioni già categorizzate con questa categoria "
+                                   "resteranno con un id non più in tassonomia. Confermi?")
+                        _dc1, _dc2 = st.columns(2)
+                        if _dc1.button("✅ Sì, elimina", key="tax_del_cat_ok"):
+                            _tax['categorie'].pop(_sel_ci)
+                            st.session_state.pop('tax_sel_cat', None)
+                            st.session_state.pop('_tax_del_pending', None)
+                            st.rerun()
+                        if _dc2.button("Annulla", key="tax_del_cat_no"):
+                            st.session_state.pop('_tax_del_pending', None)
+                            st.rerun()
+                    elif st.button("🗑️ Elimina categoria", key="tax_del_cat",
+                                   help="Rimuove la categoria e tutte le sue sottocategorie"):
+                        st.session_state['_tax_del_pending'] = _sel_cat.get('id')
                         st.rerun()
 
                 # Sottocategorie della categoria selezionata
@@ -2467,9 +2522,12 @@ elif sezione == "💳 Analisi spese":
                     if st.form_submit_button("+ Aggiungi"):
                         if _new_sub_nome.strip():
                             _new_sub_id = _new_sub_nome.strip().lower().replace(' ', '_')[:40]
-                            _tax['categorie'][_sel_ci]['sottocategorie'].append(
-                                {'id': _new_sub_id, 'nome': _new_sub_nome.strip(), 'attiva': True})
-                            st.rerun()
+                            if any(_s.get('id') == _new_sub_id for _s in _sel_subs):
+                                st.warning("Sottocategoria già presente in questa categoria.")
+                            else:
+                                _tax['categorie'][_sel_ci]['sottocategorie'].append(
+                                    {'id': _new_sub_id, 'nome': _new_sub_nome.strip(), 'attiva': True})
+                                st.rerun()
 
             st.divider()
             with st.form("add_cat_form"):
@@ -2484,14 +2542,17 @@ elif sezione == "💳 Analisi spese":
                 if st.form_submit_button("Aggiungi categoria"):
                     if _new_cat_nome.strip():
                         _new_cid = _new_cat_nome.strip().lower().replace(' ', '_')[:40]
-                        _tax['categorie'].append({
-                            'id': _new_cid,
-                            'nome': _new_cat_nome.strip(),
-                            'icona': _new_ico or '📌',
-                            'attiva': True,
-                            'sottocategorie': [],
-                        })
-                        st.rerun()
+                        if any(_c.get('id') == _new_cid for _c in _tax_cats):
+                            st.warning("Esiste già una categoria con questo nome.")
+                        else:
+                            _tax['categorie'].append({
+                                'id': _new_cid,
+                                'nome': _new_cat_nome.strip(),
+                                'icona': _new_ico or '📌',
+                                'attiva': True,
+                                'sottocategorie': [],
+                            })
+                            st.rerun()
 
         # ── Tab Tag globali ──────────────────────────────────
         with _tab_tag:
@@ -2803,13 +2864,7 @@ elif sezione == "💳 Analisi spese":
         from database import aggiorna_categoria_tx_bulk
         import pandas as pd
 
-        # Nomi da oscurare: quelli configurati in Privacy + i nomi di famiglia dai parametri
-        _p = st.session_state.get('params', {})
-        _gen = {'persona 1', 'persona 2', 'figlio', ''}
-        nomi_eff = list(dict.fromkeys(
-            list(nomi) + [str(_p.get(k) or '').strip()
-                          for k in ('nome_persona1', 'nome_persona2', 'nome_figlio')
-                          if str(_p.get(k) or '').strip().lower() not in _gen]))
+        nomi_eff = _nomi_effettivi(nomi)
 
         desc_anon = scrub_batch([t.get('descrizione') or '' for t in tx_list], nomi_eff)
         sospette = [sospetta_pii(d) for d in desc_anon]
@@ -3088,7 +3143,7 @@ elif sezione == "💳 Analisi spese":
                         st.session_state.pop('spese_report_cache', None)
                         with st.spinner("Claude sta analizzando le spese..."):
                             try:
-                                _report = _analisi_ai(_sem, _kpi, _nomi_anon)
+                                _report = _analisi_ai(_sem, _kpi, _nomi_effettivi(_nomi_anon))
                                 st.session_state['spese_report_cache'] = _report
                             except RuntimeError as _ae:
                                 st.error(f"Errore analisi AI: {_ae}")
@@ -3227,8 +3282,8 @@ elif sezione == "⚙️ Gestione Asset":
             with st.form("edit_fondo"):
                 c1, c2 = st.columns(2)
                 nome_f  = c1.text_input("Nome", value=str(row.get('nome','')))
-                ter_f   = c2.number_input("TER %", value=float(row.get('ter') or 0.02),
-                                           min_value=0.0, max_value=5.0, step=0.001, format="%.3f")
+                ter_f   = c2.number_input("TER %", value=float(row.get('ter') or 0.02) * 100,
+                                           min_value=0.0, max_value=5.0, step=0.1, format="%.2f")
                 vqr     = c1.number_input("Quota ref (€)", value=float(row.get('valore_quota_ref') or 0),
                                            min_value=0.0, step=0.01)
                 dr      = c2.text_input("Data ref (YYYY-MM-DD)", value=str(row.get('data_ref') or ''))
@@ -3245,10 +3300,11 @@ elif sezione == "⚙️ Gestione Asset":
                         st.stop()
                 ok = salva_asset({
                     'isin': isin_sel, 'nome': nome_f, 'tipo': 'fondo',
-                    'ter': ter_f, 'valore_quota_ref': vqr, 'data_ref': dr or None,
+                    'ter': ter_f / 100, 'valore_quota_ref': vqr,  # fondi: frazione (0.02 = 2%)
+                    'data_ref': dr or None,
                     'note': note_f or None,
-                    'ticker_yf': row.get('ticker_yf'),
-                    'fallback_tickers': row.get('fallback_tickers', []),
+                    'ticker_yf': _nn(row.get('ticker_yf')),
+                    'fallback_tickers': row.get('fallback_tickers') if isinstance(row.get('fallback_tickers'), list) else [],
                     'proprietario': row.get('proprietario','persona1'),
                     'stato': row.get('stato','attivo'),
                 })
@@ -3400,7 +3456,9 @@ elif sezione == "⚙️ Gestione Asset":
                     'isin': _isin_clean, 'nome': nome_n.strip(),
                     'tipo': tipo_n, 'ticker_yf': tyk_n.strip() or None,
                     'ticker_bi': tbi_n.strip() or None,
-                    'ter': ter_n, 'proprietario': prop_n, 'stato': stato_n,
+                    # fondi: frazione (0.02 = 2%); ETF: percentuale; azioni: nessun TER
+                    'ter': (ter_n / 100 if tipo_n == 'fondo' else ter_n) if tipo_n != 'azione' else None,
+                    'proprietario': prop_n, 'stato': stato_n,
                     'valore_quota_ref': vqr_n if vqr_n > 0 else None,
                     'note': note_n.strip() or None, 'fallback_tickers': [],
                 }
