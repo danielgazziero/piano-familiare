@@ -8,7 +8,6 @@ import os
 import re
 
 MODEL_NAME  = 'claude-haiku-5-5'
-_MODEL      = MODEL_NAME
 _BATCH_SIZE = 50
 
 
@@ -18,6 +17,18 @@ def _get_api_key() -> str:
         return st.secrets.get('ANTHROPIC_API_KEY', '') or ''
     except Exception:
         return os.environ.get('ANTHROPIC_API_KEY', '') or ''
+
+
+def _get_client():
+    """Client Anthropic con la chiave configurata; solleva RuntimeError se manca."""
+    api_key = _get_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY non trovata. "
+            "Aggiungila in .streamlit/secrets.toml: ANTHROPIC_API_KEY = \"sk-ant-...\""
+        )
+    import anthropic
+    return anthropic.Anthropic(api_key=api_key)
 
 
 _MD_IMG_RE  = re.compile(r'!\[[^\]]*\]\([^)]*\)')
@@ -51,15 +62,7 @@ def categorizza_batch(tx_scrubbed: list, taxonomy: dict, nomi: list = None) -> l
             "Nessun nome configurato per l'anonimizzazione: "
             "configura 🔒 Privacy prima di usare l'AI."
         )
-    api_key = _get_api_key()
-    if not api_key:
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY non trovata. "
-            "Aggiungila in .streamlit/secrets.toml: ANTHROPIC_API_KEY = \"sk-ant-...\""
-        )
-
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_client()
 
     cat_attive = {
         c['id']: {
@@ -101,7 +104,7 @@ def _chiama_api(client, batch: list, cat_attive: dict) -> list:
 
     try:
         msg = client.messages.create(
-            model=_MODEL,
+            model=MODEL_NAME,
             max_tokens=4096,
             messages=[{'role': 'user', 'content': prompt}],
         )
@@ -112,11 +115,13 @@ def _chiama_api(client, batch: list, cat_attive: dict) -> list:
     inizio = testo.find('[')
     fine   = testo.rfind(']') + 1
     if inizio == -1 or fine == 0:
+        print("  [!] categorizza: risposta senza array JSON")
         return []
 
     try:
         parsed = json.loads(testo[inizio:fine])
     except json.JSONDecodeError:
+        print("  [!] categorizza: JSON non valido nella risposta del modello")
         return []
 
     # Valida l'output contro tassonomia e batch inviato (difesa da prompt injection)
@@ -156,15 +161,7 @@ def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
             "Nessun nome configurato per l'anonimizzazione: "
             "configura 🔒 Privacy prima di usare l'AI."
         )
-    api_key = _get_api_key()
-    if not api_key:
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY non trovata. "
-            "Aggiungila in .streamlit/secrets.toml."
-        )
-
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_client()
 
     # Separa categorie critiche (🔴/🟡) dalle virtuose (🟢)
     critiche = [r for r in semafori if r.get('semaforo') in ('🔴', '🟡')]
@@ -215,7 +212,7 @@ def analizza_spese_ai(semafori: list, kpi: dict, nomi: list) -> str:
 
     try:
         msg = client.messages.create(
-            model=_MODEL,
+            model=MODEL_NAME,
             max_tokens=4096,
             messages=[{'role': 'user', 'content': prompt}],
         )

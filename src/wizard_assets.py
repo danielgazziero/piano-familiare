@@ -7,7 +7,9 @@ Nessun dato reale vive in config.yaml.
 """
 
 import io
+import math
 import re
+import zipfile
 import html
 from datetime import date
 
@@ -20,6 +22,7 @@ _STATI_ETF = ['attivo', 'da_avviare', 'candidato']
 _TIPI = {'etf': 'etf', 'fondo': 'fondo', 'azione': 'azione'}
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024   # 10 MB per file
+MAX_XLSX_UNCOMPRESSED = 100 * 1024 * 1024   # anti zip-bomb: contenuto decompresso
 MAX_CSV_ROWS = 300
 CSV_TEMPLATE = (
     "isin,nome,tipo,ticker_yf,quantita,valore_quota,proprietario\n"
@@ -33,9 +36,13 @@ def _txt(v, n=100) -> str:
 
 
 def _num(v, default=0.0) -> float:
+    """Numero >= 0 e finito; accetta formato italiano ('1.234,56') e inglese ('1234.56')."""
     try:
-        x = float(str(v).replace(',', '.'))
-        return x if x == x and x >= 0 else default
+        t = str(v).strip().replace(' ', '')
+        if ',' in t:
+            t = t.replace('.', '').replace(',', '.')
+        x = float(t)
+        return x if math.isfinite(x) and x >= 0 else default
     except (TypeError, ValueError):
         return default
 
@@ -158,6 +165,10 @@ def render_csv_import(tipo_default: str):
         try:
             raw = up.getvalue()
             if up.name.lower().endswith('.xlsx'):
+                with zipfile.ZipFile(io.BytesIO(raw)) as _z:
+                    if sum(i.file_size for i in _z.infolist()) > MAX_XLSX_UNCOMPRESSED:
+                        st.error("File non valido (contenuto decompresso troppo grande).")
+                        return
                 df = pd.read_excel(io.BytesIO(raw), engine='openpyxl', dtype=str)
             else:
                 df = pd.read_csv(io.BytesIO(raw), dtype=str, sep=None, engine='python')

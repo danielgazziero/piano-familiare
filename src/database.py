@@ -6,6 +6,7 @@ Funziona identicamente su Mac e Windows senza installare nulla in locale.
 
 import os
 import json
+import time
 from datetime import datetime, date
 from typing import Optional, Dict, List, Any
 import pandas as pd
@@ -230,19 +231,18 @@ def carica_blocked_assets_correnti() -> list:
     """Restituisce l'ultima valorizzazione per ciascun asset illiquido."""
     try:
         client = get_client()
-        res = (client.table('blocked_assets_log')
-               .select('asset_id, asset_nome, asset_tipo, valore, data, nota')
-               .order('data', desc=True)
-               .limit(1000)
-               .execute())
-        if not res.data:
-            return []
-        seen: dict = {}
-        for row in res.data:
-            aid = row['asset_id']
-            if aid not in seen:
-                seen[aid] = row
-        return list(seen.values())
+        # un asset per volta: l'ultima valorizzazione di ognuno, senza troncare
+        # per colpa delle righe piu' recenti degli altri asset
+        ids = (client.table('blocked_assets_log').select('asset_id')
+               .limit(5000).execute())
+        out = []
+        for aid in sorted({r['asset_id'] for r in (ids.data or [])}):
+            r = (client.table('blocked_assets_log')
+                 .select('asset_id, asset_nome, asset_tipo, valore, data, nota')
+                 .eq('asset_id', aid).order('data', desc=True).limit(1).execute())
+            if r.data:
+                out.append(r.data[0])
+        return out
     except Exception as e:
         print(f"  [!] Errore caricamento blocked assets: {type(e).__name__}")
         return []
@@ -1263,6 +1263,72 @@ def get_server_pwdchg_state(user_id: int) -> dict:
 
 def set_server_pwdchg_state(user_id: int, n: int, locked_until: float) -> None:
     _write_fail_state(f"_pwdchg_fail_{user_id}", n, locked_until, "set_server_pwdchg_state")
+
+
+def totp_code_valido(user_id: int, secret: str, code: str) -> bool:
+    """
+    Verifica un codice TOTP con protezione anti-replay: lo stesso time-step non e'
+    accettabile due volte (ultimo step usato in config_params). Fail-closed su errore DB.
+    """
+    import pyotp
+    try:
+        totp = pyotp.TOTP(secret)
+        code = (code or '').strip()
+        if not totp.verify(code):
+            return False
+        step = totp.timecode(datetime.now())
+        key = f"_totp_last_{user_id}"
+        res = (get_client().table('config_params').select('valore')
+               .eq('chiave', key).limit(1).execute())
+        last = -1
+        if res.data:
+            try:
+                last = int(json.loads(res.data[0]['valore']))
+            except (ValueError, TypeError, json.JSONDecodeError):
+                last = -1
+        if step <= last:
+            return False
+        get_client().table('config_params').upsert(
+            {'chiave': key, 'valore': json.dumps(step),
+             'updated_at': datetime.now().isoformat()},
+            on_conflict='chiave').execute()
+        return True
+    except Exception as e:
+        print(f"  [!] totp_code_valido: {type(e).__name__}")
+        return False
+
+
+def invalida_sessioni(user_id: int) -> None:
+    """Segna ora come 'epoca sessioni': le sessioni aperte prima vengono chiuse alla prossima rivalidazione."""
+    try:
+        get_client().table('config_params').upsert(
+            {'chiave': f"_sess_epoch_{user_id}", 'valore': json.dumps(time.time()),
+             'updated_at': datetime.now().isoformat()},
+            on_conflict='chiave').execute()
+    except Exception as e:
+        print(f"  [!] invalida_sessioni: {type(e).__name__}")
+
+
+def get_session_epoch(user_id: int) -> float:
+    """Epoca sessioni dell'utente (0.0 se assente o DB irraggiungibile: fail-open come is_utente_attivo)."""
+    try:
+        res = (get_client().table('config_params').select('valore')
+               .eq('chiave', f"_sess_epoch_{user_id}").limit(1).execute())
+        return float(json.loads(res.data[0]['valore'])) if res.data else 0.0
+    except Exception as e:
+        print(f"  [!] get_session_epoch: {type(e).__name__}")
+        return 0.0
+
+
+def reset_email_consentito(email: str, cooldown_s: int = 60) -> bool:
+    """Rate limit server-side (per email) sulle richieste di reset: 1 ogni `cooldown_s` secondi."""
+    import hashlib
+    key = "_reset_req_" + hashlib.sha256(email.strip().lower().encode()).hexdigest()[:16]
+    st_ = _read_fail_state(key, "reset_email_consentito")
+    if time.time() < st_.get("locked_until", 0.0):
+        return False
+    _write_fail_state(key, 1, time.time() + cooldown_s, "reset_email_consentito")
+    return True
 
 
 def get_utente_by_email(email: str) -> Optional[dict]:

@@ -221,8 +221,10 @@ def _auth_handle_reset(token_raw: str):
             st.error("Le password non corrispondono.")
         else:
             if _apw(user['id'], _hp(p1)):
-                from database import reset_server_login_state as _rsls
+                from database import (reset_server_login_state as _rsls,
+                                      invalida_sessioni as _inv_s)
                 _rsls(user['username'])
+                _inv_s(user['id'])   # chiude le sessioni gia' aperte con la vecchia password
                 st.success("Password aggiornata! Accedi con le tue nuove credenziali.")
                 st.query_params.clear()
                 if st.button("Vai al login"):
@@ -283,12 +285,32 @@ def _auth_wizard():
     with col2:
         wiz_p1 = st.text_input("Password", type="password", max_chars=1024)
         wiz_p2 = st.text_input("Conferma password", type="password", max_chars=1024)
+    _setup_code = str(st.secrets.get("SETUP_CODE", "") or "")
+    if _setup_code:
+        wiz_setup = st.text_input("Codice di setup (da secrets.toml → SETUP_CODE)",
+                                  type="password", max_chars=200)
+    else:
+        wiz_setup = ""
+        st.warning("⚠️ `SETUP_CODE` non configurato in secrets.toml: chiunque raggiunga questa "
+                   "pagina può creare l'amministratore. Configuralo e riavvia.")
     usa_legacy = False
     if _legacy_hash:
         st.caption("💡 Rilevata una password esistente in config_params.")
         usa_legacy = st.checkbox("Importa la password attuale (raccomandato)", value=True)
     if st.button("✅ Crea account amministratore", type="primary"):
         errs = []
+        if _setup_code:
+            import hmac as _hmac_s
+            from database import (get_server_login_state as _gsl_s,
+                                  set_server_login_state as _ssl_s)
+            _ss_state = _gsl_s("__setup__")
+            if time.time() < _ss_state.get("locked_until", 0.0):
+                errs.append("Troppi tentativi sul codice di setup. Riprova più tardi.")
+            elif not _hmac_s.compare_digest(wiz_setup.encode(), _setup_code.encode()):
+                _n_s = min(_ss_state.get("n", 0) + 1, _AUTH_MAX_FAILURES)
+                _d_s = _AUTH_LOCKOUT_DELAYS[_n_s]
+                _ssl_s("__setup__", _n_s, time.time() + _d_s if _d_s > 0 else 0.0)
+                errs.append("Codice di setup errato.")
         if not wiz_user or len(wiz_user.strip()) < 3:
             errs.append("Username: almeno 3 caratteri.")
         if not wiz_email or '@' not in wiz_email:
@@ -332,7 +354,8 @@ def _auth_wizard():
 def _auth_forgot_password():
     """Schermata 'Password dimenticata'."""
     import secrets as _sec
-    from database import get_utente_by_email as _gube, imposta_reset_token as _irt
+    from database import (get_utente_by_email as _gube, imposta_reset_token as _irt,
+                          reset_email_consentito as _rate_ok)
     from auth_mail import invia_email_reset as _ier, smtp_configurato as _sc
     st.title("🔑 Reset password")
     if not _sc():
@@ -350,8 +373,9 @@ def _auth_forgot_password():
                 st.warning("Attendi un minuto prima di richiedere un altro link.")
             else:
                 st.session_state["_reset_req_until"] = time.time() + 60
+                _t0 = time.time()
                 user = _gube(email_input)
-                if user:
+                if user and _rate_ok(email_input):
                     raw, tok_hash = _auth_genera_token()
                     expiry = (datetime.now() + timedelta(minutes=15)).isoformat()
                     if _irt(user['id'], tok_hash, expiry):
@@ -361,6 +385,8 @@ def _auth_forgot_password():
                         except Exception as _e:
                             st.error(f"Errore invio email: {type(_e).__name__}. Controlla la config SMTP.")
                             st.stop()
+                # tempo di risposta costante: non rivela se l'email e' registrata
+                time.sleep(max(0.0, 2.0 - (time.time() - _t0)))
                 st.success("Se l'email è registrata riceverai un link entro pochi minuti.")
     if st.button("← Torna al login"):
         st.session_state.pop("_auth_view", None)
@@ -489,9 +515,10 @@ def _auth_totp_verify():
         if not totp_code:
             st.error("Inserisci il codice.")
         else:
+            from database import totp_code_valido as _tcv
             _info = _gti(_user_id)
             _secret = _info.get('totp_secret')
-            if _secret and _pyotp.TOTP(_secret).verify(totp_code.strip()):
+            if _secret and _tcv(_user_id, _secret, totp_code):
                 _rsts(_user_id)
                 for _k in ("_auth_pending_uid", "_auth_pending_username",
                            "_auth_pending_is_admin", "_auth_failures",
@@ -564,11 +591,16 @@ else:
         # S-NEW-07: rivalidazione is_active ogni 5 minuti — senza query ad ogni rerun
         if time.time() - st.session_state.get("_auth_active_ts", 0) > 300:
             from database import is_utente_attivo as _is_active
-            if not _is_active(st.session_state.get("_auth_user_id")):
+            from database import get_session_epoch as _get_epoch
+            _uid_rv = st.session_state.get("_auth_user_id")
+            _epoch_ko = _get_epoch(_uid_rv) > max(st.session_state.get("_auth_ts", 0),
+                                                  st.session_state.get("_auth_epoch_seen", 0))
+            if _epoch_ko or not _is_active(_uid_rv):
                 for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username", "_auth_is_admin",
                            "_auth_active_ts"):
                     st.session_state.pop(_k, None)
-                st.session_state["_auth_notice"] = "Accesso revocato dall'amministratore."
+                st.session_state["_auth_notice"] = ("Sessione terminata: password modificata o "
+                                                    "accesso revocato.")
                 st.rerun()
             st.session_state["_auth_active_ts"] = time.time()
 
@@ -1004,7 +1036,7 @@ with st.sidebar:
             for _k in ("_auth_ok", "_auth_ts", "_auth_user_id", "_auth_username",
                        "_auth_is_admin", "_auth_failures", "_auth_locked_until", "_auth_view",
                        "_auth_pending_uid", "_auth_pending_username", "_auth_pending_is_admin",
-                       "_totp_setup_secret", "_auth_active_ts"):
+                       "_totp_setup_secret", "_auth_active_ts", "_auth_epoch_seen"):
                 st.session_state.pop(_k, None)
             st.rerun()
     st.divider()
@@ -1072,6 +1104,9 @@ with st.sidebar:
                     st.error("Password attuale non corretta.")
                 elif _uid and _apwu(_uid, _hpc(new_pwd1)):
                     _spcs(_uid, 0, 0.0)
+                    from database import invalida_sessioni as _inv_s2
+                    _inv_s2(_uid)   # le altre sessioni vengono chiuse; questa resta valida
+                    st.session_state["_auth_epoch_seen"] = time.time() + 1
                     st.success("Password aggiornata!")
                 else:
                     st.error("Errore durante l'aggiornamento.")
@@ -1133,7 +1168,7 @@ with st.sidebar:
                 if not _dis_code:
                     st.error("Inserisci il codice 2FA.")
                 else:
-                    import pyotp as _pyotp_dis
+                    from database import totp_code_valido as _tcv_d
                     from database import (get_server_totp_state as _gsts_d,
                                           set_server_totp_state as _ssts_d,
                                           reset_server_totp_state as _rsts_d)
@@ -1141,7 +1176,7 @@ with st.sidebar:
                     _t_sec = _t_info.get('totp_secret')
                     if time.time() < _td.get("locked_until", 0.0):
                         st.error(f"Troppi tentativi. Riprova tra {int(_td['locked_until'] - time.time()) + 1} secondi.")
-                    elif _t_sec and _pyotp_dis.TOTP(_t_sec).verify(_dis_code.strip()):
+                    elif _t_sec and _tcv_d(_uid_2fa, _t_sec, _dis_code):
                         _rsts_d(_uid_2fa)
                         if _dt_sb(_uid_2fa):
                             st.session_state.pop("_totp_info_cache", None)
@@ -1162,7 +1197,7 @@ with st.sidebar:
                 st.session_state.pop('_wizard_step', None)
                 st.rerun()
     st.divider()
-    st.caption(f"Config: {config['famiglia']['aggiornato']}")
+    st.caption(f"Config: {config.get('famiglia', {}).get('aggiornato', 'n/d')}")
     st.caption(f"Oggi: {date.today().strftime('%d/%m/%Y')}")
     if st.button("🔄 Aggiorna tutto"):
         if st.session_state.get("_auth_is_admin"):
@@ -1215,13 +1250,13 @@ if sezione == "🏠 Stato di famiglia":
         st.caption("I valori vengono salvati automaticamente su Supabase e ripristinati alla prossima apertura.")
         c1, c2, c3 = st.columns(3)
         with c1:
-            fondi_man    = st.number_input("Fondi bancari (€)", value=int(p_saved.get('fondi_bancari', config['patrimonio']['fondi_bancari'])), step=500)
-            generali_man = st.number_input("Generali (€)", value=int(p_saved.get('gestione_separata_generali', config['patrimonio']['gestione_separata_generali'])), step=500)
+            fondi_man    = st.number_input("Fondi bancari (€)", value=int(p_saved.get('fondi_bancari', config.get('patrimonio', {}).get('fondi_bancari', 0))), step=500)
+            generali_man = st.number_input("Generali (€)", value=int(p_saved.get('gestione_separata_generali', config.get('patrimonio', {}).get('gestione_separata_generali', 0))), step=500)
         with c2:
-            liq_dan = st.number_input(f"Liquidità {_N1} (€)", value=int(p_saved.get('liquidita_persona1', config['patrimonio']['liquidita_persona1'])), step=100)
-            liq_ale = st.number_input(f"Liquidità {_N2} (€)", value=int(p_saved.get('liquidita_persona2', config['patrimonio']['liquidita_persona2'])), step=100)
+            liq_dan = st.number_input(f"Liquidità {_N1} (€)", value=int(p_saved.get('liquidita_persona1', config.get('patrimonio', {}).get('liquidita_persona1', 0))), step=100)
+            liq_ale = st.number_input(f"Liquidità {_N2} (€)", value=int(p_saved.get('liquidita_persona2', config.get('patrimonio', {}).get('liquidita_persona2', 0))), step=100)
         with c3:
-            conto_com  = st.number_input("Conto comune (€)", value=int(p_saved.get('conto_comune', config['patrimonio']['conto_comune'])), step=100)
+            conto_com  = st.number_input("Conto comune (€)", value=int(p_saved.get('conto_comune', config.get('patrimonio', {}).get('conto_comune', 0))), step=100)
             debiti_man = st.number_input("Debiti totali (€)", value=int(p_saved.get('debiti_totale', 0)), step=100, help="Somma di tutti i debiti attivi (mutuo, prestiti, ecc.)")
 
         if st.button("💾 Salva valori"):
@@ -1569,7 +1604,7 @@ if sezione == "🏠 Stato di famiglia":
         mese_sel = st.selectbox("Mese", [str(m) for m in mesi])
         mese_df  = df[df['month'] == mese_sel]
         e_tot = mese_df['income'].sum(); u_tot = mese_df['expense'].sum()
-        budget= config['allocazione']['spese_correnti_ora']
+        budget= config.get('allocazione', {}).get('spese_correnti_ora', 0)
         c1,c2,c3,c4 = st.columns(4)
         c1.metric("Entrate", f"€ {e_tot:,.0f}")
         c2.metric("Uscite",  f"€ {u_tot:,.0f}")
@@ -2209,7 +2244,7 @@ elif sezione == "🎯 Simulatore strategie":
         st.subheader("Simulatore PAC con scenari")
         c1,c2,c3 = st.columns(3)
         with c1: imp   = st.slider("Importo mensile (€)", 100, 3000,
-                                   min(max(int(config['allocazione']['pac_persona1_ora']), 100), 3000), step=50)
+                                   min(max(int(config.get('allocazione', {}).get('pac_persona1_ora', 0)), 100), 3000), step=50)
         with c2: anni  = st.slider("Anni", 5, 30, 20)
         with c3: rend  = st.slider("Rendimento base (%)", 3.0, 12.0, 7.0, step=0.5)
 
@@ -2237,7 +2272,7 @@ elif sezione == "🎯 Simulatore strategie":
                                       name='Versato', line=dict(color=COLORS['grigio'],width=1,dash='longdash')))
         if variabile:
             fasi = [{'importo': imp,'mesi':7},
-                    {'importo': config['allocazione']['pac_persona1_con_nido'],'mesi':9999}]
+                    {'importo': config.get('allocazione', {}).get('pac_persona1_con_nido', 0),'mesi':9999}]
             df_v = simula_pac_variabile(fasi, anni, rend/100)
             fig_pac.add_trace(go.Scatter(x=df_v['anno'], y=df_v['valore'],
                                           name='Con riduzione nido',
@@ -2279,7 +2314,7 @@ elif sezione == "🎯 Simulatore strategie":
         st.subheader("Scenario patrimoniale completo")
         c1,c2,c3 = st.columns(3)
         with c1: pd_s = st.slider(f"PAC {_N1} (€)",500,2000,
-                                  min(max(int(config['allocazione']['pac_persona1_ora']), 500), 2000),step=100)
+                                  min(max(int(config.get('allocazione', {}).get('pac_persona1_ora', 0)), 500), 2000),step=100)
         with c2: pf_s = st.slider(f"PAC {_NF} (€)",100,500,
                                   min(max(int(config['allocazione'].get('pac_figlio',0) or 0), 100), 500),step=50)
         with c3: rs   = st.slider("Rendimento (%)",4.0,10.0,7.0,step=0.5)
@@ -2742,10 +2777,11 @@ elif sezione == "💳 Analisi spese":
                     _ieri = (date.today() - _td(days=1)).isoformat()
                     _pf_storia_new = []
                     for _e in _pf_storia:
-                        if _e.get('al') is None and _e.get('dal') == _pf_attivo.get('dal') if _pf_attivo else False:
-                            _pf_storia_new.append({**_e, 'al': _ieri})
-                        else:
-                            _pf_storia_new.append(_e)
+                        _da_chiudere = bool(_pf_attivo) and _e.get('al') is None \
+                                       and _e.get('dal') == _pf_attivo.get('dal')
+                        if _da_chiudere and _e.get('dal', '') >= date.today().isoformat():
+                            continue   # periodo iniziato oggi: sostituito, non chiuso (evita al < dal)
+                        _pf_storia_new.append({**_e, 'al': _ieri} if _da_chiudere else _e)
                     _pf_storia_new.append(_new_entry)
 
                 if _spf(_pf_storia_new):
